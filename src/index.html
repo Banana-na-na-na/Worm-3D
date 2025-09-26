@@ -1322,6 +1322,7 @@
                             merged = true;
                             newSquare = {
                                 ...square1,
+                                color: '#ffff00',
                                 isSpecial: false,
                                 isLight: true
                             };
@@ -2696,9 +2697,14 @@
                     gradient.addColorStop(0, 'rgba(255, 255, 0, 0.8)');
                     gradient.addColorStop(1, 'rgba(255, 255, 0, 0)');
                     this.ctx.fillStyle = gradient;
-                    this.ctx.fillRect(square.x - 30, square.y - 30, square.width + 60, square.height + 60);
-                    this.ctx.fillStyle = square.color;
-                    this.ctx.fillRect(square.x, square.y, square.width, square.height);
+                    
+                    // 원형 그라데이션 배경
+                    this.ctx.beginPath();
+                    this.ctx.arc(square.x + square.width / 2, square.y + square.height / 2, 50, 0, Math.PI * 2);
+                    this.ctx.fill();
+                    
+
+                    
                     this.ctx.restore();
                 }
                 
