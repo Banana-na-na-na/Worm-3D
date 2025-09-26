@@ -68,19 +68,44 @@
             this.newBlockMessageFrames = 0;
             this.discoveredColors = new Set();
             
+            
             // 파티클 시스템
             this.fireParticles = [];
             this.waterDrops = [];
             this.lightningParticles = [];
             this.superLightningParticles = [];
             this.smokeCircles = [];
+            this.fogCircles = [];
+            this.rainDrops = [];
+            this.hailStones = [];
+            this.snowFlakes = [];
+            
+            // 열매 시스템
+            this.fruits = [];
             
             // 상점 시스템
-            this.currentScreen = 'lab'; // 'lab' 또는 'shop'
+            this.currentScreen = 'lab'; // 'lab', 'shop', 'dev', 'chest'
             this.shopButton = { x: 500, y: 10, width: 80, height: 30 };
+            this.devButton = { x: 500, y: 50, width: 80, height: 30 };
             this.exitShopButton = { x: 500, y: 10, width: 80, height: 30 };
+            this.exitDevButton = { x: 500, y: 10, width: 80, height: 30 };
+            this.exitChestButton = { x: 500, y: 10, width: 80, height: 30 };
             this.shopItems = [];
+            this.devItems = [];
             this.shopScrollY = 0;
+            this.devScrollY = 0;
+            this.chestScrollY = 0;
+            this.currentChest = null;
+            
+            // 더블클릭 감지
+            this.lastClickTime = 0;
+            this.lastClickSquare = null;
+            
+            // 개발자 도구 개수 입력
+            this.devQuantity = 1;
+            this.devQuantityInput = { x: 20, y: 100, width: 60, height: 25 };
+            this.devBuyButton = { x: 90, y: 100, width: 60, height: 25 };
+            this.devInputFocused = false;
             
             this.setupEventListeners();
             this.gameLoop();
@@ -117,11 +142,40 @@
                         return;
                     }
                     
-                    // 네모 드래그 시작
+                    // 개발자 도구 버튼 클릭
+                    if (this.mouseX >= this.devButton.x && this.mouseX <= this.devButton.x + this.devButton.width &&
+                        this.mouseY >= this.devButton.y && this.mouseY <= this.devButton.y + this.devButton.height) {
+                        this.currentScreen = 'dev';
+                        this.updateDevItems();
+                        return;
+                    }
+                    
+                    // 더블클릭 감지 (상자 열기)
+                    const currentTime = Date.now();
                     for (let i = this.smallSquares.length - 1; i >= 0; i--) {
                         const square = this.smallSquares[i];
-                        if (this.mouseX >= square.x && this.mouseX <= square.x + square.width &&
-                            this.mouseY >= square.y && this.mouseY <= square.y + square.height) {
+                        const bounds = square.isPlant ? this.getPlantBounds(square) : square;
+                        
+                        if (this.mouseX >= bounds.x && this.mouseX <= bounds.x + bounds.width &&
+                            this.mouseY >= bounds.y && this.mouseY <= bounds.y + bounds.height) {
+                            
+                            // 더블클릭 체크
+                            if (square === this.lastClickSquare && currentTime - this.lastClickTime < 300) {
+                                // 상자 더블클릭
+                                if (square.isChest) {
+                                    console.log('상자 더블클릭! 저장된 블럭 수:', square.storedBlocks ? square.storedBlocks.length : 0);
+                                    this.currentChest = square;
+                                    this.currentScreen = 'chest';
+                                    this.chestScrollY = 0;
+                                    this.lastClickTime = 0;
+                                    this.lastClickSquare = null;
+                                    return;
+                                }
+                            }
+                            
+                            this.lastClickTime = currentTime;
+                            this.lastClickSquare = square;
+                            
                             this.draggedSquare = square;
                             this.isDragging = true;
                             break;
@@ -143,6 +197,127 @@
                         }
                         y += 50;
                     });
+                } else if (this.currentScreen === 'dev') {
+                    // 개발자 도구 입력창 클릭
+                    if (this.mouseX >= this.devQuantityInput.x && this.mouseX <= this.devQuantityInput.x + this.devQuantityInput.width &&
+                        this.mouseY >= this.devQuantityInput.y && this.mouseY <= this.devQuantityInput.y + this.devQuantityInput.height) {
+                        this.devInputFocused = true;
+                        return;
+                    }
+                    
+                    // 개발자 도구 구매 버튼 클릭
+                    if (this.mouseX >= this.devBuyButton.x && this.mouseX <= this.devBuyButton.x + this.devBuyButton.width &&
+                        this.mouseY >= this.devBuyButton.y && this.mouseY <= this.devBuyButton.y + this.devBuyButton.height) {
+                        if (this.selectedDevItem) {
+                            const quantity = this.devQuantity > 0 ? this.devQuantity : 1;
+                            console.log('개발자 도구 구매:', this.selectedDevItem.name, 'x' + quantity);
+                            for (let i = 0; i < quantity; i++) {
+                                this.spawnDevItem(this.selectedDevItem);
+                            }
+                        }
+                        return;
+                    }
+                    
+                    // 개발자 도구 아이템 클릭 (선택) - 정확한 위치로 수정
+                    let itemClicked = false;
+                    if (this.devItems && this.devItems.length > 0) {
+                        let y = 170 + this.devScrollY;
+                        for (let i = 0; i < this.devItems.length; i++) {
+                            const item = this.devItems[i];
+                            // 렌더링과 정확히 같은 위치에서 클릭 감지 (약간의 여유 공간 추가)
+                            if (this.mouseY >= y - 25 && this.mouseY <= y + 25 && 
+                                this.mouseX >= 50 && this.mouseX <= this.canvas.width - 50) {
+                                this.selectedDevItem = item;
+                                itemClicked = true;
+                                console.log('개발자 도구 아이템 선택:', item.name, 'index:', i, 'y:', y, 'mouseY:', this.mouseY);
+                                break;
+                            }
+                            y += 50;
+                        }
+                    }
+                    
+                    if (!itemClicked) {
+                        this.devInputFocused = false;
+                    }
+                    
+                    // 개발자 도구 나가기 버튼 클릭 (마지막에 처리)
+                    if (this.mouseX >= this.exitDevButton.x && this.mouseX <= this.exitDevButton.x + this.exitDevButton.width &&
+                        this.mouseY >= this.exitDevButton.y && this.mouseY <= this.exitDevButton.y + this.exitDevButton.height) {
+                        this.currentScreen = 'lab';
+                        return;
+                    }
+                } else if (this.currentScreen === 'chest') {
+                    // 상자 나가기 버튼 클릭
+                    if (this.mouseX >= this.exitChestButton.x && this.mouseX <= this.exitChestButton.x + this.exitChestButton.width &&
+                        this.mouseY >= this.exitChestButton.y && this.mouseY <= this.exitChestButton.y + this.exitChestButton.height) {
+                        this.currentScreen = 'lab';
+                        this.currentChest = null;
+                        return;
+                    }
+                    
+                    // 상자 아이템 클릭 (블럭 꺼내기) - for 루프로 수정
+                    if (this.currentChest && this.currentChest.storedBlocks) {
+                        let y = 170 + this.chestScrollY;
+                        for (let index = 0; index < this.currentChest.storedBlocks.length; index++) {
+                            const storedBlock = this.currentChest.storedBlocks[index];
+                            console.log('상자 아이템 체크:', index, 'y:', y, 'mouseY:', this.mouseY, 'mouseX:', this.mouseX);
+                            if (this.mouseY > y - 20 && this.mouseY < y + 20 && this.mouseX > 60 && this.mouseX < this.canvas.width - 60) {
+                                // 블럭을 상자 위로 꺼내기
+                                console.log('상자에서 블럭 꺼내기:', storedBlock.color, 'index:', index, '남은 블럭 수:', this.currentChest.storedBlocks.length - 1);
+                                const newBlock = {
+                                    x: this.currentChest.x + 50, // 상자 오른쪽으로 50픽셀 이동
+                                    y: this.currentChest.y - 50, // 상자 위로 50픽셀 이동
+                                    width: 20,
+                                    height: 20,
+                                    color: storedBlock.color,
+                                    velocityX: 0,
+                                    velocityY: 0,
+                                    isOnGround: false,
+                                    isSpecial: storedBlock.isSpecial,
+                                    isFire: storedBlock.isFire,
+                                    isWater: storedBlock.isWater,
+                                    isSoil: storedBlock.isSoil,
+                                    isPlant: storedBlock.isPlant,
+                                    isElectric: storedBlock.isElectric,
+                                    isSuperElectric: storedBlock.isSuperElectric,
+                                    isLight: storedBlock.isLight,
+                                    isIce: storedBlock.isIce,
+                                    isSpace: storedBlock.isSpace,
+                                    isVoid: storedBlock.isVoid,
+                                    isMagnet: storedBlock.isMagnet,
+                                    isVirus: storedBlock.isVirus,
+                                    isChest: storedBlock.isChest,
+                                    isMovingVoid: storedBlock.isMovingVoid,
+                                    isSmoke: storedBlock.isSmoke,
+                                    isFog: storedBlock.isFog,
+                                    isCloud: storedBlock.isCloud,
+                                    isRainCloud: storedBlock.isRainCloud,
+                                    isHailCloud: storedBlock.isHailCloud,
+                                    isSnowCloud: storedBlock.isSnowCloud,
+                                    isSnow: storedBlock.isSnow,
+                                    hailTimer: storedBlock.hailTimer,
+                                    snowTimer: storedBlock.snowTimer,
+                                    isFruit: storedBlock.isFruit,
+                                    plantGrowth: storedBlock.plantGrowth,
+                                    fruitTimer: storedBlock.fruitTimer,
+                                    icePrice: storedBlock.icePrice,
+                                    iceTimer: storedBlock.iceTimer,
+                                    iceShrinkTimer: storedBlock.iceShrinkTimer,
+                                    fruitValue: storedBlock.fruitValue
+                                };
+                                
+                                // 새로 나온 블럭에 일시적 보호 마크 추가
+                                newBlock.isNewlySpawned = true;
+                                newBlock.spawnTime = Date.now();
+                                
+                                this.smallSquares.push(newBlock);
+                                this.currentChest.storedBlocks.splice(index, 1);
+                                return; // 클릭 이벤트 처리 완료
+                            }
+                            y += 50;
+                        }
+                    }
+                    
                 }
             });
             
@@ -176,6 +351,59 @@
                     if (this.shopScrollY > 0) this.shopScrollY = 0;
                     const maxScroll = Math.max(0, this.shopItems.length * 50 - 200);
                     if (this.shopScrollY < -maxScroll) this.shopScrollY = -maxScroll;
+                }             else if (this.currentScreen === 'dev') {
+                e.preventDefault();
+                this.devScrollY += e.deltaY;
+                if (this.devScrollY > 0) this.devScrollY = 0;
+                const maxScroll = Math.max(0, this.devItems.length * 50 - 150);
+                if (this.devScrollY < -maxScroll) this.devScrollY = -maxScroll;
+            }
+            else if (this.currentScreen === 'chest') {
+                e.preventDefault();
+                this.chestScrollY += e.deltaY;
+                if (this.chestScrollY > 0) this.chestScrollY = 0;
+                const maxScroll = Math.max(0, (this.currentChest ? this.currentChest.storedBlocks.length : 0) * 50 - 150);
+                if (this.chestScrollY < -maxScroll) this.chestScrollY = -maxScroll;
+            }
+            });
+            
+            // 키보드 입력 이벤트
+            document.addEventListener('keydown', (e) => {
+                if (this.currentScreen === 'dev' && this.devInputFocused) {
+                    // 숫자 키 입력
+                    if (e.key >= '0' && e.key <= '9') {
+                        if (this.devQuantity === 0) {
+                            this.devQuantity = parseInt(e.key);
+                        } else {
+                            this.devQuantity = this.devQuantity * 10 + parseInt(e.key);
+                        }
+                        // 최대 999로 제한
+                        if (this.devQuantity > 999) {
+                            this.devQuantity = 999;
+                        }
+                    }
+                    // 백스페이스로 숫자 삭제
+                    else if (e.key === 'Backspace') {
+                        this.devQuantity = Math.floor(this.devQuantity / 10);
+                        // 0이 되면 빈 상태로 유지 (1로 되돌리지 않음)
+                        if (this.devQuantity === 0) {
+                            this.devQuantity = 0;
+                        }
+                    }
+                    // Enter로 구매 (개수 체크 제거)
+                    else if (e.key === 'Enter') {
+                        if (this.selectedDevItem) {
+                            const quantity = this.devQuantity > 0 ? this.devQuantity : 1;
+                            for (let i = 0; i < quantity; i++) {
+                                this.spawnDevItem(this.selectedDevItem);
+                            }
+                        }
+                        this.devInputFocused = false;
+                    }
+                    // Escape로 포커스 해제
+                    else if (e.key === 'Escape') {
+                        this.devInputFocused = false;
+                    }
                 }
             });
         }
@@ -187,31 +415,152 @@
             this.updateLightningParticles();
             this.updateSuperLightningParticles();
             this.updateSmokeCircles();
+            this.updateFogCircles();
+            this.updateRainDrops();
+            this.updateHailStones();
+            this.updateSnowFlakes();
+            this.checkHailCollisions();
+            this.checkSnowCollisions();
+            this.updateFruits();
             
             // 새로운 블럭 메시지 업데이트
             if (this.newBlockMessageFrames > 0) {
                 this.newBlockMessageFrames--;
             }
+            
+        }
+        
+        isSpaceBlockInSpecialArea(square) {
+            // 상점 버튼 영역 (500, 10, 80, 30)
+            if (square.x < this.shopButton.x + this.shopButton.width &&
+                square.x + square.width > this.shopButton.x &&
+                square.y < this.shopButton.y + this.shopButton.height &&
+                square.y + square.height > this.shopButton.y) {
+                return true;
+            }
+            
+            // 빨간 버튼 영역 (100, 50, 60, 30)
+            if (square.x < this.redButton.x + this.redButton.width &&
+                square.x + square.width > this.redButton.x &&
+                square.y < this.redButton.y + this.redButton.height &&
+                square.y + square.height > this.redButton.y) {
+                return true;
+            }
+            
+            // 파란 버튼 영역 (170, 50, 60, 30)
+            if (square.x < this.blueButton.x + this.blueButton.width &&
+                square.x + square.width > this.blueButton.x &&
+                square.y < this.blueButton.y + this.blueButton.height &&
+                square.y + square.height > this.blueButton.y) {
+                return true;
+            }
+            
+            // 판매 구역 (500, 325, 80, 25)
+            if (square.x < this.sellZone.x + this.sellZone.width &&
+                square.x + square.width > this.sellZone.x &&
+                square.y < this.sellZone.y + this.sellZone.height &&
+                square.y + square.height > this.sellZone.y) {
+                return true;
+            }
+            
+            // 터널 영역 (10, 50, 40, 150)
+            if (square.x < this.tunnel.x + this.tunnel.width &&
+                square.x + square.width > this.tunnel.x &&
+                square.y < this.tunnel.y + this.tunnel.height &&
+                square.y + square.height > this.tunnel.y) {
+                return true;
+            }
+            
+            return false;
         }
         
         updateSmallSquares() {
             this.smallSquares.forEach((square, index) => {
+                // 얼음 블럭 특별 처리 (드래그 중에도 적용)
+                if (square.isIce) {
+                    square.iceTimer++;
+                    square.iceShrinkTimer++;
+                    
+                    // 10초(600프레임)마다 크기 감소 및 가격 감소
+                    if (square.iceShrinkTimer >= 600) {
+                        square.iceShrinkTimer = 0;
+                        square.icePrice--;
+                        square.width = Math.max(12, square.width - 2);
+                        square.height = Math.max(12, square.height - 2);
+                        
+                        // 가격이 10원이 되면 물 블럭으로 변환
+                        if (square.icePrice <= 10) {
+                            square.isIce = false;
+                            square.isWater = true;
+                            square.icePrice = undefined;
+                            square.iceTimer = undefined;
+                            square.iceShrinkTimer = undefined;
+                        }
+                    }
+                }
+                
                 if (square !== this.draggedSquare) {
-                    // 중력 적용
+                    // 중력 적용 (우주 블럭과 구름 블럭들은 특정 영역에서만 중력 없음)
+                    if ((!square.isSpace && !square.isCloud && !square.isRainCloud && !square.isHailCloud && !square.isSnowCloud) || 
+                        (square.isSpace && this.isSpaceBlockInSpecialArea(square)) ||
+                        (square.isCloud && this.isSpaceBlockInSpecialArea(square)) ||
+                        (square.isRainCloud && this.isSpaceBlockInSpecialArea(square)) ||
+                        (square.isHailCloud && this.isSpaceBlockInSpecialArea(square)) ||
+                        (square.isSnowCloud && this.isSpaceBlockInSpecialArea(square))) {
                     square.velocityY += this.gravity;
                     square.y += square.velocityY;
+                    }
                     
-                    // 바닥 충돌
+                    // 바닥 충돌 (우주 블럭과 구름 블럭들은 특정 영역에서만 바닥 충돌 없음)
+                    if ((!square.isSpace && !square.isCloud && !square.isRainCloud && !square.isHailCloud && !square.isSnowCloud) || 
+                        (square.isSpace && this.isSpaceBlockInSpecialArea(square)) ||
+                        (square.isCloud && this.isSpaceBlockInSpecialArea(square)) ||
+                        (square.isRainCloud && this.isSpaceBlockInSpecialArea(square)) ||
+                        (square.isHailCloud && this.isSpaceBlockInSpecialArea(square)) ||
+                        (square.isSnowCloud && this.isSpaceBlockInSpecialArea(square))) {
                     if (square.y + square.height >= this.ground.y) {
                         square.y = this.ground.y - square.height;
                         square.velocityY = 0;
                         square.isOnGround = true;
                     } else {
+                            square.isOnGround = false;
+                        }
+                    } else {
+                        // 우주 블럭은 특별 영역 밖에서만 공중에 있음
                         square.isOnGround = false;
                     }
                     
-                    // 마찰
+                    // 마찰 적용
+                    if ((square.isSpace || square.isCloud || square.isRainCloud || square.isHailCloud || square.isSnowCloud) && !this.isSpaceBlockInSpecialArea(square)) {
+                        // 우주 블럭과 구름 블럭들은 특별 영역 밖에서만 마찰 없음 (무중력)
+                        // velocityX는 그대로 유지
+                    } else if (square.isIce) {
+                        // 얼음 블럭은 진짜 얼음처럼 미끄러움
                     if (square.isOnGround) {
+                            // 바닥에서는 속도에 따라 마찰이 달라짐 (빠를수록 미끄러움)
+                            const speed = Math.abs(square.velocityX);
+                            if (speed > 2) {
+                                // 매우 빠를 때: 거의 마찰 없음 (0.995)
+                                square.velocityX *= 0.995;
+                            } else if (speed > 1) {
+                                // 빠를 때: 약간의 마찰 (0.99)
+                                square.velocityX *= 0.99;
+                            } else if (speed > 0.5) {
+                                // 보통일 때: 조금 더 마찰 (0.98)
+                                square.velocityX *= 0.98;
+                            } else {
+                                // 느릴 때: 더 많은 마찰 (0.95)
+                                square.velocityX *= 0.95;
+                            }
+                        } else {
+                            // 공중에서는 거의 마찰 없음
+                            square.velocityX *= 0.999;
+                        }
+                        if (Math.abs(square.velocityX) < 0.02) {
+                            square.velocityX = 0;
+                        }
+                    } else if (square.isOnGround) {
+                        // 일반 블럭은 바닥에서만 마찰
                         square.velocityX *= 0.8;
                         if (Math.abs(square.velocityX) < 0.1) {
                             square.velocityX = 0;
@@ -237,7 +586,414 @@
             
             this.checkSquareSquareCollisions();
             this.checkSoilEating();
+            this.checkMagnetEffect();
+            this.checkVoidAbsorption();
+            this.checkVirusInfection();
+            this.checkChestStorage();
+            this.checkMovingVoidEffect();
             this.checkSellZoneCollisions();
+            this.updatePlantFruits();
+        }
+        
+        getPlantBounds(square) {
+            // 식물의 실제 경계를 계산 (성장한 높이 포함)
+            const growth = square.plantGrowth || 1;
+            const growthHeight = 20 + (growth - 1) * 1;
+            const plantY = square.y + (20 - growthHeight);
+            
+            return {
+                x: square.x,
+                y: plantY,
+                width: 20,
+                height: growthHeight
+            };
+        }
+        
+        updatePlantFruits() {
+            // 식물의 열매 생성 로직
+            this.smallSquares.forEach(square => {
+                if (square.isPlant && square.plantGrowth >= 5) {
+                    square.fruitTimer++;
+                    const fruitLevel = square.fruitLevel || 0;
+                    const fruitInterval = 600; // 10초마다
+                    
+                    if (square.fruitTimer >= fruitInterval) {
+                        square.fruitTimer = 0;
+                        
+                        // 열매 생성 (식물 위쪽에) - 작은 열매가 갑자기 나타남
+                        const maxFruitSize = 8 + fruitLevel * 2; // 열매 레벨에 따라 최대 크기 증가 (더 크게)
+                        const fruitValue = 5 + fruitLevel * 5; // 열매 레벨에 따라 가치 증가
+                        
+                        this.fruits.push({
+                            x: square.x + square.width / 2 - 2, // 작은 열매로 시작
+                            y: square.y - 2 - 5, // 식물 위쪽에
+                            width: 4, // 처음에는 4픽셀로 시작 (더 크게)
+                            height: 4,
+                            color: '#fff8dc', // 바나나 우유색 (진짜 연한 노랑색)
+                            life: 300, // 5초간 유지
+                            value: fruitValue,
+                            growthTimer: 0,
+                            maxSize: maxFruitSize,
+                            isGrowing: true, // 성장 중인지 표시
+                            fallTimer: 0 // 떨어지기 전 대기 시간
+                        });
+                    }
+                }
+            });
+        }
+        
+        checkMagnetEffect() {
+            this.smallSquares.forEach((magnetSquare, magnetIndex) => {
+                if (magnetSquare.isMagnet) {
+                    this.smallSquares.forEach((otherSquare, otherIndex) => {
+                        if (otherIndex !== magnetIndex && otherSquare !== this.draggedSquare) {
+                            // 식물의 경우 실제 크기 사용
+                            const otherBounds = otherSquare.isPlant ? this.getPlantBounds(otherSquare) : otherSquare;
+                            
+                            // 거리 계산
+                            const dx = otherBounds.x + otherBounds.width/2 - (magnetSquare.x + magnetSquare.width/2);
+                            const dy = otherBounds.y + otherBounds.height/2 - (magnetSquare.y + magnetSquare.height/2);
+                            const distance = Math.sqrt(dx * dx + dy * dy);
+                            
+                            // 자력 범위 (80픽셀)
+                            if (distance < 80 && distance > 0) {
+                                // 자력 강도 (거리가 가까울수록 강함)
+                                const magnetStrength = (80 - distance) / 80 * 0.3;
+                                
+                                // 자력 적용 (자석 블럭에서 멀어지는 방향으로)
+                                otherSquare.velocityX += (dx / distance) * magnetStrength;
+                                otherSquare.velocityY += (dy / distance) * magnetStrength;
+                                
+                                // 속도 제한
+                                const maxSpeed = 2;
+                                const speed = Math.sqrt(otherSquare.velocityX * otherSquare.velocityX + otherSquare.velocityY * otherSquare.velocityY);
+                                if (speed > maxSpeed) {
+                                    otherSquare.velocityX = (otherSquare.velocityX / speed) * maxSpeed;
+                                    otherSquare.velocityY = (otherSquare.velocityY / speed) * maxSpeed;
+                                }
+                            }
+                        }
+                    });
+                }
+            });
+        }
+        
+        checkVoidAbsorption() {
+            this.smallSquares.forEach((voidSquare, voidIndex) => {
+                if (voidSquare.isVoid) {
+                    // 뒤에서부터 순회하여 인덱스 문제 방지
+                    for (let i = this.smallSquares.length - 1; i >= 0; i--) {
+                        const otherSquare = this.smallSquares[i];
+                        if (i !== voidIndex && otherSquare !== this.draggedSquare) {
+                            // 식물의 경우 실제 크기 사용
+                            const otherBounds = otherSquare.isPlant ? this.getPlantBounds(otherSquare) : otherSquare;
+                            
+                            // 충돌 감지
+                            if (voidSquare.x < otherBounds.x + otherBounds.width &&
+                                voidSquare.x + voidSquare.width > otherBounds.x &&
+                                voidSquare.y < otherBounds.y + otherBounds.height &&
+                                voidSquare.y + voidSquare.height > otherBounds.y) {
+                                
+                                // 다른 블럭을 흡수 (제거)
+                                this.smallSquares.splice(i, 1);
+                                
+                                // 인덱스 조정 (제거된 블럭이 void 블럭보다 앞에 있었으면)
+                                if (i < voidIndex) {
+                                    voidIndex--;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
+        updateFruits() {
+            // 열매 업데이트
+            for (let i = this.fruits.length - 1; i >= 0; i--) {
+                const fruit = this.fruits[i];
+                
+                // 열매 생명 감소
+                fruit.life--;
+                if (fruit.life <= 0) {
+                    this.fruits.splice(i, 1);
+                    continue;
+                }
+                
+                if (fruit.isGrowing) {
+                    // 열매 성장 (점점 커짐)
+                    fruit.growthTimer++;
+                    if (fruit.growthTimer < 60) { // 1초간 성장
+                        const growthProgress = fruit.growthTimer / 60;
+                        const currentSize = 4 + (fruit.maxSize - 4) * growthProgress; // 4픽셀에서 시작
+                        fruit.width = currentSize;
+                        fruit.height = currentSize;
+                        
+                        // 중앙 정렬 유지
+                        fruit.x = fruit.x + (fruit.width - fruit.width) / 2;
+                    } else {
+                        // 성장 완료 - 2초 대기 후 떨어짐
+                        fruit.fallTimer++;
+                        if (fruit.fallTimer >= 120) { // 2초 대기
+                            fruit.isGrowing = false;
+                            fruit.fallTimer = 0;
+                        }
+                    }
+                } else {
+                    // 열매 중력 적용 (떨어짐)
+                    fruit.y += 0.5;
+                    
+                    // 바닥에 닿으면 일반 블럭으로 변환 (완전체 크기로)
+                    if (fruit.y + fruit.height >= this.ground.y) {
+                        // 일반 블럭으로 변환 (완전체 크기)
+                        const block = {
+                            x: fruit.x,
+                            y: this.ground.y - fruit.maxSize, // 완전체 크기로
+                            width: fruit.maxSize, // 완전체 크기
+                            height: fruit.maxSize, // 완전체 크기
+                            color: fruit.color,
+                            velocityX: 0,
+                            velocityY: 0,
+                            isOnGround: true,
+                            isFruit: true, // 열매에서 변환된 블럭 표시
+                            fruitValue: fruit.value
+                        };
+                        
+                        // 다른 블럭과 겹치지 않도록 위치 조정
+                        this.adjustBlockPosition(block);
+                        
+                        this.smallSquares.push(block);
+                        this.fruits.splice(i, 1);
+                    }
+                }
+            }
+        }
+        
+        adjustBlockPosition(newBlock) {
+            // 다른 블럭과 겹치지 않도록 위치 조정
+            let attempts = 0;
+            const maxAttempts = 50;
+            
+            while (attempts < maxAttempts) {
+                let hasCollision = false;
+                
+                // 기존 블럭들과 충돌 검사
+                for (const existingBlock of this.smallSquares) {
+                    const existingBounds = existingBlock.isPlant ? this.getPlantBounds(existingBlock) : existingBlock;
+                    
+                    if (newBlock.x < existingBounds.x + existingBounds.width &&
+                        newBlock.x + newBlock.width > existingBounds.x &&
+                        newBlock.y < existingBounds.y + existingBounds.height &&
+                        newBlock.y + newBlock.height > existingBounds.y) {
+                        hasCollision = true;
+                        break;
+                    }
+                }
+                
+                if (!hasCollision) {
+                    break; // 충돌이 없으면 위치 확정
+                }
+                
+                // 충돌이 있으면 위치를 조금씩 이동
+                newBlock.x += 5;
+                if (newBlock.x + newBlock.width > this.canvas.width) {
+                    newBlock.x = 0; // 화면 끝에 도달하면 처음으로
+                    newBlock.y -= 5; // 위로 이동
+                }
+                
+                attempts++;
+            }
+        }
+        
+        checkVirusInfection() {
+            // 바이러스 블럭의 감염 기능
+            this.smallSquares.forEach((virusSquare, virusIndex) => {
+                if (virusSquare.isVirus) {
+                    this.smallSquares.forEach((otherSquare, otherIndex) => {
+                        if (otherIndex !== virusIndex && otherSquare !== this.draggedSquare && !otherSquare.isVirus) {
+                            // 식물의 경우 실제 크기 사용
+                            const otherBounds = otherSquare.isPlant ? this.getPlantBounds(otherSquare) : otherSquare;
+                            
+                            // 충돌 감지
+                            if (virusSquare.x < otherBounds.x + otherBounds.width &&
+                                virusSquare.x + virusSquare.width > otherBounds.x &&
+                                virusSquare.y < otherBounds.y + otherBounds.height &&
+                                virusSquare.y + virusSquare.height > otherBounds.y) {
+                                
+                                // 다른 블럭을 바이러스 블럭으로 변환
+                                otherSquare.color = '#8b008b'; // 자멘타색
+                                otherSquare.isVirus = true;
+                                
+                                // 기존 특수 속성 제거 (바이러스가 우선)
+                                otherSquare.isSpecial = false;
+                                otherSquare.isFire = false;
+                                otherSquare.isWater = false;
+                                otherSquare.isSoil = false;
+                                otherSquare.isPlant = false;
+                                otherSquare.isElectric = false;
+                                otherSquare.isSuperElectric = false;
+                                otherSquare.isLight = false;
+                                otherSquare.isIce = false;
+                                otherSquare.isSpace = false;
+                                otherSquare.isVoid = false;
+                                otherSquare.isMagnet = false;
+                                otherSquare.isFruit = false;
+                            }
+                        }
+                    });
+                }
+            });
+        }
+        
+        checkChestStorage() {
+            // 새로 나온 블럭의 보호 마크 제거 (2초 후)
+            this.smallSquares.forEach(square => {
+                if (square.isNewlySpawned && Date.now() - square.spawnTime > 2000) {
+                    square.isNewlySpawned = false;
+                    delete square.spawnTime;
+                }
+            });
+            
+            // 상자 블럭의 저장 기능
+            this.smallSquares.forEach((chestSquare, chestIndex) => {
+                if (chestSquare.isChest) {
+                    this.smallSquares.forEach((otherSquare, otherIndex) => {
+                        if (otherIndex !== chestIndex && otherSquare !== this.draggedSquare && !otherSquare.isChest && !otherSquare.isNewlySpawned) {
+                            // 식물의 경우 실제 크기 사용
+                            const otherBounds = otherSquare.isPlant ? this.getPlantBounds(otherSquare) : otherSquare;
+                            
+                            // 충돌 감지 (정확한 범위로 설정)
+                            if (chestSquare.x - 5 < otherBounds.x + otherBounds.width &&
+                                chestSquare.x + chestSquare.width + 5 > otherBounds.x &&
+                                chestSquare.y - 5 < otherBounds.y + otherBounds.height &&
+                                chestSquare.y + chestSquare.height + 5 > otherBounds.y) {
+                                
+                                // 다른 블럭을 상자에 저장
+                                const storedBlock = {
+                                    color: otherSquare.color,
+                                    isSpecial: otherSquare.isSpecial || false,
+                                    isFire: otherSquare.isFire || false,
+                                    isWater: otherSquare.isWater || false,
+                                    isSoil: otherSquare.isSoil || false,
+                                    isPlant: otherSquare.isPlant || false,
+                                    isElectric: otherSquare.isElectric || false,
+                                    isSuperElectric: otherSquare.isSuperElectric || false,
+                                    isLight: otherSquare.isLight || false,
+                                    isIce: otherSquare.isIce || false,
+                                    isSpace: otherSquare.isSpace || false,
+                                    isVoid: otherSquare.isVoid || false,
+                                    isMagnet: otherSquare.isMagnet || false,
+                                    isVirus: otherSquare.isVirus || false,
+                                    isChest: otherSquare.isChest || false,
+                                    isMovingVoid: otherSquare.isMovingVoid || false,
+                                    isSmoke: otherSquare.isSmoke || false,
+                                    isFog: otherSquare.isFog || false,
+                                    isCloud: otherSquare.isCloud || false,
+                                    isRainCloud: otherSquare.isRainCloud || false,
+                                    isHailCloud: otherSquare.isHailCloud || false,
+                                    isSnowCloud: otherSquare.isSnowCloud || false,
+                                    isSnow: otherSquare.isSnow || false,
+                                    hailTimer: otherSquare.hailTimer || 0,
+                                    snowTimer: otherSquare.snowTimer || 0,
+                                    isFruit: otherSquare.isFruit || false,
+                                    plantGrowth: otherSquare.plantGrowth || 1,
+                                    fruitTimer: otherSquare.fruitTimer || 0,
+                                    icePrice: otherSquare.icePrice || 15,
+                                    iceTimer: otherSquare.iceTimer || 0,
+                                    iceShrinkTimer: otherSquare.iceShrinkTimer || 0,
+                                    fruitValue: otherSquare.fruitValue || 5
+                                };
+                                
+                                chestSquare.storedBlocks.push(storedBlock);
+                                console.log('상자에 블럭 저장:', otherSquare.color, '저장된 개수:', chestSquare.storedBlocks.length);
+                                
+                                // 원본 블럭을 제거 (상자에 저장되었으므로)
+                                this.smallSquares.splice(otherIndex, 1);
+                                
+                                // 인덱스 조정 (제거된 블럭이 상자 블럭보다 앞에 있었으면)
+                                if (otherIndex < chestIndex) {
+                                    chestIndex--;
+                                }
+                            }
+                        }
+                    });
+                }
+            });
+        }
+        
+        checkMovingVoidEffect() {
+            // 움직이는 공허 블럭의 끌림 및 흡수 기능
+            this.smallSquares.forEach((movingVoidSquare, movingVoidIndex) => {
+                if (movingVoidSquare.isMovingVoid) {
+                    let nearestBlock = null;
+                    let nearestDistance = Infinity;
+                    
+                    // 가장 가까운 블럭 찾기
+                    this.smallSquares.forEach((otherSquare, otherIndex) => {
+                        if (otherIndex !== movingVoidIndex && otherSquare !== this.draggedSquare && !otherSquare.isMovingVoid) {
+                            // 식물의 경우 실제 크기 사용
+                            const otherBounds = otherSquare.isPlant ? this.getPlantBounds(otherSquare) : otherSquare;
+                            
+                            // 거리 계산
+                            const dx = otherBounds.x + otherBounds.width/2 - (movingVoidSquare.x + movingVoidSquare.width/2);
+                            const dy = otherBounds.y + otherBounds.height/2 - (movingVoidSquare.y + movingVoidSquare.height/2);
+                            const distance = Math.sqrt(dx * dx + dy * dy);
+                            
+                            if (distance < nearestDistance) {
+                                nearestDistance = distance;
+                                nearestBlock = otherSquare;
+                            }
+                        }
+                    });
+                    
+                    // 가장 가까운 블럭이 있으면 끌려가기 (더 강력하게)
+                    if (nearestBlock && nearestDistance < 300) { // 300픽셀 반경 내로 확대
+                        const otherBounds = nearestBlock.isPlant ? this.getPlantBounds(nearestBlock) : nearestBlock;
+                        
+                        // 끌림 방향 계산
+                        const dx = otherBounds.x + otherBounds.width/2 - (movingVoidSquare.x + movingVoidSquare.width/2);
+                        const dy = otherBounds.y + otherBounds.height/2 - (movingVoidSquare.y + movingVoidSquare.height/2);
+                        const distance = Math.sqrt(dx * dx + dy * dy);
+                        
+                        if (distance > 0) {
+                            // 끌림 속도 (거리가 가까울수록 빠름, 더 강력하게)
+                            const pullSpeed = Math.max(1.0, 5 - distance / 80);
+                            const pullX = (dx / distance) * pullSpeed;
+                            const pullY = (dy / distance) * pullSpeed;
+                            
+                            // 움직이는 공허 블럭을 끌림
+                            movingVoidSquare.velocityX += pullX;
+                            movingVoidSquare.velocityY += pullY;
+                            
+                            // 속도 제한 (더 빠르게)
+                            const maxSpeed = 8;
+                            const currentSpeed = Math.sqrt(movingVoidSquare.velocityX * movingVoidSquare.velocityX + movingVoidSquare.velocityY * movingVoidSquare.velocityY);
+                            if (currentSpeed > maxSpeed) {
+                                movingVoidSquare.velocityX = (movingVoidSquare.velocityX / currentSpeed) * maxSpeed;
+                                movingVoidSquare.velocityY = (movingVoidSquare.velocityY / currentSpeed) * maxSpeed;
+                            }
+                        }
+                    }
+                    
+                    // 다른 블럭과 충돌하면 흡수 (공허블럭처럼 완전히 없애버림)
+                    this.smallSquares.forEach((otherSquare, otherIndex) => {
+                        if (otherIndex !== movingVoidIndex && otherSquare !== this.draggedSquare && !otherSquare.isMovingVoid) {
+                            // 식물의 경우 실제 크기 사용
+                            const otherBounds = otherSquare.isPlant ? this.getPlantBounds(otherSquare) : otherSquare;
+                            
+                            // 충돌 감지 (더 넓은 범위로 설정)
+                            if (movingVoidSquare.x - 5 < otherBounds.x + otherBounds.width &&
+                                movingVoidSquare.x + movingVoidSquare.width + 5 > otherBounds.x &&
+                                movingVoidSquare.y - 5 < otherBounds.y + otherBounds.height &&
+                                movingVoidSquare.y + movingVoidSquare.height + 5 > otherBounds.y) {
+                                
+                                // 다른 블럭을 완전히 흡수 (제거) - 공허블럭처럼
+                                this.smallSquares.splice(otherIndex, 1);
+                            }
+                        }
+                    });
+                }
+            });
         }
         
         checkSquareSquareCollisions() {
@@ -246,11 +1002,15 @@
                     const square1 = this.smallSquares[i];
                     const square2 = this.smallSquares[j];
                     
+                    // 식물의 경우 실제 크기 사용
+                    const bounds1 = square1.isPlant ? this.getPlantBounds(square1) : square1;
+                    const bounds2 = square2.isPlant ? this.getPlantBounds(square2) : square2;
+                    
                     // 충돌 감지
-                    if (square1.x < square2.x + square2.width &&
-                        square1.x + square1.width > square2.x &&
-                        square1.y < square2.y + square2.height &&
-                        square1.y + square1.height > square2.y) {
+                    if (bounds1.x < bounds2.x + bounds2.width &&
+                        bounds1.x + bounds1.width > bounds2.x &&
+                        bounds1.y < bounds2.y + bounds2.height &&
+                        bounds1.y + bounds1.height > bounds2.y) {
                         
                         // 합치기 로직
                         let merged = false;
@@ -283,6 +1043,198 @@
                         // 보라 + 보라 = 하양
                         else if (square1.color === '#8b5cf6' && square2.color === '#8b5cf6') {
                             newColor = '#ffffff';
+                            merged = true;
+                        }
+                        // 연기 + 연기 = 안개
+                        else if ((square1.isSmoke && square2.isSmoke)) {
+                            newColor = '#c0c0c0'; // 밝은 회색 (안개 색상)
+                            merged = true;
+                            newSquare = {
+                                x: (square1.x + square2.x) / 2,
+                                y: (square1.y + square2.y) / 2,
+                                width: 20,
+                                height: 20,
+                                color: '#c0c0c0',
+                                velocityX: 0,
+                                velocityY: 0,
+                                isOnGround: false,
+                                isFog: true // 안개 블럭 표시
+                            };
+                            this.discoveredColors.add('fog_block');
+                        }
+                        // 안개 + 물 = 구름
+                        else if ((square1.isFog && square2.isWater) ||
+                                 (square2.isFog && square1.isWater)) {
+                            newColor = '#e0e0e0'; // 매우 밝은 회색 (구름 색상)
+                            merged = true;
+                            newSquare = {
+                                x: (square1.x + square2.x) / 2,
+                                y: (square1.y + square2.y) / 2,
+                                width: 40, // 더 길게 (2배)
+                                height: 20,
+                                color: '#e0e0e0',
+                                velocityX: 0,
+                                velocityY: 0,
+                                isOnGround: false,
+                                isCloud: true // 구름 블럭 표시
+                            };
+                            this.discoveredColors.add('cloud_block');
+                        }
+                        // 구름 + 눈 = 눈 구름
+                        else if ((square1.isCloud && square2.isSnow) ||
+                                 (square2.isCloud && square1.isSnow)) {
+                            newColor = '#f0f0f0'; // 매우 밝은 회색 (눈 구름 색상)
+                            merged = true;
+                            newSquare = {
+                                x: (square1.x + square2.x) / 2,
+                                y: (square1.y + square2.y) / 2,
+                                width: 40, // 구름처럼 길게
+                                height: 20,
+                                color: '#f0f0f0',
+                                velocityX: 0,
+                                velocityY: 0,
+                                isOnGround: false,
+                                isSnowCloud: true, // 눈 구름 블럭 표시
+                                snowTimer: 0 // 눈 타이머 (35초 = 2100프레임)
+                            };
+                            this.discoveredColors.add('snow_cloud_block');
+                        }
+                        // 구름 + 얼음 = 우박 구름
+                        else if ((square1.isCloud && square2.isIce) ||
+                                 (square2.isCloud && square1.isIce)) {
+                            newColor = '#4169e1'; // 어두운 하늘색 (우박 구름 색상)
+                            merged = true;
+                            newSquare = {
+                                x: (square1.x + square2.x) / 2,
+                                y: (square1.y + square2.y) / 2,
+                                width: 40, // 구름처럼 길게
+                                height: 20,
+                                color: '#4169e1',
+                                velocityX: 0,
+                                velocityY: 0,
+                                isOnGround: false,
+                                isHailCloud: true, // 우박 구름 블럭 표시
+                                hailTimer: 0 // 우박 타이머 (50초 = 3000프레임)
+                            };
+                            this.discoveredColors.add('hail_cloud_block');
+                        }
+                        // 구름 + 물 = 비 구름
+                        else if ((square1.isCloud && square2.isWater) ||
+                                 (square2.isCloud && square1.isWater)) {
+                            newColor = '#606060'; // 어두운 회색 (비 구름 색상)
+                            merged = true;
+                            newSquare = {
+                                x: (square1.x + square2.x) / 2,
+                                y: (square1.y + square2.y) / 2,
+                                width: 40, // 구름처럼 길게
+                                height: 20,
+                                color: '#606060',
+                                velocityX: 0,
+                                velocityY: 0,
+                                isOnGround: false,
+                                isRainCloud: true // 비 구름 블럭 표시
+                            };
+                            this.discoveredColors.add('rain_cloud_block');
+                        }
+                        // 물 + 얼음 = 물
+                        else if ((square1.isWater && square2.isIce) ||
+                                 (square2.isWater && square1.isIce)) {
+                            newColor = '#0000ff'; // 파란색 (물 색상)
+                            merged = true;
+                            newSquare = {
+                                x: (square1.x + square2.x) / 2,
+                                y: (square1.y + square2.y) / 2,
+                                width: 20,
+                                height: 20,
+                                color: '#0000ff',
+                                velocityX: 0,
+                                velocityY: 0,
+                                isOnGround: false,
+                                isWater: true // 물 블럭 표시
+                            };
+                            this.discoveredColors.add('water_block');
+                        }
+                        // 물 + 불 = 연기
+                        else if ((square1.isWater && square2.isFire) ||
+                                 (square2.isWater && square1.isFire)) {
+                            newColor = '#808080'; // 회색 (연기 색상)
+                            merged = true;
+                            newSquare = {
+                                x: (square1.x + square2.x) / 2,
+                                y: (square1.y + square2.y) / 2,
+                                width: 20,
+                                height: 20,
+                                color: '#808080',
+                                velocityX: 0,
+                                velocityY: 0,
+                                isOnGround: false,
+                                isSmoke: true // 연기 블럭 표시
+                            };
+                            this.discoveredColors.add('smoke_block');
+                        }
+                        // 우주 + 하양 = 검은색
+                        else if ((square1.isSpace && square2.color === '#ffffff') ||
+                                 (square2.isSpace && square1.color === '#ffffff')) {
+                            newColor = '#000000';
+                            merged = true;
+                        }
+                        // 회색 + 특성 = 자석
+                        else if ((square1.color === '#808080' && square2.isSpecial) ||
+                                 (square2.color === '#808080' && square1.isSpecial)) {
+                            newColor = '#8b4513';
+                            merged = true;
+                            newSquare = {
+                                x: (square1.x + square2.x) / 2,
+                                y: (square1.y + square2.y) / 2,
+                                width: 20,
+                                height: 20,
+                                color: '#8b4513',
+                                velocityX: 0,
+                                velocityY: 0,
+                                isOnGround: false,
+                                isSpecial: false,
+                                isMagnet: true
+                            };
+                        }
+                        // 특성 + 특성 = 공허
+                        else if (square1.isSpecial && square2.isSpecial) {
+                            newColor = '#000000';
+                            merged = true;
+                            newSquare = {
+                                x: (square1.x + square2.x) / 2,
+                                y: (square1.y + square2.y) / 2,
+                                width: 20,
+                                height: 20,
+                                color: '#000000',
+                                velocityX: 0,
+                                velocityY: 0,
+                                isOnGround: false,
+                                isSpecial: false,
+                                isVoid: true
+                            };
+                        }
+                        // 특성 + 하양 = 우주 (최우선순위)
+                        else if ((square1.isSpecial && square2.color === '#ffffff') ||
+                                 (square2.isSpecial && square1.color === '#ffffff')) {
+                            newColor = '#000080';
+                            merged = true;
+                            newSquare = {
+                                x: (square1.x + square2.x) / 2,
+                                y: (square1.y + square2.y) / 2,
+                                width: 20,
+                                height: 20,
+                                color: '#000080',
+                                velocityX: 0,
+                                velocityY: 0,
+                                isOnGround: false,
+                                isSpecial: false,
+                                isSpace: true
+                            };
+                        }
+                        // 검은색 + 하양 = 회색
+                        else if ((square1.color === '#000000' && square2.color === '#ffffff') ||
+                                 (square2.color === '#000000' && square1.color === '#ffffff')) {
+                            newColor = '#808080';
                             merged = true;
                         }
                         // 하양 + 하양 = 특성
@@ -346,6 +1298,34 @@
                             newColor = '#ff00ff';
                             merged = true;
                         }
+                        // 주황 + 자홍 = 노랑
+                        else if ((square1.color === '#ffa500' && square2.color === '#ff00ff') ||
+                                 (square1.color === '#ff00ff' && square2.color === '#ffa500')) {
+                            newColor = '#ffff00';
+                            merged = true;
+                        }
+                        // 노랑 + 특성 = 전기
+                        else if ((square1.color === '#ffff00' && square2.isSpecial) ||
+                                 (square2.color === '#ffff00' && square1.isSpecial)) {
+                            newColor = '#00ffff';
+                            merged = true;
+                            newSquare = {
+                                ...square1,
+                                isSpecial: false,
+                                isElectric: true
+                            };
+                        }
+                        // 특성 + 그린 = 빛
+                        else if ((square1.isSpecial && square2.color === '#22c55e') ||
+                                 (square2.isSpecial && square1.color === '#22c55e')) {
+                            newColor = '#ffff00';
+                            merged = true;
+                            newSquare = {
+                                ...square1,
+                                isSpecial: false,
+                                isLight: true
+                            };
+                        }
                         // 특성 + 갈색 = 흙
                         else if ((square1.isSpecial && square2.color === '#8b4513') ||
                                  (square2.isSpecial && square1.color === '#8b4513')) {
@@ -358,6 +1338,34 @@
                                 maxEatCount: 5
                             };
                         }
+                        // 특성 + 청록 = 눈
+                        else if ((square1.isSpecial && square2.color === '#00ffff') ||
+                                 (square2.isSpecial && square1.color === '#00ffff')) {
+                            newColor = '#ffffff'; // 하얀색 (눈 색상)
+                            merged = true;
+                            newSquare = {
+                                x: (square1.x + square2.x) / 2,
+                                y: (square1.y + square2.y) / 2,
+                                width: 20,
+                                height: 20,
+                                color: '#ffffff',
+                                velocityX: 0,
+                                velocityY: 0,
+                                isOnGround: false,
+                                isSnow: true // 눈 블럭 표시
+                            };
+                            this.discoveredColors.add('snow_block');
+                        }
+                        // 전기 + 물 = 강력한 전기
+                        else if ((square1.isElectric && square2.isWater) ||
+                                 (square2.isElectric && square1.isWater)) {
+                            newColor = '#4b0082';
+                            merged = true;
+                            newSquare = {
+                                ...square1,
+                                isSuperElectric: true
+                            };
+                        }
                         // 물 + 흙 = 식물
                         else if ((square1.isWater && square2.isSoil) ||
                                  (square2.isWater && square1.isSoil)) {
@@ -366,7 +1374,87 @@
                             newSquare = {
                                 ...square1,
                                 isPlant: true,
-                                fruitTimer: 0
+                                fruitTimer: 0,
+                                plantGrowth: 1
+                            };
+                        }
+                        // 자홍 + 특성 = 바이러스
+                        else if ((square1.color === '#ff00ff' && square2.isSpecial) ||
+                                 (square2.color === '#ff00ff' && square1.isSpecial)) {
+                            newColor = '#8b008b'; // 자멘타색
+                            merged = true;
+                            newSquare = {
+                                x: (square1.x + square2.x) / 2,
+                                y: (square1.y + square2.y) / 2,
+                                width: 20,
+                                height: 20,
+                                color: '#8b008b',
+                                velocityX: 0,
+                                velocityY: 0,
+                                isOnGround: false,
+                                isSpecial: false,
+                                isVirus: true
+                            };
+                            this.discoveredColors.add('virus_block');
+                        }
+                        // 검은색 + 특성 = 상자 (우선순위 높임)
+                        if ((square1.color === '#000000' && square2.isSpecial) ||
+                            (square2.color === '#000000' && square1.isSpecial)) {
+                            newColor = '#d2b48c'; // 연한 갈색
+                            merged = true;
+                            newSquare = {
+                                x: (square1.x + square2.x) / 2,
+                                y: (square1.y + square2.y) / 2,
+                                width: 20,
+                                height: 20,
+                                color: '#d2b48c',
+                                velocityX: 0,
+                                velocityY: 0,
+                                isOnGround: false,
+                                isSpecial: false,
+                                isChest: true,
+                                storedBlocks: [] // 저장된 블럭들
+                            };
+                            this.discoveredColors.add('chest_block');
+                        }
+                        // 자석 + 공허 = 움직이는 공허
+                        else if ((square1.isMagnet && square2.isVoid) ||
+                                 (square2.isMagnet && square1.isVoid)) {
+                            newColor = '#8b0000'; // 어두운 빨강
+                            merged = true;
+                            newSquare = {
+                                x: (square1.x + square2.x) / 2,
+                                y: (square1.y + square2.y) / 2,
+                                width: 20,
+                                height: 20,
+                                color: '#8b0000',
+                                velocityX: 0,
+                                velocityY: 0,
+                                isOnGround: false,
+                                isSpecial: false,
+                                isMagnet: false,
+                                isVoid: false,
+                                isMovingVoid: true
+                            };
+                            this.discoveredColors.add('moving_void_block');
+                        }
+                        // 식물 + 물 = 식물 (성장)
+                        else if ((square1.isPlant && square2.isWater) ||
+                                 (square2.isPlant && square1.isWater)) {
+                            newColor = '#90ee90';
+                            merged = true;
+                            const plantSquare = square1.isPlant ? square1 : square2;
+                            const waterSquare = square1.isWater ? square1 : square2;
+                            
+                            // 최대 50번까지 성장 가능
+                            const newGrowth = Math.min((plantSquare.plantGrowth || 1) + 1, 50);
+                            
+                            newSquare = {
+                                ...plantSquare,
+                                isPlant: true,
+                                fruitTimer: 0,
+                                plantGrowth: newGrowth,
+                                fruitLevel: Math.floor((newGrowth - 1) / 5) // 5번마다 열매 레벨 업
                             };
                         }
                         
@@ -375,6 +1463,20 @@
                             if (!this.discoveredColors.has(newColor)) {
                                 this.discoveredColors.add(newColor);
                                 this.newBlockMessageFrames = 120; // 2초간 표시
+                            }
+                            
+                            // 특수 블럭의 경우 특별히 처리
+                            if (newSquare && newSquare.isIce) {
+                                this.discoveredColors.add('ice_block');
+                            }
+                            if (newSquare && newSquare.isSpace) {
+                                this.discoveredColors.add('space_block');
+                            }
+                            if (newSquare && newSquare.isVoid) {
+                                this.discoveredColors.add('void_block');
+                            }
+                            if (newSquare && newSquare.isMagnet) {
+                                this.discoveredColors.add('magnet_block');
                             }
                             
                             // 새 네모 생성
@@ -465,11 +1567,14 @@
         checkSellZoneCollisions() {
             this.smallSquares.forEach((square, index) => {
                 if (square !== this.draggedSquare) {
+                    // 식물의 경우 실제 크기 사용
+                    const bounds = square.isPlant ? this.getPlantBounds(square) : square;
+                    
                     // 판매 구역과 충돌 감지
-                    if (square.x < this.sellZone.x + this.sellZone.width &&
-                        square.x + square.width > this.sellZone.x &&
-                        square.y < this.sellZone.y + this.sellZone.height &&
-                        square.y + square.height > this.sellZone.y) {
+                    if (bounds.x < this.sellZone.x + this.sellZone.width &&
+                        bounds.x + bounds.width > this.sellZone.x &&
+                        bounds.y < this.sellZone.y + this.sellZone.height &&
+                        bounds.y + bounds.height > this.sellZone.y) {
                         
                         // 판매 가격 계산
                         let sellPrice = 1;
@@ -482,17 +1587,106 @@
                         else if (square.color === '#ffa500') sellPrice = 4; // 주황
                         else if (square.color === '#d8b4fe') sellPrice = 4; // 연보라
                         else if (square.color === '#ff00ff') sellPrice = 6; // 자홍
+                        else if (square.color === '#ffff00') sellPrice = 5; // 노랑
                         else if (square.color === '#8b4513') sellPrice = 5; // 갈색
                         else if (square.color === '#ffffff') sellPrice = 7; // 하양
                         else if (square.isSpecial) sellPrice = 1; // 특성
                         else if (square.isFire) sellPrice = 10; // 불
                         else if (square.isWater) sellPrice = 10; // 물
                         else if (square.isSoil) sellPrice = 5 + square.eatCount * 2; // 흙
-                        else if (square.isPlant) sellPrice = 15; // 식물
+                        else if (square.isPlant) {
+                            const growth = square.plantGrowth || 1;
+                            sellPrice = 15 + (growth - 1) * 1; // 성장할 때마다 1원씩 증가
+                        }
+                        else if (square.isElectric) sellPrice = 12; // 전기
+                        else if (square.isSuperElectric) sellPrice = 20; // 강력한 전기
+                        else if (square.isLight) sellPrice = 18; // 빛
+                        else if (square.isIce) sellPrice = square.icePrice; // 얼음
+                        else if (square.isSpace) sellPrice = 25; // 우주
+                        else if (square.isVoid) sellPrice = 50; // 공허
+                        else if (square.isMagnet) sellPrice = 40; // 자석
+                        else if (square.isVirus) sellPrice = 45; // 바이러스
+                        else if (square.isChest) {
+                            sellPrice = 50; // 상자 기본 가격
+                            
+                            // 저장된 블럭들의 가격도 함께 계산
+                            if (square.storedBlocks && square.storedBlocks.length > 0) {
+                                square.storedBlocks.forEach(storedBlock => {
+                                    let storedPrice = 0;
+                                    
+                                    // 저장된 블럭의 가격 계산
+                                    if (storedBlock.isSpecial) storedPrice = 20;
+                                    else if (storedBlock.isFire) storedPrice = 15;
+                                    else if (storedBlock.isWater) storedPrice = 10;
+                                    else if (storedBlock.isSoil) storedPrice = 8;
+                                    else if (storedBlock.isPlant) storedPrice = 12 + (storedBlock.plantGrowth || 1) - 1;
+                                    else if (storedBlock.isElectric) storedPrice = 18;
+                                    else if (storedBlock.isSuperElectric) storedPrice = 25;
+                                    else if (storedBlock.isLight) storedPrice = 22;
+                                    else if (storedBlock.isIce) storedPrice = storedBlock.icePrice || 15;
+                                    else if (storedBlock.isSpace) storedPrice = 25;
+                                    else if (storedBlock.isVoid) storedPrice = 50;
+                                    else if (storedBlock.isMagnet) storedPrice = 40;
+                                    else if (storedBlock.isVirus) storedPrice = 45;
+                                    else if (storedBlock.isChest) storedPrice = 50;
+                                    else if (storedBlock.isMovingVoid) storedPrice = 100;
+                                    else if (storedBlock.isSmoke) storedPrice = 12;
+                                    else if (storedBlock.isFog) storedPrice = 15;
+                                    else if (storedBlock.isCloud) storedPrice = 20;
+                                    else if (storedBlock.isRainCloud) storedPrice = 25;
+                                    else if (storedBlock.isHailCloud) storedPrice = 30;
+                                    else if (storedBlock.isSnowCloud) storedPrice = 28;
+                                    else if (storedBlock.isSnow) storedPrice = 18;
+                                    else if (storedBlock.isFruit) storedPrice = storedBlock.fruitValue || 5;
+                                    else if (storedBlock.color === '#000000') storedPrice = 30;
+                                    else if (storedBlock.color === '#808080') storedPrice = 35;
+                                    else if (storedBlock.color === '#ff0000') storedPrice = 5;
+                                    else if (storedBlock.color === '#0000ff') storedPrice = 5;
+                                    else if (storedBlock.color === '#00ff00') storedPrice = 5;
+                                    else if (storedBlock.color === '#ffff00') storedPrice = 5;
+                                    else if (storedBlock.color === '#800080') storedPrice = 5;
+                                    else if (storedBlock.color === '#ffa500') storedPrice = 5;
+                                    else if (storedBlock.color === '#ffc0cb') storedPrice = 5;
+                                    else if (storedBlock.color === '#ffffff') storedPrice = 5;
+                                    else if (storedBlock.color === '#8b4513') storedPrice = 5;
+                                    else if (storedBlock.color === '#00ffff') storedPrice = 5;
+                                    else if (storedBlock.color === '#ff00ff') storedPrice = 5;
+                                    else if (storedBlock.color === '#adff2f') storedPrice = 5;
+                                    else storedPrice = 5; // 기본 가격
+                                    
+                                    sellPrice += storedPrice;
+                                });
+                                
+                                console.log('상자 판매: 기본 가격 50 + 저장된 블럭들', square.storedBlocks.length, '개 가격', sellPrice - 50, '= 총', sellPrice);
+                            }
+                        }
+                        else if (square.isMovingVoid) sellPrice = 100; // 움직이는 공허
+                        else if (square.isSmoke) sellPrice = 12; // 연기
+                        else if (square.isFog) sellPrice = 15; // 안개
+                        else if (square.isCloud) sellPrice = 20; // 구름
+                        else if (square.isRainCloud) sellPrice = 25; // 비 구름
+                        else if (square.isHailCloud) sellPrice = 30; // 우박 구름
+                        else if (square.isSnowCloud) sellPrice = 28; // 눈 구름
+                        else if (square.isSnow) sellPrice = 18; // 눈
+                        else if (square.color === '#000000') sellPrice = 30; // 검은색
+                        else if (square.color === '#808080') sellPrice = 35; // 회색
+                        else if (square.isFruit) sellPrice = square.fruitValue; // 열매에서 변환된 블럭
                         
                         this.money += sellPrice;
                         this.smallSquares.splice(index, 1);
                     }
+                }
+            });
+            
+            // 열매 판매
+            this.fruits.forEach((fruit, index) => {
+                if (fruit.x < this.sellZone.x + this.sellZone.width &&
+                    fruit.x + fruit.width > this.sellZone.x &&
+                    fruit.y < this.sellZone.y + this.sellZone.height &&
+                    fruit.y + fruit.height > this.sellZone.y) {
+                    
+                    this.money += fruit.value;
+                    this.fruits.splice(index, 1);
                 }
             });
         }
@@ -652,7 +1846,7 @@
                         x: square.x + Math.random() * square.width,
                         y: square.y + Math.random() * square.height,
                         radius: Math.random() * 15 + 5,
-                        color: '#808080',
+                        color: '#404040', // 더 어두운 회색
                         life: 120,
                         maxLife: 120
                     });
@@ -665,6 +1859,223 @@
                 if (circle.life <= 0) {
                     this.smokeCircles.splice(index, 1);
                 }
+            });
+        }
+        
+        updateFogCircles() {
+            // 안개 네모에서 안개 생성
+            this.smallSquares.forEach(square => {
+                if (square.isFog && Math.random() < 0.08) { // 더 자주 생성
+                    this.fogCircles.push({
+                        x: square.x + Math.random() * square.width,
+                        y: square.y + Math.random() * square.height,
+                        radius: Math.random() * 25 + 10, // 더 큰 범위
+                        color: '#ffffff', // 완전히 하얀색
+                        life: 150,
+                        maxLife: 150
+                    });
+                }
+            });
+            
+            // 안개 업데이트
+            this.fogCircles.forEach((circle, index) => {
+                circle.life--;
+                if (circle.life <= 0) {
+                    this.fogCircles.splice(index, 1);
+                }
+            });
+        }
+        
+        updateRainDrops() {
+            // 비 구름에서 비 생성
+            this.smallSquares.forEach(square => {
+                if (square.isRainCloud && Math.random() < 0.1) {
+                    this.rainDrops.push({
+                        x: square.x + Math.random() * square.width,
+                        y: square.y + square.height,
+                        velocityY: Math.random() * 3 + 2,
+                        color: '#4169e1', // 파란색
+                        life: 100,
+                        maxLife: 100
+                    });
+                }
+            });
+            
+            // 비 업데이트
+            this.rainDrops.forEach((drop, index) => {
+                drop.y += drop.velocityY;
+                drop.life--;
+                if (drop.life <= 0 || drop.y > this.canvas.height) {
+                    this.rainDrops.splice(index, 1);
+                }
+            });
+        }
+        
+        updateHailStones() {
+            // 우박 구름에서 우박 생성 (50초마다)
+            this.smallSquares.forEach(square => {
+                if (square.isHailCloud) {
+                    square.hailTimer = (square.hailTimer || 0) + 1;
+                    
+                    // 50초(2000프레임)마다 우박 생성
+                    if (square.hailTimer >= 2000       
+                    ) {
+                        square.hailTimer = 0; // 타이머 리셋
+                        
+                        this.hailStones.push({
+                            x: square.x + Math.random() * square.width,
+                            y: square.y + square.height,
+                            velocityY: Math.random() * 4 + 3,
+                            size: Math.random() * 8 + 6, // 중간 크기
+                            color: '#87ceeb', // 하늘색
+                            life: 120,
+                            maxLife: 120
+                        });
+                    }
+                }
+            });
+            
+            // 우박 업데이트
+            this.hailStones.forEach((stone, index) => {
+                stone.y += stone.velocityY;
+                stone.life--;
+                if (stone.life <= 0 || stone.y > this.canvas.height) {
+                    this.hailStones.splice(index, 1);
+                }
+            });
+        }
+        
+        updateSnowFlakes() {
+            // 눈 구름에서 눈 생성 (35초마다)
+            this.smallSquares.forEach(square => {
+                if (square.isSnowCloud) {
+                    square.snowTimer = (square.snowTimer || 0) + 1;
+                    
+                    // 35초(300프레임)마다 눈 생성
+                    if (square.snowTimer >= 500
+                    ) {
+                        square.snowTimer = 0; // 타이머 리셋
+                        
+                        this.snowFlakes.push({
+                            x: square.x + Math.random() * square.width,
+                            y: square.y + square.height,
+                            velocityY: Math.random() * 2 + 1,
+                            velocityX: (Math.random() - 0.5) * 0.5, // 좌우 흔들림
+                            size: Math.random() * 4 + 2,
+                            color: '#ffffff', // 하얀색
+                            life: 200,
+                            maxLife: 200
+                        });
+                    }
+                }
+            });
+            
+            // 눈 업데이트
+            this.snowFlakes.forEach((flake, index) => {
+                flake.y += flake.velocityY;
+                flake.x += flake.velocityX;
+                flake.life--;
+                if (flake.life <= 0 || flake.y > this.canvas.height) {
+                    this.snowFlakes.splice(index, 1);
+                }
+            });
+        }
+        
+        checkHailCollisions() {
+            // 우박이 블럭과 충돌하는지 확인
+            this.hailStones.forEach((stone, stoneIndex) => {
+                this.smallSquares.forEach((square, squareIndex) => {
+                    if (square !== this.draggedSquare) {
+                        // 충돌 감지
+                        if (stone.x < square.x + square.width &&
+                            stone.x + stone.size > square.x &&
+                            stone.y < square.y + square.height &&
+                            stone.y + stone.size > square.y) {
+                            
+                            // 우박을 맞은 블럭의 가치를 5원 감소
+                            if (square.isSpecial) square.sellPrice = Math.max(0, (square.sellPrice || 20) - 5);
+                            else if (square.isFire) square.sellPrice = Math.max(0, (square.sellPrice || 15) - 5);
+                            else if (square.isWater) square.sellPrice = Math.max(0, (square.sellPrice || 10) - 5);
+                            else if (square.isSoil) square.sellPrice = Math.max(0, (square.sellPrice || 8) - 5);
+                            else if (square.isPlant) square.sellPrice = Math.max(0, (square.sellPrice || 12) - 5);
+                            else if (square.isElectric) square.sellPrice = Math.max(0, (square.sellPrice || 18) - 5);
+                            else if (square.isSuperElectric) square.sellPrice = Math.max(0, (square.sellPrice || 25) - 5);
+                            else if (square.isLight) square.sellPrice = Math.max(0, (square.sellPrice || 22) - 5);
+                            else if (square.isIce) square.sellPrice = Math.max(0, (square.sellPrice || 15) - 5);
+                            else if (square.isSpace) square.sellPrice = Math.max(0, (square.sellPrice || 25) - 5);
+                            else if (square.isVoid) square.sellPrice = Math.max(0, (square.sellPrice || 50) - 5);
+                            else if (square.isMagnet) square.sellPrice = Math.max(0, (square.sellPrice || 40) - 5);
+                            else if (square.isVirus) square.sellPrice = Math.max(0, (square.sellPrice || 45) - 5);
+                            else if (square.isChest) square.sellPrice = Math.max(0, (square.sellPrice || 50) - 5);
+                            else if (square.isMovingVoid) square.sellPrice = Math.max(0, (square.sellPrice || 100) - 5);
+                            else if (square.isSmoke) square.sellPrice = Math.max(0, (square.sellPrice || 12) - 5);
+                            else if (square.isFog) square.sellPrice = Math.max(0, (square.sellPrice || 15) - 5);
+                            else if (square.isCloud) square.sellPrice = Math.max(0, (square.sellPrice || 20) - 5);
+                            else if (square.isRainCloud) square.sellPrice = Math.max(0, (square.sellPrice || 25) - 5);
+                            else if (square.isHailCloud) square.sellPrice = Math.max(0, (square.sellPrice || 30) - 5);
+                            else if (square.isSnowCloud) square.sellPrice = Math.max(0, (square.sellPrice || 28) - 5);
+                            else if (square.isSnow) square.sellPrice = Math.max(0, (square.sellPrice || 18) - 5);
+                            else square.sellPrice = Math.max(0, (square.sellPrice || 5) - 5);
+                            
+                            // 가치가 0원 이하가 되면 블럭 제거
+                            if (square.sellPrice <= 0) {
+                                this.smallSquares.splice(squareIndex, 1);
+                            }
+                            
+                            // 우박 제거
+                            this.hailStones.splice(stoneIndex, 1);
+                        }
+                    }
+                });
+            });
+        }
+        
+        checkSnowCollisions() {
+            // 눈이 블럭과 충돌하는지 확인
+            this.snowFlakes.forEach((flake, flakeIndex) => {
+                this.smallSquares.forEach((square, squareIndex) => {
+                    if (square !== this.draggedSquare) {
+                        // 충돌 감지
+                        if (flake.x < square.x + square.width &&
+                            flake.x + flake.size > square.x &&
+                            flake.y < square.y + square.height &&
+                            flake.y + flake.size > square.y) {
+                            
+                            // 눈을 맞은 블럭의 가치를 1원 감소
+                            if (square.isSpecial) square.sellPrice = Math.max(0, (square.sellPrice || 20) - 1);
+                            else if (square.isFire) square.sellPrice = Math.max(0, (square.sellPrice || 15) - 1);
+                            else if (square.isWater) square.sellPrice = Math.max(0, (square.sellPrice || 10) - 1);
+                            else if (square.isSoil) square.sellPrice = Math.max(0, (square.sellPrice || 8) - 1);
+                            else if (square.isPlant) square.sellPrice = Math.max(0, (square.sellPrice || 12) - 1);
+                            else if (square.isElectric) square.sellPrice = Math.max(0, (square.sellPrice || 18) - 1);
+                            else if (square.isSuperElectric) square.sellPrice = Math.max(0, (square.sellPrice || 25) - 1);
+                            else if (square.isLight) square.sellPrice = Math.max(0, (square.sellPrice || 22) - 1);
+                            else if (square.isIce) square.sellPrice = Math.max(0, (square.sellPrice || 15) - 1);
+                            else if (square.isSpace) square.sellPrice = Math.max(0, (square.sellPrice || 25) - 1);
+                            else if (square.isVoid) square.sellPrice = Math.max(0, (square.sellPrice || 50) - 1);
+                            else if (square.isMagnet) square.sellPrice = Math.max(0, (square.sellPrice || 40) - 1);
+                            else if (square.isVirus) square.sellPrice = Math.max(0, (square.sellPrice || 45) - 1);
+                            else if (square.isChest) square.sellPrice = Math.max(0, (square.sellPrice || 50) - 1);
+                            else if (square.isMovingVoid) square.sellPrice = Math.max(0, (square.sellPrice || 100) - 1);
+                            else if (square.isSmoke) square.sellPrice = Math.max(0, (square.sellPrice || 12) - 1);
+                            else if (square.isFog) square.sellPrice = Math.max(0, (square.sellPrice || 15) - 1);
+                            else if (square.isCloud) square.sellPrice = Math.max(0, (square.sellPrice || 20) - 1);
+                            else if (square.isRainCloud) square.sellPrice = Math.max(0, (square.sellPrice || 25) - 1);
+                            else if (square.isHailCloud) square.sellPrice = Math.max(0, (square.sellPrice || 30) - 1);
+                            else if (square.isSnowCloud) square.sellPrice = Math.max(0, (square.sellPrice || 28) - 1);
+                            else if (square.isSnow) square.sellPrice = Math.max(0, (square.sellPrice || 18) - 1);
+                            else square.sellPrice = Math.max(0, (square.sellPrice || 5) - 1);
+                            
+                            // 가치가 0원 이하가 되면 블럭 제거
+                            if (square.sellPrice <= 0) {
+                                this.smallSquares.splice(squareIndex, 1);
+                            }
+                            
+                            // 눈 제거
+                            this.snowFlakes.splice(flakeIndex, 1);
+                        }
+                    }
+                });
             });
         }
         
@@ -685,6 +2096,180 @@
                 buyPrice: 2
             });
 
+            // 얼음 블럭이 발견되었으면 상점에 추가
+            if (this.discoveredColors.has('ice_block')) {
+                this.shopItems.push({
+                    name: '얼음 네모',
+                    color: '#87ceeb',
+                    sellPrice: 15,
+                    buyPrice: 23,
+                    isIce: true
+                });
+            }
+            
+            // 우주 블럭이 발견되었으면 상점에 추가
+            if (this.discoveredColors.has('space_block')) {
+                this.shopItems.push({
+                    name: '우주 네모',
+                    color: '#000080',
+                    sellPrice: 25,
+                    buyPrice: 38,
+                    isSpace: true
+                });
+            }
+            
+            // 검은색 블럭이 발견되었으면 상점에 추가
+            if (this.discoveredColors.has('#000000')) {
+                this.shopItems.push({
+                    name: '검은 네모',
+                    color: '#000000',
+                    sellPrice: 30,
+                    buyPrice: 45
+                });
+            }
+            
+            // 회색 블럭이 발견되었으면 상점에 추가
+            if (this.discoveredColors.has('#808080')) {
+                this.shopItems.push({
+                    name: '회색 네모',
+                    color: '#808080',
+                    sellPrice: 35,
+                    buyPrice: 53
+                });
+            }
+            
+            // 공허 블럭이 발견되었으면 상점에 추가
+            if (this.discoveredColors.has('void_block')) {
+                this.shopItems.push({
+                    name: '공허 네모',
+                    color: '#000000',
+                    sellPrice: 50,
+                    buyPrice: 75,
+                    isVoid: true
+                });
+            }
+            
+            // 자석 블럭이 발견되었으면 상점에 추가
+            if (this.discoveredColors.has('magnet_block')) {
+                this.shopItems.push({
+                    name: '자석 네모',
+                    color: '#8b4513',
+                    sellPrice: 40,
+                    buyPrice: 60,
+                    isMagnet: true
+                });
+            }
+            
+            // 바이러스 블럭이 발견되었으면 상점에 추가
+            if (this.discoveredColors.has('virus_block')) {
+                this.shopItems.push({
+                    name: '바이러스 네모',
+                    color: '#8b008b',
+                    sellPrice: 45,
+                    buyPrice: 68,
+                    isVirus: true
+                });
+            }
+            
+            // 상자 블럭이 발견되었으면 상점에 추가
+            if (this.discoveredColors.has('chest_block')) {
+                this.shopItems.push({
+                    name: '상자 네모',
+                    color: '#d2b48c',
+                    sellPrice: 50,
+                    buyPrice: 75,
+                    isChest: true
+                });
+            }
+            
+            // 움직이는 공허 블럭이 발견되었으면 상점에 추가
+            if (this.discoveredColors.has('moving_void_block')) {
+                this.shopItems.push({
+                    name: '움직이는 공허 네모',
+                    color: '#8b0000',
+                    sellPrice: 100,
+                    buyPrice: 150,
+                    isMovingVoid: true
+                });
+            }
+            
+            // 연기 블럭이 발견되었으면 상점에 추가
+            if (this.discoveredColors.has('smoke_block')) {
+                this.shopItems.push({
+                    name: '연기 네모',
+                    color: '#808080',
+                    sellPrice: 12,
+                    buyPrice: 18,
+                    isSmoke: true
+                });
+            }
+            
+            // 안개 블럭이 발견되었으면 상점에 추가
+            if (this.discoveredColors.has('fog_block')) {
+                this.shopItems.push({
+                    name: '안개 네모',
+                    color: '#c0c0c0',
+                    sellPrice: 15,
+                    buyPrice: 23,
+                    isFog: true
+                });
+            }
+            
+            // 구름 블럭이 발견되었으면 상점에 추가
+            if (this.discoveredColors.has('cloud_block')) {
+                this.shopItems.push({
+                    name: '구름 네모',
+                    color: '#e0e0e0',
+                    sellPrice: 20,
+                    buyPrice: 30,
+                    isCloud: true
+                });
+            }
+            
+            // 비 구름 블럭이 발견되었으면 상점에 추가
+            if (this.discoveredColors.has('rain_cloud_block')) {
+                this.shopItems.push({
+                    name: '비 구름 네모',
+                    color: '#606060',
+                    sellPrice: 25,
+                    buyPrice: 38,
+                    isRainCloud: true
+                });
+            }
+            
+            // 우박 구름 블럭이 발견되었으면 상점에 추가
+            if (this.discoveredColors.has('hail_cloud_block')) {
+                this.shopItems.push({
+                    name: '우박 구름 네모',
+                    color: '#4169e1',
+                    sellPrice: 30,
+                    buyPrice: 45,
+                    isHailCloud: true
+                });
+            }
+            
+            // 눈 구름 블럭이 발견되었으면 상점에 추가
+            if (this.discoveredColors.has('snow_cloud_block')) {
+                this.shopItems.push({
+                    name: '눈 구름 네모',
+                    color: '#f0f0f0',
+                    sellPrice: 28,
+                    buyPrice: 42,
+                    isSnowCloud: true
+                });
+            }
+            
+            // 눈 블럭이 발견되었으면 상점에 추가
+            if (this.discoveredColors.has('snow_block')) {
+                this.shopItems.push({
+                    name: '눈 네모',
+                    color: '#ffffff',
+                    sellPrice: 18,
+                    buyPrice: 27,
+                    isSnow: true
+                });
+            }
+
             // 발견된 색상들을 상점 아이템으로 변환 (빨강/파랑은 중복 방지)
             this.discoveredColors.forEach(color => {
                 if (color === '#ff0000' || color === '#0000ff') {
@@ -702,6 +2287,7 @@
                 else if (color === '#ffa500') { name = '주황 네모'; sellPrice = 4; }
                 else if (color === '#d8b4fe') { name = '연보라 네모'; sellPrice = 4; }
                 else if (color === '#ff00ff') { name = '자홍 네모'; sellPrice = 6; }
+                else if (color === '#ffff00') { name = '노랑 네모'; sellPrice = 5; }
                 else if (color === '#22c55e') { name = '초록 네모'; sellPrice = 5; }
                 else if (color === '#8b4513') { name = '갈색 네모'; sellPrice = 5; }
                 else if (color === '#ffffff') { name = '하양 네모'; sellPrice = 7; }
@@ -709,7 +2295,11 @@
                 else if (color === '#8b0000') { name = '불 네모'; sellPrice = 10; }
                 else if (color === '#87ceeb') { name = '물 네모'; sellPrice = 10; }
                 else if (color === '#654321') { name = '흙 네모'; sellPrice = 5; }
-                else if (color === '#90ee90') { name = '식물 네모'; sellPrice = 15; }
+                else if (color === '#90ee90') { 
+                    name = '식물 네모'; 
+                    sellPrice = 15; // 기본 가격 (성장 단계는 상점에서 구매시 1단계)
+                }
+                else if (color === '#4b0082') { name = '강력한 전기 네모'; sellPrice = 20; }
                 
                 if (name) {
                     this.shopItems.push({
@@ -721,6 +2311,151 @@
                 }
             });
         }
+        
+        updateDevItems() {
+            // 개발자 도구에서는 discoveredColors에 추가하지 않음
+            // (상점에 자동 등록되지 않도록)
+            
+            this.devItems = [
+                // 기본 색상들
+                { name: '빨강', color: '#ff0000' },
+                { name: '파랑', color: '#0000ff' },
+                { name: '청록', color: '#00ffff' },
+                { name: '보라', color: '#8b5cf6' },
+                { name: '초록', color: '#22c55e' },
+                { name: '연두', color: '#adff2f' },
+                { name: '하늘', color: '#87cefa' },
+                { name: '주황', color: '#ffa500' },
+                { name: '연보라', color: '#d8b4fe' },
+                { name: '자홍', color: '#ff00ff' },
+                { name: '노랑', color: '#ffff00' },
+                { name: '갈색', color: '#8b4513' },
+                { name: '하양', color: '#ffffff' },
+                { name: '검정', color: '#000000' },
+                { name: '회색', color: '#808080' },
+                
+                // 특수 블럭들
+                { name: '특성', color: '#9370db', isSpecial: true },
+                { name: '불', color: '#8b0000', isFire: true },
+                { name: '물', color: '#87ceeb', isWater: true },
+                { name: '흙', color: '#654321', isSoil: true },
+                { name: '식물', color: '#90ee90', isPlant: true },
+                { name: '전기', color: '#00ffff', isElectric: true },
+                { name: '슈퍼전기', color: '#4b0082', isSuperElectric: true },
+                { name: '빛', color: '#ffff00', isLight: true },
+                { name: '얼음', color: '#87ceeb', isIce: true },
+                { name: '우주', color: '#000080', isSpace: true },
+                { name: '공허', color: '#000000', isVoid: true },
+                { name: '자석', color: '#8b4513', isMagnet: true },
+                { name: '바이러스', color: '#8b008b', isVirus: true },
+                { name: '상자', color: '#d2b48c', isChest: true },
+                { name: '움직이는공허', color: '#8b0000', isMovingVoid: true },
+                { name: '연기', color: '#808080', isSmoke: true },
+                { name: '안개', color: '#c0c0c0', isFog: true },
+                { name: '구름', color: '#e0e0e0', isCloud: true },
+                { name: '비구름', color: '#606060', isRainCloud: true },
+                { name: '우박구름', color: '#4169e1', isHailCloud: true },
+                { name: '눈구름', color: '#f0f0f0', isSnowCloud: true },
+                { name: '눈', color: '#ffffff', isSnow: true }
+            ];
+        }
+        
+        spawnDevItem(item) {
+            // 개발자 도구에서 블럭 소환
+            const square = {
+                x: this.tunnel.x + this.tunnel.width / 2 - 10,
+                y: this.tunnel.y + this.tunnel.height,
+                width: 20,
+                height: 20,
+                color: item.color,
+                velocityX: 0,
+                velocityY: 0,
+                isOnGround: false
+            };
+            
+            // 특수 속성 복사
+            if (item.isSpecial) square.isSpecial = true;
+            else if (item.isFire) square.isFire = true;
+            else if (item.isWater) square.isWater = true;
+            else if (item.isSoil) {
+                square.isSoil = true;
+                square.eatCount = 0;
+                square.maxEatCount = 5;
+            }
+            else if (item.isPlant) {
+                square.isPlant = true;
+                square.fruitTimer = 0;
+                square.plantGrowth = 1; // 개발자 도구에서 소환시 기본 1단계
+            }
+            else if (item.isElectric) square.isElectric = true;
+            else if (item.isSuperElectric) square.isSuperElectric = true;
+            else if (item.isLight) square.isLight = true;
+            else if (item.isIce) {
+                square.isIce = true;
+                square.icePrice = 15;
+                square.iceTimer = 0;
+                square.iceShrinkTimer = 0;
+                this.discoveredColors.add('ice_block');
+            }
+            else if (item.isSpace) {
+                square.isSpace = true;
+                this.discoveredColors.add('space_block');
+            }
+            else if (item.isVoid) {
+                square.isVoid = true;
+                this.discoveredColors.add('void_block');
+            }
+            else if (item.isMagnet) {
+                square.isMagnet = true;
+                this.discoveredColors.add('magnet_block');
+            }
+            else if (item.isVirus) {
+                square.isVirus = true;
+                this.discoveredColors.add('virus_block');
+            }
+            else if (item.isChest) {
+                square.isChest = true;
+                square.storedBlocks = [];
+                this.discoveredColors.add('chest_block');
+            }
+            else if (item.isMovingVoid) {
+                square.isMovingVoid = true;
+                this.discoveredColors.add('moving_void_block');
+            }
+            else if (item.isSmoke) {
+                square.isSmoke = true;
+                this.discoveredColors.add('smoke_block');
+            }
+            else if (item.isFog) {
+                square.isFog = true;
+                this.discoveredColors.add('fog_block');
+            }
+            else if (item.isCloud) {
+                square.isCloud = true;
+                this.discoveredColors.add('cloud_block');
+            }
+            else if (item.isRainCloud) {
+                square.isRainCloud = true;
+                this.discoveredColors.add('rain_cloud_block');
+            }
+            else if (item.isHailCloud) {
+                square.isHailCloud = true;
+                square.hailTimer = 0; // 우박 타이머 초기화
+                this.discoveredColors.add('hail_cloud_block');
+            }
+            else if (item.isSnowCloud) {
+                square.isSnowCloud = true;
+                square.snowTimer = 0; // 눈 타이머 초기화
+                this.discoveredColors.add('snow_cloud_block');
+            }
+            else if (item.isSnow) {
+                square.isSnow = true;
+                this.discoveredColors.add('snow_block');
+            }
+            
+            this.smallSquares.push(square);
+        }
+        
         
         buyShopItem(item) {
             if (this.money >= item.buyPrice) {
@@ -741,6 +2476,12 @@
                 // 특수 속성 복사
                 if (item.color === '#9370db') square.isSpecial = true;
                 else if (item.color === '#8b0000') square.isFire = true;
+                else if (item.color === '#87ceeb' && item.isIce) {
+                    square.isIce = true;
+                    square.icePrice = 15;
+                    square.iceTimer = 0;
+                    square.iceShrinkTimer = 0;
+                }
                 else if (item.color === '#87ceeb') square.isWater = true;
                 else if (item.color === '#654321') {
                     square.isSoil = true;
@@ -750,6 +2491,57 @@
                 else if (item.color === '#90ee90') {
                     square.isPlant = true;
                     square.fruitTimer = 0;
+                }
+                else if (item.color === '#4b0082') {
+                    square.isSuperElectric = true;
+                }
+                else if (item.color === '#000080' && item.isSpace) {
+                    square.isSpace = true;
+                }
+                else if (item.color === '#000000' && item.isVoid) {
+                    square.isVoid = true;
+                }
+                else if (item.color === '#8b4513' && item.isMagnet) {
+                    square.isMagnet = true;
+                }
+                else if (item.color === '#8b008b' && item.isVirus) {
+                    square.isVirus = true;
+                }
+                else if (item.color === '#d2b48c' && item.isChest) {
+                    square.isChest = true;
+                    square.storedBlocks = [];
+                }
+                else if (item.color === '#8b0000' && item.isMovingVoid) {
+                    square.isMovingVoid = true;
+                }
+                else if (item.color === '#808080' && item.isSmoke) {
+                    square.isSmoke = true;
+                }
+                else if (item.color === '#c0c0c0' && item.isFog) {
+                    square.isFog = true;
+                }
+                else if (item.color === '#e0e0e0' && item.isCloud) {
+                    square.isCloud = true;
+                }
+                else if (item.color === '#606060' && item.isRainCloud) {
+                    square.isRainCloud = true;
+                }
+                else if (item.color === '#4169e1' && item.isHailCloud) {
+                    square.isHailCloud = true;
+                    square.hailTimer = 0; // 우박 타이머 초기화
+                }
+                else if (item.color === '#f0f0f0' && item.isSnowCloud) {
+                    square.isSnowCloud = true;
+                    square.snowTimer = 0; // 눈 타이머 초기화
+                }
+                else if (item.color === '#ffffff' && item.isSnow) {
+                    square.isSnow = true;
+                }
+                else if (item.color === '#000000') {
+                    // 검은색 블럭은 일반 블럭
+                }
+                else if (item.color === '#808080') {
+                    // 회색 블럭은 일반 블럭
                 }
                 
                 this.smallSquares.push(square);
@@ -763,6 +2555,10 @@
                 this.drawLab();
             } else if (this.currentScreen === 'shop') {
                 this.drawShop();
+        } else if (this.currentScreen === 'dev') {
+            this.drawDev();
+        } else if (this.currentScreen === 'chest') {
+            this.drawChest();
             }
         }
         
@@ -819,11 +2615,34 @@
             this.ctx.textAlign = 'center';
             this.ctx.fillText('블럭 상점', this.shopButton.x + this.shopButton.width / 2, this.shopButton.y + this.shopButton.height / 2 + 4);
             
+            // 개발자 도구 버튼
+            this.ctx.fillStyle = '#00ff00';
+            this.ctx.fillRect(this.devButton.x, this.devButton.y, this.devButton.width, this.devButton.height);
+            this.ctx.strokeStyle = '#000000';
+            this.ctx.lineWidth = 2;
+            this.ctx.strokeRect(this.devButton.x, this.devButton.y, this.devButton.width, this.devButton.height);
+            
+            this.ctx.fillStyle = '#000000';
+            this.ctx.font = 'bold 10px Arial';
+            this.ctx.textAlign = 'center';
+            this.ctx.fillText('개발자', this.devButton.x + this.devButton.width / 2, this.devButton.y + this.devButton.height / 2 + 2);
+            this.ctx.fillText('도구', this.devButton.x + this.devButton.width / 2, this.devButton.y + this.devButton.height / 2 + 12);
+            
             // 작은 네모들 그리기
             this.smallSquares.forEach(square => {
-                // 기본 네모
-                this.ctx.fillStyle = square.color;
-                this.ctx.fillRect(square.x, square.y, square.width, square.height);
+                // 기본 네모 (공허 블럭이 아닌 경우만)
+                if (!square.isVoid) {
+                    this.ctx.fillStyle = square.color;
+                    this.ctx.fillRect(square.x, square.y, square.width, square.height);
+                    
+                    // 검정 블럭에 특별한 표시 (공허와 구별)
+                    if (square.color === '#000000' && !square.isVoid) {
+                        this.ctx.fillStyle = '#ffffff';
+                        this.ctx.font = 'bold 10px Arial';
+                        this.ctx.textAlign = 'center';
+                        this.ctx.fillText('B', square.x + square.width/2, square.y + square.height/2 + 3);
+                    }
+                }
                 
                 // 특수 효과들
                 if (square.isSpecial) {
@@ -908,6 +2727,42 @@
                     this.ctx.fillRect(square.x, square.y, square.width, square.height);
                 }
                 
+                if (square.isFog) {
+                    // 안개 네모는 밝은 회색
+                    this.ctx.fillStyle = square.color;
+                    this.ctx.fillRect(square.x, square.y, square.width, square.height);
+                }
+                
+                if (square.isCloud) {
+                    // 구름 네모는 매우 밝은 회색
+                    this.ctx.fillStyle = square.color;
+                    this.ctx.fillRect(square.x, square.y, square.width, square.height);
+                }
+                
+                if (square.isRainCloud) {
+                    // 비 구름 네모는 어두운 회색
+                    this.ctx.fillStyle = square.color;
+                    this.ctx.fillRect(square.x, square.y, square.width, square.height);
+                }
+                
+                if (square.isHailCloud) {
+                    // 우박 구름 네모는 어두운 하늘색
+                    this.ctx.fillStyle = square.color;
+                    this.ctx.fillRect(square.x, square.y, square.width, square.height);
+                }
+                
+                if (square.isSnowCloud) {
+                    // 눈 구름 네모는 매우 밝은 회색
+                    this.ctx.fillStyle = square.color;
+                    this.ctx.fillRect(square.x, square.y, square.width, square.height);
+                }
+                
+                if (square.isSnow) {
+                    // 눈 네모는 하얀색
+                    this.ctx.fillStyle = square.color;
+                    this.ctx.fillRect(square.x, square.y, square.width, square.height);
+                }
+                
                 if (square.isSoil) {
                     // 흙 네모는 갈색 점박이
                     this.ctx.fillStyle = square.color;
@@ -928,12 +2783,187 @@
                 }
                 
                 if (square.isPlant) {
+                    // 식물 네모는 성장 단계에 따라 위로 길어짐
+                    const growth = square.plantGrowth || 1;
+                    const growthHeight = 20 + (growth - 1) * 1; // 성장할 때마다 1픽셀씩 높아짐 (위로 길어짐)
+                    const growthWidth = 20; // 너비는 고정
+                    
+                    // 식물이 위로 길어지도록 y 좌표 조정 (아래로 길어지지 않음)
+                    const plantY = square.y + (20 - growthHeight); // 바닥에서 위로 자라나도록
+                    
                     // 식물 네모는 연두색 효과 추가
                     this.ctx.fillStyle = square.color;
-                    this.ctx.fillRect(square.x, square.y, square.width, square.height);
+                    this.ctx.fillRect(square.x, plantY, growthWidth, growthHeight);
                     
                     // 식물 네모 테두리
                     this.ctx.strokeStyle = '#32cd32'; // 연두색
+                    this.ctx.lineWidth = 2;
+                    this.ctx.strokeRect(square.x - 1, plantY - 1, growthWidth + 2, growthHeight + 2);
+                    
+                    // 성장 단계 표시 (50단계일 때만)
+                    if (growth >= 50) {
+                        this.ctx.fillStyle = '#ffffff';
+                        this.ctx.font = 'bold 8px Arial';
+                        this.ctx.textAlign = 'center';
+                        this.ctx.fillText('MAX', square.x + growthWidth/2, plantY + growthHeight/2 + 3);
+                    }
+                }
+                
+                if (square.isIce) {
+                    // 얼음 네모는 하늘색에 반투명 효과
+                    this.ctx.save();
+                    this.ctx.globalAlpha = 0.8;
+                    this.ctx.fillStyle = '#87ceeb';
+                    this.ctx.fillRect(square.x, square.y, square.width, square.height);
+                    
+                    // 얼음 네모 테두리 (얼음 같은 효과)
+                    this.ctx.strokeStyle = '#b0e0e6';
+                    this.ctx.lineWidth = 2;
+                    this.ctx.strokeRect(square.x - 1, square.y - 1, square.width + 2, square.height + 2);
+                    this.ctx.restore();
+                }
+                
+                if (square.isSpace) {
+                    // 우주 네모는 진한 파란색에 별 효과
+                    this.ctx.fillStyle = '#000080';
+                    this.ctx.fillRect(square.x, square.y, square.width, square.height);
+                    
+                    // 별 효과
+                    this.ctx.fillStyle = '#ffffff';
+                    this.ctx.fillRect(square.x + 2, square.y + 2, 2, 2);
+                    this.ctx.fillRect(square.x + square.width - 4, square.y + 2, 2, 2);
+                    this.ctx.fillRect(square.x + 2, square.y + square.height - 4, 2, 2);
+                    this.ctx.fillRect(square.x + square.width - 4, square.y + square.height - 4, 2, 2);
+                    this.ctx.fillRect(square.x + square.width/2 - 1, square.y + square.height/2 - 1, 2, 2);
+                    
+                    // 우주 네모 테두리
+                    this.ctx.strokeStyle = '#4169e1';
+                    this.ctx.lineWidth = 2;
+                    this.ctx.strokeRect(square.x - 1, square.y - 1, square.width + 2, square.height + 2);
+                }
+                
+                if (square.isVoid) {
+                    // 공허 네모는 완벽한 검은색에 특별한 빛 효과
+                    this.ctx.save();
+                    
+                    // 검은색 빛 효과 (그림자) - 더 강하게
+                    this.ctx.shadowColor = '#000000';
+                    this.ctx.shadowBlur = 25;
+                    this.ctx.fillStyle = '#000000';
+                    this.ctx.fillRect(square.x, square.y, square.width, square.height);
+                    
+                    // 추가 빛 효과 - 더 강하게
+                    this.ctx.shadowBlur = 40;
+                    this.ctx.fillRect(square.x, square.y, square.width, square.height);
+                    
+                    // 공허 표시 (V)
+                    this.ctx.fillStyle = '#ffffff';
+                    this.ctx.font = 'bold 12px Arial';
+                    this.ctx.textAlign = 'center';
+                    this.ctx.fillText('V', square.x + square.width/2, square.y + square.height/2 + 4);
+                    
+                    this.ctx.restore();
+                    
+                    // 공허 네모 테두리 (흰색으로 구별)
+                    this.ctx.strokeStyle = '#ffffff';
+                    this.ctx.lineWidth = 2;
+                    this.ctx.strokeRect(square.x - 1, square.y - 1, square.width + 2, square.height + 2);
+                }
+                
+                if (square.isMagnet) {
+                    // 자석 네모는 갈색에 자석 효과
+                    this.ctx.fillStyle = '#8b4513';
+                    this.ctx.fillRect(square.x, square.y, square.width, square.height);
+                    
+                    // 자석 효과 (N, S 표시)
+                    this.ctx.fillStyle = '#ffffff';
+                    this.ctx.font = 'bold 8px Arial';
+                    this.ctx.textAlign = 'center';
+                    this.ctx.fillText('N', square.x + square.width/2, square.y + 8);
+                    this.ctx.fillText('S', square.x + square.width/2, square.y + square.height - 2);
+                    
+                    // 자석 네모 테두리
+                    this.ctx.strokeStyle = '#654321';
+                    this.ctx.lineWidth = 2;
+                    this.ctx.strokeRect(square.x - 1, square.y - 1, square.width + 2, square.height + 2);
+                }
+                
+                if (square.isVirus) {
+                    // 바이러스 네모는 자멘타색에 바이러스 효과
+                    this.ctx.fillStyle = '#8b008b';
+                    this.ctx.fillRect(square.x, square.y, square.width, square.height);
+                    
+                    // 바이러스 효과 (V 표시)
+                    this.ctx.fillStyle = '#ffffff';
+                    this.ctx.font = 'bold 10px Arial';
+                    this.ctx.textAlign = 'center';
+                    this.ctx.fillText('V', square.x + square.width/2, square.y + square.height/2 + 3);
+                    
+                    // 바이러스 네모 테두리 (자멘타색)
+                    this.ctx.strokeStyle = '#4b0082';
+                    this.ctx.lineWidth = 2;
+                    this.ctx.strokeRect(square.x - 1, square.y - 1, square.width + 2, square.height + 2);
+                }
+                
+                if (square.isChest) {
+                    // 상자 네모는 연한 갈색에 상자 효과
+                    this.ctx.fillStyle = '#d2b48c';
+                    this.ctx.fillRect(square.x, square.y, square.width, square.height);
+                    
+                    // 상자 효과 (C 표시)
+                    this.ctx.fillStyle = '#8b4513';
+                    this.ctx.font = 'bold 10px Arial';
+                    this.ctx.textAlign = 'center';
+                    this.ctx.fillText('C', square.x + square.width/2, square.y + square.height/2 + 3);
+                    
+                    // 저장된 블럭 수 표시
+                    if (square.storedBlocks && square.storedBlocks.length > 0) {
+                        this.ctx.fillStyle = '#000000';
+                        this.ctx.font = 'bold 8px Arial';
+                        this.ctx.textAlign = 'center';
+                        this.ctx.fillText(square.storedBlocks.length.toString(), square.x + square.width/2, square.y + square.height - 2);
+                    }
+                    
+                    // 상자 네모 테두리 (갈색)
+                    this.ctx.strokeStyle = '#8b4513';
+                    this.ctx.lineWidth = 2;
+                    this.ctx.strokeRect(square.x - 1, square.y - 1, square.width + 2, square.height + 2);
+                }
+                
+                if (square.isMovingVoid) {
+                    // 움직이는 공허 네모는 어두운 빨강에 그라데이션 효과
+                    this.ctx.save();
+                    
+                    // 검은색 빛 효과
+                    this.ctx.shadowColor = '#000000';
+                    this.ctx.shadowBlur = 20;
+                    
+                    // 어두운 빨강색 빛 효과
+                    this.ctx.shadowColor = '#8b0000';
+                    this.ctx.shadowBlur = 15;
+                    
+                    // 그라데이션 생성
+                    const gradient = this.ctx.createRadialGradient(
+                        square.x + square.width/2, square.y + square.height/2, 0,
+                        square.x + square.width/2, square.y + square.height/2, square.width/2
+                    );
+                    gradient.addColorStop(0, '#8b0000'); // 어두운 빨강
+                    gradient.addColorStop(0.7, '#4b0000'); // 더 어두운 빨강
+                    gradient.addColorStop(1, '#000000'); // 검은색
+                    
+                    this.ctx.fillStyle = gradient;
+                    this.ctx.fillRect(square.x, square.y, square.width, square.height);
+                    
+                    // 움직이는 공허 효과 (MV 표시)
+                    this.ctx.fillStyle = '#ffffff';
+                    this.ctx.font = 'bold 8px Arial';
+                    this.ctx.textAlign = 'center';
+                    this.ctx.fillText('MV', square.x + square.width/2, square.y + square.height/2 + 3);
+                    
+                    this.ctx.restore();
+                    
+                    // 움직이는 공허 네모 테두리 (어두운 빨강)
+                    this.ctx.strokeStyle = '#4b0000';
                     this.ctx.lineWidth = 2;
                     this.ctx.strokeRect(square.x - 1, square.y - 1, square.width + 2, square.height + 2);
                 }
@@ -1003,6 +3033,78 @@
                 this.ctx.restore();
             });
             
+            // 안개 네모 안개 파티클 그리기
+            this.fogCircles.forEach(circle => {
+                const alpha = circle.life / circle.maxLife * 0.4; // 40% 반투명 + 페이드 아웃
+                this.ctx.save();
+                this.ctx.globalAlpha = alpha;
+                this.ctx.fillStyle = circle.color;
+                this.ctx.beginPath();
+                this.ctx.arc(circle.x, circle.y, circle.radius, 0, Math.PI * 2);
+                this.ctx.fill();
+                this.ctx.restore();
+            });
+            
+            // 비 구름 비 파티클 그리기
+            this.rainDrops.forEach(drop => {
+                const alpha = drop.life / drop.maxLife * 0.6;
+                this.ctx.save();
+                this.ctx.globalAlpha = alpha;
+                this.ctx.fillStyle = drop.color;
+                this.ctx.fillRect(drop.x, drop.y, 2, 8);
+                this.ctx.restore();
+            });
+            
+            // 우박 구름 우박 파티클 그리기
+            this.hailStones.forEach(stone => {
+                const alpha = stone.life / stone.maxLife * 0.7;
+                this.ctx.save();
+                this.ctx.globalAlpha = alpha;
+                this.ctx.fillStyle = stone.color;
+                this.ctx.beginPath();
+                this.ctx.arc(stone.x, stone.y, stone.size, 0, Math.PI * 2);
+                this.ctx.fill();
+                this.ctx.restore();
+            });
+            
+            // 눈 구름 눈 파티클 그리기
+            this.snowFlakes.forEach(flake => {
+                const alpha = flake.life / flake.maxLife * 0.5;
+                this.ctx.save();
+                this.ctx.globalAlpha = alpha;
+                this.ctx.fillStyle = flake.color;
+                this.ctx.beginPath();
+                this.ctx.arc(flake.x, flake.y, flake.size, 0, Math.PI * 2);
+                this.ctx.fill();
+                this.ctx.restore();
+            });
+            
+            // 열매 그리기
+            this.fruits.forEach(fruit => {
+                if (fruit.isGrowing) {
+                    // 성장 중인 열매 - 반투명 효과
+                    this.ctx.save();
+                    this.ctx.globalAlpha = 0.8;
+                    this.ctx.fillStyle = fruit.color;
+                    this.ctx.fillRect(fruit.x, fruit.y, fruit.width, fruit.height);
+                    
+                    // 열매 테두리
+                    this.ctx.strokeStyle = '#f0e68c';
+                    this.ctx.lineWidth = 1;
+                    this.ctx.strokeRect(fruit.x, fruit.y, fruit.width, fruit.height);
+                    this.ctx.restore();
+                } else {
+                    // 떨어지는 열매 - 일반 렌더링
+                    this.ctx.fillStyle = fruit.color;
+                    this.ctx.fillRect(fruit.x, fruit.y, fruit.width, fruit.height);
+                    
+                    // 열매 테두리
+                    this.ctx.strokeStyle = '#f0e68c';
+                    this.ctx.lineWidth = 1;
+                    this.ctx.strokeRect(fruit.x, fruit.y, fruit.width, fruit.height);
+                }
+            });
+            
             // 판매 구역 그리기
             this.ctx.fillStyle = '#4169e1';
             this.ctx.fillRect(this.sellZone.x, this.sellZone.y, this.sellZone.width, this.sellZone.height);
@@ -1023,6 +3125,7 @@
                 this.ctx.textAlign = 'center';
                 this.ctx.fillText('새로운 블럭!', this.canvas.width / 2, this.canvas.height / 2);
             }
+            
             
             // 돈 표시
             this.ctx.fillStyle = '#00ff00';
@@ -1092,6 +3195,231 @@
             this.ctx.font = 'bold 20px Arial';
             this.ctx.textAlign = 'right';
             this.ctx.fillText(`$${this.money}`, this.canvas.width - 20, 380);
+        }
+        
+        drawDev() {
+            // 개발자 도구 배경
+            this.ctx.fillStyle = '#1a1a1a';
+            this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+            
+            // 개발자 도구 제목
+            this.ctx.fillStyle = '#00ff00';
+            this.ctx.font = 'bold 24px Arial';
+            this.ctx.textAlign = 'center';
+            this.ctx.fillText('개발자 도구', this.canvas.width / 2, 40);
+            
+            // 개발자 도구 나가기 버튼
+            this.ctx.fillStyle = '#ff6b6b';
+            this.ctx.fillRect(this.exitDevButton.x, this.exitDevButton.y, this.exitDevButton.width, this.exitDevButton.height);
+            this.ctx.strokeStyle = '#000000';
+            this.ctx.lineWidth = 2;
+            this.ctx.strokeRect(this.exitDevButton.x, this.exitDevButton.y, this.exitDevButton.width, this.exitDevButton.height);
+            
+            this.ctx.fillStyle = '#ffffff';
+            this.ctx.font = 'bold 14px Arial';
+            this.ctx.textAlign = 'center';
+            this.ctx.fillText('나가기', this.exitDevButton.x + this.exitDevButton.width / 2, this.exitDevButton.y + this.exitDevButton.height / 2 + 5);
+            
+            // 설명
+            this.ctx.fillStyle = '#cccccc';
+            this.ctx.font = '14px Arial';
+            this.ctx.textAlign = 'left';
+            this.ctx.fillText('모든 블럭을 무료로 소환할 수 있습니다', 20, 70);
+            
+            // 개수 입력
+            if (this.devInputFocused) {
+                this.ctx.fillStyle = '#444444'; // 포커스된 상태는 더 밝게
+                this.ctx.strokeStyle = '#00ff00'; // 포커스된 상태는 초록색 테두리
+            } else {
+                this.ctx.fillStyle = '#333333';
+                this.ctx.strokeStyle = '#ffffff';
+            }
+            this.ctx.fillRect(this.devQuantityInput.x, this.devQuantityInput.y, this.devQuantityInput.width, this.devQuantityInput.height);
+            this.ctx.lineWidth = 2;
+            this.ctx.strokeRect(this.devQuantityInput.x, this.devQuantityInput.y, this.devQuantityInput.width, this.devQuantityInput.height);
+            
+            this.ctx.fillStyle = '#ffffff';
+            this.ctx.font = '14px Arial';
+            this.ctx.textAlign = 'center';
+            // 0일 때는 빈 상태로 표시
+            const displayText = this.devQuantity === 0 ? '' : this.devQuantity.toString();
+            this.ctx.fillText(displayText, this.devQuantityInput.x + this.devQuantityInput.width/2, this.devQuantityInput.y + this.devQuantityInput.height/2 + 5);
+            
+            // 포커스 상태 표시
+            if (this.devInputFocused) {
+                this.ctx.fillStyle = '#00ff00';
+                this.ctx.font = '10px Arial';
+                this.ctx.textAlign = 'left';
+                this.ctx.fillText('입력 중...', this.devQuantityInput.x, this.devQuantityInput.y - 5);
+            }
+            
+            // 구매 버튼
+            this.ctx.fillStyle = '#00ff00';
+            this.ctx.fillRect(this.devBuyButton.x, this.devBuyButton.y, this.devBuyButton.width, this.devBuyButton.height);
+            this.ctx.strokeStyle = '#ffffff';
+            this.ctx.lineWidth = 1;
+            this.ctx.strokeRect(this.devBuyButton.x, this.devBuyButton.y, this.devBuyButton.width, this.devBuyButton.height);
+            
+            this.ctx.fillStyle = '#000000';
+            this.ctx.font = '12px Arial';
+            this.ctx.textAlign = 'center';
+            this.ctx.fillText('구매', this.devBuyButton.x + this.devBuyButton.width/2, this.devBuyButton.y + this.devBuyButton.height/2 + 4);
+            
+            // 선택된 아이템 표시
+            if (this.selectedDevItem) {
+                this.ctx.fillStyle = '#ffff00';
+                this.ctx.font = '12px Arial';
+                this.ctx.textAlign = 'left';
+                this.ctx.fillText(`선택: ${this.selectedDevItem.name}`, 20, 140);
+            }
+            
+            // 개발자 도구 아이템들 - 간단하게 다시 만들기
+            if (this.devItems && this.devItems.length > 0) {
+                this.ctx.save();
+                this.ctx.rect(50, 150, this.canvas.width - 100, this.canvas.height - 190);
+                this.ctx.clip();
+                
+                let y = 170 + this.devScrollY;
+                for (let i = 0; i < this.devItems.length; i++) {
+                    const item = this.devItems[i];
+                    
+                    if (y > 150 && y < this.canvas.height - 40) {
+                        // 선택된 아이템은 다른 색상으로 표시
+                        if (this.selectedDevItem === item) {
+                            this.ctx.fillStyle = '#666666'; // 선택된 아이템은 더 밝게
+                        } else {
+                            this.ctx.fillStyle = '#333333';
+                        }
+                        this.ctx.fillRect(60, y - 20, this.canvas.width - 120, 40);
+                        
+                        // 아이템 색상 표시
+                        this.ctx.fillStyle = item.color;
+                        this.ctx.fillRect(70, y - 15, 30, 30);
+                        
+                        // 아이템 이름
+                        this.ctx.fillStyle = '#ffffff';
+                        this.ctx.font = '16px Arial';
+                        this.ctx.textAlign = 'left';
+                        this.ctx.fillText(item.name, 110, y + 5);
+                        
+                        // 무료 표시
+                        this.ctx.fillStyle = '#00ff00';
+                        this.ctx.font = '14px Arial';
+                        this.ctx.textAlign = 'right';
+                        this.ctx.fillText('무료', this.canvas.width - 70, y + 5);
+                    }
+                    y += 50;
+                }
+                
+                this.ctx.restore();
+            }
+        }
+        
+        drawChest() {
+            // 상자 화면 배경
+            this.ctx.fillStyle = '#d2b48c';
+            this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+            // 상자 화면 제목
+            this.ctx.fillStyle = '#8b4513';
+            this.ctx.font = 'bold 24px Arial';
+            this.ctx.textAlign = 'center';
+            this.ctx.fillText('상자', this.canvas.width / 2, 40);
+
+            // 상자 나가기 버튼
+            this.ctx.fillStyle = '#ff6b6b';
+            this.ctx.fillRect(this.exitChestButton.x, this.exitChestButton.y, this.exitChestButton.width, this.exitChestButton.height);
+            this.ctx.strokeStyle = '#000000';
+            this.ctx.lineWidth = 2;
+            this.ctx.strokeRect(this.exitChestButton.x, this.exitChestButton.y, this.exitChestButton.width, this.exitChestButton.height);
+
+            this.ctx.fillStyle = '#ffffff';
+            this.ctx.font = 'bold 14px Arial';
+            this.ctx.textAlign = 'center';
+            this.ctx.fillText('나가기', this.exitChestButton.x + this.exitChestButton.width / 2, this.exitChestButton.y + this.exitChestButton.height / 2 + 5);
+
+            // 설명
+            this.ctx.fillStyle = '#8b4513';
+            this.ctx.font = '14px Arial';
+            this.ctx.textAlign = 'left';
+            this.ctx.fillText('저장된 블럭을 클릭하면 상자 위로 나옵니다', 20, 70);
+
+            // 저장된 블럭 수 표시
+            if (this.currentChest && this.currentChest.storedBlocks) {
+                this.ctx.fillStyle = '#8b4513';
+                this.ctx.font = '16px Arial';
+                this.ctx.textAlign = 'left';
+                this.ctx.fillText(`저장된 블럭: ${this.currentChest.storedBlocks.length}개`, 20, 100);
+            }
+
+            // 저장된 블럭들
+            if (this.currentChest && this.currentChest.storedBlocks) {
+                this.ctx.save();
+                this.ctx.rect(50, 150, this.canvas.width - 100, this.canvas.height - 190);
+                this.ctx.clip();
+
+                let y = 170 + this.chestScrollY;
+                this.currentChest.storedBlocks.forEach((storedBlock, index) => {
+                    if (y > 150 && y < this.canvas.height - 40) {
+                        // 아이템 배경
+                        this.ctx.fillStyle = '#f5deb3';
+                        this.ctx.fillRect(60, y - 20, this.canvas.width - 120, 40);
+
+                        // 아이템 색상 표시
+                        this.ctx.fillStyle = storedBlock.color;
+                        this.ctx.fillRect(70, y - 15, 30, 30);
+
+                        // 아이템 이름 (디버그 정보 포함)
+                        let blockName = '일반 블럭';
+                        if (storedBlock.isSpecial) blockName = '특성 블럭';
+                        else if (storedBlock.isFire) blockName = '불 블럭';
+                        else if (storedBlock.isWater) blockName = '물 블럭';
+                        else if (storedBlock.isSoil) blockName = '토양 블럭';
+                        else if (storedBlock.isPlant) blockName = '식물 블럭';
+                        else if (storedBlock.isElectric) blockName = '전기 블럭';
+                        else if (storedBlock.isSuperElectric) blockName = '강력한 전기 블럭';
+                        else if (storedBlock.isLight) blockName = '빛 블럭';
+                        else if (storedBlock.isIce) blockName = '얼음 블럭';
+                        else if (storedBlock.isSpace) blockName = '우주 블럭';
+                        else if (storedBlock.isVoid) blockName = '공허 블럭';
+                        else if (storedBlock.isMagnet) blockName = '자석 블럭';
+                        else if (storedBlock.isVirus) blockName = '바이러스 블럭';
+                        else if (storedBlock.isChest) blockName = '상자 블럭';
+                        else if (storedBlock.isMovingVoid) blockName = '움직이는 공허 블럭';
+                        else if (storedBlock.isSmoke) blockName = '연기 블럭';
+                        else if (storedBlock.isFog) blockName = '안개 블럭';
+                        else if (storedBlock.isCloud) blockName = '구름 블럭';
+                        else if (storedBlock.isRainCloud) blockName = '비 구름 블럭';
+                        else if (storedBlock.isHailCloud) blockName = '우박 구름 블럭';
+                        else if (storedBlock.isSnowCloud) blockName = '눈 구름 블럭';
+                        else if (storedBlock.isSnow) blockName = '눈 블럭';
+                        else if (storedBlock.isFruit) blockName = '열매 블럭';
+                        
+                        // 디버그: 저장된 블럭 정보 출력
+                        console.log('저장된 블럭 정보:', {
+                            color: storedBlock.color,
+                            isSpecial: storedBlock.isSpecial,
+                            isFire: storedBlock.isFire,
+                            isWater: storedBlock.isWater,
+                            blockName: blockName
+                        });
+
+                        this.ctx.fillStyle = '#8b4513';
+                        this.ctx.font = '16px Arial';
+                        this.ctx.textAlign = 'left';
+                        this.ctx.fillText(blockName, 110, y + 5);
+
+                        // 클릭 안내
+                        this.ctx.fillStyle = '#8b4513';
+                        this.ctx.font = '12px Arial';
+                        this.ctx.textAlign = 'right';
+                        this.ctx.fillText('클릭하여 꺼내기', this.canvas.width - 70, y + 5);
+                    }
+                    y += 50;
+                });
+
+                this.ctx.restore();
+            }
         }
         
         drawGroundTiles() {
