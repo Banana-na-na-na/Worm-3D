@@ -34,6 +34,7 @@
             <p>🎮 <strong>네모 생성 게임</strong></p>
             <p>🔴 빨간 버튼: 무료 네모 생성 | 🔵 파란 버튼: $1 네모 생성</p>
             <p>🖱️ 마우스로 네모를 드래그할 수 있습니다!</p>
+            <p>⌨️ ㅌ 키: 레이저 키 생성 (보라와 조합하면 레이저 블럭!)</p>
             <p>💰 오른쪽 파란 판매 구역에 네모를 넣으면 돈을 받습니다! (빨간1원, 파란1원)</p>
         </div>
     </div>
@@ -64,6 +65,7 @@
             this.mouseY = 0;
             this.isDragging = false;
             
+            
             // 새로운 블럭 메시지
             this.newBlockMessageFrames = 0;
             this.discoveredColors = new Set();
@@ -72,6 +74,7 @@
             // 파티클 시스템
             this.fireParticles = [];
             this.waterDrops = [];
+            this.slimeDrops = []; // 슬라임 점액
             this.lightningParticles = [];
             this.superLightningParticles = [];
             this.smokeCircles = [];
@@ -106,6 +109,7 @@
             this.devQuantityInput = { x: 20, y: 100, width: 60, height: 25 };
             this.devBuyButton = { x: 90, y: 100, width: 60, height: 25 };
             this.devInputFocused = false;
+            
             
             this.setupEventListeners();
             this.gameLoop();
@@ -414,6 +418,17 @@
                 this.mouseX = e.clientX - rect.left;
                 this.mouseY = e.clientY - rect.top;
                 
+                // 마우스 팔로워 블럭 위치 업데이트 (정확히 따라오도록)
+                const mouseFollowerBlock = this.smallSquares.find(square => square.isMouseFollower);
+                if (mouseFollowerBlock) {
+                    // 마우스 포인터 정중앙에 정확히 위치
+                    mouseFollowerBlock.x = this.mouseX - mouseFollowerBlock.width / 2;
+                    mouseFollowerBlock.y = this.mouseY - mouseFollowerBlock.height / 2;
+                    // 마우스 팔로워 블럭은 속도도 0으로 설정
+                    mouseFollowerBlock.velocityX = 0;
+                    mouseFollowerBlock.velocityY = 0;
+                }
+                
                 if (this.isDragging && this.draggedSquare) {
                     this.draggedSquare.x = this.mouseX - this.draggedSquare.width / 2;
                     this.draggedSquare.y = this.mouseY - this.draggedSquare.height / 2;
@@ -457,6 +472,12 @@
             
             // 키보드 입력 이벤트
             document.addEventListener('keydown', (e) => {
+                // ㅌ 키로 레이저 키 생성
+                if (e.key === 'ㅌ' && this.currentScreen === 'lab') {
+                    this.spawnLaserKey();
+                    return;
+                }
+                
                 if (this.currentScreen === 'dev' && this.devInputFocused) {
                     // 숫자 키 입력
                     if (e.key >= '0' && e.key <= '9') {
@@ -500,6 +521,7 @@
             this.updateSmallSquares();
             this.updateFireParticles();
             this.updateWaterDrops();
+            this.updateSlimeDrops();
             this.updateLightningParticles();
             this.updateSuperLightningParticles();
             this.updateSmokeCircles();
@@ -510,6 +532,8 @@
             this.checkHailCollisions();
             this.checkSnowCollisions();
             this.updateFruits();
+            this.updateLaserBlocks();
+            this.updateBounceBlocks();
             
             // 새로운 블럭 메시지 업데이트
             if (this.newBlockMessageFrames > 0) {
@@ -564,6 +588,11 @@
         
         updateSmallSquares() {
             this.smallSquares.forEach((square, index) => {
+                // 마우스 팔로워 블럭은 물리 법칙 적용 안함
+                if (square.isMouseFollower) {
+                    return;
+                }
+                
                 // 얼음 블럭 특별 처리 (드래그 중에도 적용)
                 if (square.isIce) {
                     square.iceTimer++;
@@ -864,6 +893,128 @@
                     }
                 }
             }
+        }
+        
+        updateLaserBlocks() {
+            // 레이저 블럭 업데이트
+            this.smallSquares.forEach(square => {
+                if (square.isLaserBlock && square.laserBeam) {
+                    // 레이저 빔 높이 증가 (점진적으로 위로 뻗어나감)
+                    if (square.laserBeam.height < square.laserBeam.maxHeight) {
+                        square.laserBeam.height += 2; // 매 프레임마다 2픽셀씩 증가
+                    }
+                    
+                    // 레이저에 닿은 블럭들 찾기
+                    this.smallSquares.forEach(targetSquare => {
+                        if (targetSquare === square || targetSquare.isLaserBlock) return;
+                        
+                        // 레이저 빔과 블럭의 충돌 검사
+                        const laserX = square.x + square.width / 2;
+                        const laserY = square.y;
+                        const laserWidth = 3; // 레이저 빔 두께
+                        
+                        if (targetSquare.x < laserX + laserWidth / 2 &&
+                            targetSquare.x + targetSquare.width > laserX - laserWidth / 2 &&
+                            targetSquare.y < laserY + square.laserBeam.height &&
+                            targetSquare.y + targetSquare.height > laserY) {
+                            
+                            // 레이저에 닿은 블럭에 돈 깎기 타이머 추가
+                            if (!targetSquare.laserDrainTimer) {
+                                targetSquare.laserDrainTimer = 0;
+                            }
+                            
+                            targetSquare.laserDrainTimer++;
+                            
+                            // 10초(600프레임)마다 돈 1씩 깎기
+                            if (targetSquare.laserDrainTimer >= 600) {
+                                this.money = Math.max(0, this.money - 1);
+                                targetSquare.laserDrainTimer = 0; // 타이머 리셋
+                            }
+                        }
+                    });
+                }
+            });
+        }
+        
+        updateBounceBlocks() {
+            // 튕기기 블럭 업데이트
+            this.smallSquares.forEach(square => {
+                if (square.isBounceBlock) {
+                    // 튕기기 블럭에 중력 적용
+                    square.velocityY += 0.3; // 중력
+                    square.x += square.velocityX;
+                    square.y += square.velocityY;
+                    
+                    // 바닥에 닿으면 튕김
+                    if (square.y + square.height >= this.ground.y) {
+                        square.y = this.ground.y - square.height;
+                        square.velocityY *= -square.bounceEnergy; // 위로 튕김
+                        square.velocityX *= 0.9; // 마찰로 인한 속도 감소
+                    }
+                    
+                    // 왼쪽 벽에 닿으면 튕김
+                    if (square.x <= 0) {
+                        square.x = 0;
+                        square.velocityX *= -square.bounceEnergy;
+                    }
+                    
+                    // 오른쪽 벽에 닿으면 튕김
+                    if (square.x + square.width >= this.canvas.width) {
+                        square.x = this.canvas.width - square.width;
+                        square.velocityX *= -square.bounceEnergy;
+                    }
+                    
+                    // 위쪽 벽에 닿으면 튕김
+                    if (square.y <= 0) {
+                        square.y = 0;
+                        square.velocityY *= -square.bounceEnergy;
+                    }
+                    
+                    // 다른 블럭들과의 충돌 검사
+                    this.smallSquares.forEach(otherSquare => {
+                        if (otherSquare === square || otherSquare.isBounceBlock) return;
+                        
+                        // 충돌 검사
+                        if (square.x < otherSquare.x + otherSquare.width &&
+                            square.x + square.width > otherSquare.x &&
+                            square.y < otherSquare.y + otherSquare.height &&
+                            square.y + square.height > otherSquare.y) {
+                            
+                            // 충돌 방향 계산
+                            const dx = (square.x + square.width/2) - (otherSquare.x + otherSquare.width/2);
+                            const dy = (square.y + square.height/2) - (otherSquare.y + otherSquare.height/2);
+                            
+                            // 수평 충돌
+                            if (Math.abs(dx) > Math.abs(dy)) {
+                                if (dx > 0) {
+                                    // 오른쪽에서 충돌
+                                    square.x = otherSquare.x + otherSquare.width;
+                                    square.velocityX = Math.abs(square.velocityX) * square.bounceEnergy;
+                                } else {
+                                    // 왼쪽에서 충돌
+                                    square.x = otherSquare.x - square.width;
+                                    square.velocityX = -Math.abs(square.velocityX) * square.bounceEnergy;
+                                }
+                            } else {
+                                // 수직 충돌
+                                if (dy > 0) {
+                                    // 아래에서 충돌
+                                    square.y = otherSquare.y + otherSquare.height;
+                                    square.velocityY = Math.abs(square.velocityY) * square.bounceEnergy;
+                                } else {
+                                    // 위에서 충돌
+                                    square.y = otherSquare.y - square.height;
+                                    square.velocityY = -Math.abs(square.velocityY) * square.bounceEnergy;
+                                }
+                            }
+                        }
+                    });
+                    
+                    // 속도가 너무 작아지면 정지
+                    if (Math.abs(square.velocityX) < 0.1) square.velocityX = 0;
+                    if (Math.abs(square.velocityY) < 0.1) square.velocityY = 0;
+                }
+            });
         }
         
         adjustBlockPosition(newBlock) {
@@ -1302,6 +1453,9 @@
                         let newColor = null;
                         let newSquare = null;
                         
+                        // 디버깅: 조합 시도 로그
+                        console.log('조합 시도:', square1.color, square2.color, 'isLaserKey1:', square1.isLaserKey, 'isLaserKey2:', square2.isLaserKey);
+                        
                         // 파랑 + 파랑 = 청록
                         if (square1.color === '#0000ff' && square2.color === '#0000ff') {
                             newColor = '#00ffff';
@@ -1324,6 +1478,37 @@
                                  (square1.color === '#ff0000' && square2.color === '#8b5cf6')) {
                             newColor = '#8b4513';
                             merged = true;
+                        }
+                        // 갈색 + 파랑 = 민트
+                        else if ((square1.color === '#8b4513' && square2.color === '#0000ff') ||
+                                 (square2.color === '#8b4513' && square1.color === '#0000ff')) {
+                            newColor = '#00ff7f'; // 민트색
+                            merged = true;
+                        }
+                        // 보라 + ㅌ = 레이저 블럭 (우선 처리)
+                        if ((square1.color === '#8b5cf6' && square2.isLaserKey) ||
+                            (square2.color === '#8b5cf6' && square1.isLaserKey)) {
+                            console.log('레이저 블럭 조합 성공!', square1, square2);
+                            newColor = '#4a1a4a'; // 어두운 보라색
+                            merged = true;
+                            newSquare = {
+                                x: (square1.x + square2.x) / 2,
+                                y: (square1.y + square2.y) / 2,
+                                width: 20,
+                                height: 20,
+                                color: '#4a1a4a',
+                                velocityX: 0,
+                                velocityY: 0,
+                                isOnGround: false,
+                                isLaserBlock: true, // 레이저 블럭 표시
+                                laserBeam: {
+                                    active: true,
+                                    height: 0,
+                                    maxHeight: 200,
+                                    color: '#d8b4fe' // 연보라 레이저
+                                }
+                            };
+                            this.discoveredColors.add('laser_block');
                         }
                         // 보라 + 보라 = 하양
                         else if (square1.color === '#8b5cf6' && square2.color === '#8b5cf6') {
@@ -1584,6 +1769,25 @@
                                 isFire: true
                             };
                         }
+                        // 특성 + 주황 = 마우스 팔로워 블럭
+                        else if ((square1.isSpecial && square2.color === '#ffa500') ||
+                                 (square2.isSpecial && square1.color === '#ffa500')) {
+                            newColor = '#ff8c00';
+                            merged = true;
+                            newSquare = {
+                                x: (square1.x + square2.x) / 2,
+                                y: (square1.y + square2.y) / 2,
+                                width: 20,
+                                height: 20,
+                                color: '#ff8c00',
+                                velocityX: 0,
+                                velocityY: 0,
+                                isOnGround: false,
+                                isMouseFollower: true,
+                                isUnsellable: false, // 팔릴 수 있음
+                                isDraggable: false
+                            };
+                        }
                         // 하양 + 빨강 = 주황
                         else if ((square1.color === '#ffffff' && square2.color === '#ff0000') ||
                                  (square2.color === '#ffffff' && square1.color === '#ff0000')) {
@@ -1606,6 +1810,12 @@
                         else if ((square1.color === '#ffa500' && square2.color === '#ff00ff') ||
                                  (square1.color === '#ff00ff' && square2.color === '#ffa500')) {
                             newColor = '#ffff00';
+                            merged = true;
+                        }
+                        // 자홍 + 하양 = 핑크
+                        else if ((square1.color === '#ff00ff' && square2.color === '#ffffff') ||
+                                 (square2.color === '#ff00ff' && square1.color === '#ffffff')) {
+                            newColor = '#ffc0cb'; // 핑크색
                             merged = true;
                         }
                         // 노랑 + 특성 = 전기
@@ -1703,6 +1913,85 @@
                             };
                             this.discoveredColors.add('virus_block');
                         }
+                        // 핑크 + 특성 = 튕기기 블럭
+                        else if ((square1.color === '#ffc0cb' && square2.isSpecial) ||
+                                 (square2.color === '#ffc0cb' && square1.isSpecial)) {
+                            newColor = '#ff69b4'; // 핫핑크색
+                            merged = true;
+                            newSquare = {
+                                x: (square1.x + square2.x) / 2,
+                                y: (square1.y + square2.y) / 2,
+                                width: 20,
+                                height: 20,
+                                color: '#ff69b4',
+                                velocityX: 0,
+                                velocityY: 0,
+                                isOnGround: false,
+                                isBounceBlock: true, // 튕기기 블럭 표시
+                                bounceVelocity: { x: 0, y: 0 }, // 튕김 속도
+                                bounceEnergy: 0.8 // 튕김 에너지 (0.8 = 80% 에너지 유지)
+                            };
+                            this.discoveredColors.add('bounce_block');
+                        }
+                        // ㅌ + 청록 = 에너지 블럭
+                        else if ((square1.isLaserKey && square2.color === '#00ffff') ||
+                                 (square2.isLaserKey && square1.color === '#00ffff')) {
+                            newColor = '#ffff00'; // 노란색
+                            merged = true;
+                            newSquare = {
+                                x: (square1.x + square2.x) / 2,
+                                y: (square1.y + square2.y) / 2,
+                                width: 20,
+                                height: 20,
+                                color: '#ffff00',
+                                velocityX: 0,
+                                velocityY: 0,
+                                isOnGround: false,
+                                isEnergyBlock: true, // 에너지 블럭 표시
+                                energyLevel: 100 // 에너지 레벨 (100%)
+                            };
+                            this.discoveredColors.add('energy_block');
+                        }
+                        // 민트 + ㅌ = 얼음
+                        else if (((square1.color === '#00ff7f') && square2.isLaserKey) ||
+                                 ((square2.color === '#00ff7f') && square1.isLaserKey)) {
+                            newColor = '#87ceeb'; // 얼음(하늘색)
+                            merged = true;
+                            newSquare = {
+                                x: (square1.x + square2.x) / 2,
+                                y: (square1.y + square2.y) / 2,
+                                width: 20,
+                                height: 20,
+                                color: '#87ceeb',
+                                velocityX: 0,
+                                velocityY: 0,
+                                isOnGround: false,
+                                isIce: true,
+                                icePrice: 15,
+                                iceTimer: 0,
+                                iceShrinkTimer: 0
+                            };
+                            this.discoveredColors.add('ice_block');
+                        }
+                        // ㅌ + 전기 = 에너지 블럭 (전기 블럭과의 조합)
+                        else if ((square1.isLaserKey && square2.color === '#00ffff' && square2.isElectric) ||
+                                 (square2.isLaserKey && square1.color === '#00ffff' && square1.isElectric)) {
+                            newColor = '#ffff00'; // 노란색
+                            merged = true;
+                            newSquare = {
+                                x: (square1.x + square2.x) / 2,
+                                y: (square1.y + square2.y) / 2,
+                                width: 20,
+                                height: 20,
+                                color: '#ffff00',
+                                velocityX: 0,
+                                velocityY: 0,
+                                isOnGround: false,
+                                isEnergyBlock: true, // 에너지 블럭 표시
+                                energyLevel: 100 // 에너지 레벨 (100%)
+                            };
+                            this.discoveredColors.add('energy_block');
+                        }
                         // 검은색 + 특성 = 상자 (우선순위 높임)
                         if ((square1.color === '#000000' && square2.isSpecial) ||
                             (square2.color === '#000000' && square1.isSpecial)) {
@@ -1747,6 +2036,25 @@
                                 lastBoostTime: Date.now() // 마지막 가치 증가 시간
                             };
                             this.discoveredColors.add('magnet_chest_block');
+                        }
+                        // 연두 + 특성 = 슬라임
+                        else if ((square1.color === '#adff2f' && square2.isSpecial) ||
+                                 (square2.color === '#adff2f' && square1.isSpecial)) {
+                            newColor = '#228b22'; // 포레스트 그린
+                            merged = true;
+                            newSquare = {
+                                x: (square1.x + square2.x) / 2,
+                                y: (square1.y + square2.y) / 2,
+                                width: 25,
+                                height: 25,
+                                color: '#228b22',
+                                velocityX: 0,
+                                velocityY: 0,
+                                isOnGround: false,
+                                isSpecial: false,
+                                isSlime: true
+                            };
+                            this.discoveredColors.add('slime_block');
                         }
                         // 자석 + 공허 = 움직이는 공허
                         else if ((square1.isMagnet && square2.isVoid) ||
@@ -1819,7 +2127,11 @@
                                 color: newColor,
                                 velocityX: 0,
                                 velocityY: 0,
-                                isOnGround: false
+                                isOnGround: false,
+                                // 마우스 팔로워 블럭이 합성에 참여했다면 속성 유지
+                                isMouseFollower: square1.isMouseFollower || square2.isMouseFollower,
+                                isUnsellable: square1.isMouseFollower || square2.isMouseFollower,
+                                isDraggable: !(square1.isMouseFollower || square2.isMouseFollower)
                             };
                             
                             // 기존 네모들 제거
@@ -1912,12 +2224,18 @@
                         if (square.color === '#0000ff') sellPrice = 1; // 파랑
                         else if (square.color === '#00ffff') sellPrice = 2; // 청록
                         else if (square.color === '#8b5cf6') sellPrice = 3; // 보라
+                        else if (square.color === '#4a1a4a') sellPrice = 10; // 레이저 블럭
                         else if (square.color === '#22c55e') sellPrice = 5; // 초록
                         else if (square.color === '#adff2f') sellPrice = 4; // 연두
                         else if (square.color === '#87cefa') sellPrice = 3; // 하늘
                         else if (square.color === '#ffa500') sellPrice = 4; // 주황
+                        else if (square.color === '#ff8c00') sellPrice = 5; // 마우스 팔로워 블럭 (주황)
                         else if (square.color === '#d8b4fe') sellPrice = 4; // 연보라
                         else if (square.color === '#ff00ff') sellPrice = 6; // 자홍
+                        else if (square.color === '#ffc0cb') sellPrice = 5; // 핑크
+                        else if (square.color === '#ff69b4') sellPrice = 8; // 튕기기 블럭
+                        else if (square.color === '#00ff7f') sellPrice = 3; // 민트
+                        else if (square.color === '#ffff00' && square.isEnergyBlock) sellPrice = 12; // 에너지 블럭
                         else if (square.color === '#ffff00') sellPrice = 5; // 노랑
                         else if (square.color === '#8b4513') sellPrice = 5; // 갈색
                         else if (square.color === '#ffffff') sellPrice = 7; // 하양
@@ -2048,6 +2366,7 @@
                         }
                         else if (square.isMovingVoid) sellPrice = 100; // 움직이는 공허
                         else if (square.isAdvance) sellPrice = 60; // 전진 블럭
+                        else if (square.isSlime) sellPrice = 35; // 슬라임
                         else if (square.isSmoke) sellPrice = 12; // 연기
                         else if (square.isFog) sellPrice = 15; // 안개
                         else if (square.isCloud) sellPrice = 20; // 구름
@@ -2095,6 +2414,22 @@
             if (type === 'blue') {
                 this.money -= this.blueButton.price;
             }
+        }
+        
+        spawnLaserKey() {
+            const square = {
+                x: this.tunnel.x + this.tunnel.width / 2 - 10,
+                y: this.tunnel.y + this.tunnel.height,
+                width: 20,
+                height: 20,
+                color: '#ff1493', // 딥핑크색으로 표시 (더 명확하게 구분)
+                velocityX: 0,
+                velocityY: 0,
+                isOnGround: false,
+                isLaserKey: true // 레이저 키 표시
+            };
+            
+            this.smallSquares.push(square);
         }
         
         updateFireParticles() {
@@ -2155,6 +2490,36 @@
                 
                 if (drop.life <= 0 || drop.y > this.canvas.height) {
                     this.waterDrops.splice(index, 1);
+                }
+            });
+        }
+        
+        updateSlimeDrops() {
+            // 슬라임 네모에서 점액 생성 (물보다 적게)
+            this.smallSquares.forEach(square => {
+                if (square.isSlime && Math.random() < 0.01) { // 5초마다 약 1개 (물의 절반)
+                    this.slimeDrops.push({
+                        x: square.x + Math.random() * square.width,
+                        y: square.y + square.height,
+                        velocityX: (Math.random() - 0.5) * 0.5, // 물보다 느리게
+                        velocityY: Math.random() * 1 + 0.5, // 물보다 느리게
+                        color: '#32cd32', // 라임 그린
+                        size: Math.random() * 3 + 2, // 물보다 작게
+                        life: 60, // 물보다 오래 살게
+                        maxLife: 60
+                    });
+                }
+            });
+            
+            // 슬라임 점액 업데이트
+            this.slimeDrops.forEach((drop, index) => {
+                drop.x += drop.velocityX;
+                drop.y += drop.velocityY;
+                drop.velocityY += 0.1; // 물보다 약한 중력
+                drop.life--;
+                
+                if (drop.life <= 0 || drop.y > this.canvas.height) {
+                    this.slimeDrops.splice(index, 1);
                 }
             });
         }
@@ -2469,7 +2834,7 @@
         updateShopItems() {
             this.shopItems = [];
 
-            // 기본 아이템: 빨강/파랑은 항상 표시
+            // 기본 아이템: 빨강/파랑만 항상 표시
             this.shopItems.push({
                 name: '빨간 네모',
                 color: '#ff0000',
@@ -2482,6 +2847,8 @@
                 sellPrice: 1,
                 buyPrice: 2
             });
+            
+            console.log('상점 아이템 업데이트:', this.shopItems.length, '개 아이템');
 
             // 얼음 블럭이 발견되었으면 상점에 추가
             if (this.discoveredColors.has('ice_block')) {
@@ -2591,6 +2958,17 @@
                 });
             }
             
+            // 슬라임 블럭이 발견되었으면 상점에 추가
+            if (this.discoveredColors.has('slime_block')) {
+                this.shopItems.push({
+                    name: '슬라임',
+                    color: '#228b22',
+                    sellPrice: 35,
+                    buyPrice: 50,
+                    isSlime: true
+                });
+            }
+            
             // 움직이는 공허 블럭이 발견되었으면 상점에 추가
             if (this.discoveredColors.has('moving_void_block')) {
                 this.shopItems.push({
@@ -2691,11 +3069,16 @@
                 else if (color === '#0000ff') { name = '파란 네모'; sellPrice = 1; }
                 else if (color === '#00ffff') { name = '청록 네모'; sellPrice = 2; }
                 else if (color === '#8b5cf6') { name = '보라 네모'; sellPrice = 3; }
+                else if (color === '#00ff7f') { name = '민트 네모'; sellPrice = 3; }
+                else if (color === '#4a1a4a') { name = '레이저 블럭'; sellPrice = 10; }
                 else if (color === '#adff2f') { name = '연두 네모'; sellPrice = 4; }
                 else if (color === '#87cefa') { name = '하늘 네모'; sellPrice = 3; }
                 else if (color === '#ffa500') { name = '주황 네모'; sellPrice = 4; }
                 else if (color === '#d8b4fe') { name = '연보라 네모'; sellPrice = 4; }
                 else if (color === '#ff00ff') { name = '자홍 네모'; sellPrice = 6; }
+                else if (color === '#ffc0cb') { name = '핑크 네모'; sellPrice = 5; }
+                else if (color === '#ff69b4') { name = '튕기기 블럭'; sellPrice = 8; }
+                else if (color === '#ffff00' && square && square.isEnergyBlock) { name = '에너지 블럭'; sellPrice = 12; }
                 else if (color === '#ffff00') { name = '노랑 네모'; sellPrice = 5; }
                 else if (color === '#22c55e') { name = '초록 네모'; sellPrice = 5; }
                 else if (color === '#8b4513') { name = '갈색 네모'; sellPrice = 5; }
@@ -2730,6 +3113,7 @@
                 { name: '빨강', color: '#ff0000' },
                 { name: '파랑', color: '#0000ff' },
                 { name: '청록', color: '#00ffff' },
+                { name: '민트', color: '#00ff7f' },
                 { name: '보라', color: '#8b5cf6' },
                 { name: '초록', color: '#22c55e' },
                 { name: '연두', color: '#adff2f' },
@@ -2737,6 +3121,9 @@
                 { name: '주황', color: '#ffa500' },
                 { name: '연보라', color: '#d8b4fe' },
                 { name: '자홍', color: '#ff00ff' },
+                { name: '핑크', color: '#ffc0cb' },
+                { name: '튕기기', color: '#ff69b4' },
+                { name: '에너지', color: '#ffff00' },
                 { name: '노랑', color: '#ffff00' },
                 { name: '갈색', color: '#8b4513' },
                 { name: '하양', color: '#ffffff' },
@@ -2932,6 +3319,9 @@
                 else if (item.color === '#ff4500' && item.isAdvance) {
                     square.isAdvance = true;
                 }
+                else if (item.color === '#228b22' && item.isSlime) {
+                    square.isSlime = true;
+                }
                 else if (item.color === '#8b0000' && item.isMovingVoid) {
                     square.isMovingVoid = true;
                 }
@@ -3063,6 +3453,92 @@
                         this.ctx.textAlign = 'center';
                         this.ctx.fillText('바이러스', square.x + square.width/2, square.y + square.height/2 + 3);
                     }
+                }
+                
+                // 레이저 블럭 렌더링
+                if (square.isLaserBlock && square.laserBeam) {
+                    // 레이저 빔 그리기
+                    this.ctx.save();
+                    this.ctx.strokeStyle = square.laserBeam.color;
+                    this.ctx.lineWidth = 3;
+                    this.ctx.lineCap = 'round';
+                    
+                    // 레이저 빔 그라데이션 효과
+                    const gradient = this.ctx.createLinearGradient(
+                        square.x + square.width / 2, square.y,
+                        square.x + square.width / 2, square.y - square.laserBeam.height
+                    );
+                    gradient.addColorStop(0, square.laserBeam.color);
+                    gradient.addColorStop(1, 'rgba(216, 180, 254, 0.3)');
+                    
+                    this.ctx.strokeStyle = gradient;
+                    
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(square.x + square.width / 2, square.y);
+                    this.ctx.lineTo(square.x + square.width / 2, square.y - square.laserBeam.height);
+                    this.ctx.stroke();
+                    
+                    // 레이저 빔에 빛나는 효과
+                    this.ctx.shadowColor = square.laserBeam.color;
+                    this.ctx.shadowBlur = 10;
+                    this.ctx.strokeStyle = square.laserBeam.color;
+                    this.ctx.lineWidth = 1;
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(square.x + square.width / 2, square.y);
+                    this.ctx.lineTo(square.x + square.width / 2, square.y - square.laserBeam.height);
+                    this.ctx.stroke();
+                    
+                    this.ctx.restore();
+                }
+                
+                // 튕기기 블럭 렌더링
+                if (square.isBounceBlock) {
+                    // 튕기기 블럭에 빛나는 효과
+                    this.ctx.save();
+                    this.ctx.shadowColor = square.color;
+                    this.ctx.shadowBlur = 15;
+                    this.ctx.fillStyle = square.color;
+                    this.ctx.fillRect(square.x, square.y, square.width, square.height);
+                    
+                    // 튕기는 움직임에 따른 추가 효과
+                    const bounceIntensity = Math.abs(square.velocityX) + Math.abs(square.velocityY);
+                    if (bounceIntensity > 1) {
+                        this.ctx.shadowBlur = 20 + bounceIntensity * 5;
+                        this.ctx.fillStyle = square.color;
+                        this.ctx.fillRect(square.x, square.y, square.width, square.height);
+                    }
+                    
+                    this.ctx.restore();
+                    
+                    // 튕기기 블럭 텍스트
+                    this.ctx.fillStyle = '#ffffff';
+                    this.ctx.font = 'bold 8px Arial';
+                    this.ctx.textAlign = 'center';
+                    this.ctx.fillText('튕김', square.x + square.width/2, square.y + square.height/2 + 2);
+                }
+                
+                // 에너지 블럭 렌더링
+                if (square.isEnergyBlock) {
+                    // 에너지 블럭에 강한 전기 효과
+                    this.ctx.save();
+                    this.ctx.shadowColor = '#ffff00';
+                    this.ctx.shadowBlur = 25;
+                    this.ctx.fillStyle = square.color;
+                    this.ctx.fillRect(square.x, square.y, square.width, square.height);
+                    
+                    // 에너지 레벨에 따른 추가 효과
+                    const energyIntensity = square.energyLevel / 100;
+                    this.ctx.shadowBlur = 30 + energyIntensity * 20;
+                    this.ctx.fillStyle = '#ffff00';
+                    this.ctx.fillRect(square.x, square.y, square.width, square.height);
+                    
+                    this.ctx.restore();
+                    
+                    // 에너지 블럭 텍스트
+                    this.ctx.fillStyle = '#000000';
+                    this.ctx.font = 'bold 8px Arial';
+                    this.ctx.textAlign = 'center';
+                    this.ctx.fillText('에너지', square.x + square.width/2, square.y + square.height/2 + 2);
                 }
                 
                 // 특수 효과들
@@ -3486,6 +3962,22 @@
                     this.ctx.lineWidth = 2;
                     this.ctx.strokeRect(square.x - 1, square.y - 1, square.width + 2, square.height + 2);
                 }
+                else if (square.isSlime) {
+                    // 슬라임 블럭은 포레스트 그린색
+                    this.ctx.fillStyle = '#228b22';
+                    this.ctx.fillRect(square.x, square.y, square.width, square.height);
+                    
+                    // 슬라임 효과 (점액 같은 표시)
+                    this.ctx.fillStyle = '#32cd32';
+                    this.ctx.font = 'bold 10px Arial';
+                    this.ctx.textAlign = 'center';
+                    this.ctx.fillText('슬라임', square.x + square.width/2, square.y + square.height/2 + 3);
+                    
+                    // 슬라임 블럭 테두리 (포레스트 그린)
+                    this.ctx.strokeStyle = '#006400';
+                    this.ctx.lineWidth = 2;
+                    this.ctx.strokeRect(square.x - 1, square.y - 1, square.width + 2, square.height + 2);
+                }
             });
             
             // 불 네모 파티클 그리기
@@ -3501,6 +3993,16 @@
             // 물 네모 물방울 그리기
             this.waterDrops.forEach(drop => {
                 const alpha = drop.life / drop.maxLife * 0.5; // 50% 반투명 + 페이드 아웃
+                this.ctx.save();
+                this.ctx.globalAlpha = alpha;
+                this.ctx.fillStyle = drop.color;
+                this.ctx.fillRect(drop.x - drop.size / 2, drop.y - drop.size / 2, drop.size, drop.size);
+                this.ctx.restore();
+            });
+            
+            // 슬라임 네모 점액 그리기
+            this.slimeDrops.forEach(drop => {
+                const alpha = drop.life / drop.maxLife * 0.7; // 70% 반투명 + 페이드 아웃
                 this.ctx.save();
                 this.ctx.globalAlpha = alpha;
                 this.ctx.fillStyle = drop.color;
@@ -3651,6 +4153,7 @@
             this.ctx.font = 'bold 20px Arial';
             this.ctx.textAlign = 'right';
             this.ctx.fillText(`$${this.money}`, this.canvas.width - 20, 380);
+            
         }
         
         drawShop() {
@@ -3714,6 +4217,7 @@
             this.ctx.font = 'bold 20px Arial';
             this.ctx.textAlign = 'right';
             this.ctx.fillText(`$${this.money}`, this.canvas.width - 20, 380);
+            
         }
         
         drawDev() {
@@ -3832,6 +4336,7 @@
                 
                 this.ctx.restore();
             }
+            
         }
         
         drawChest() {
@@ -3939,6 +4444,7 @@
 
                 this.ctx.restore();
             }
+            
         }
         
         drawGroundTiles() {
