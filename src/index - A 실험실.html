@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>게임 맵</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="main-container">
+        <div class="shop-container" id="shopContainer">
+            <div class="shop-header">
+                <h2>SHOP</h2>
+                <button class="shop-close-btn" id="shopCloseBtn">×</button>
+            </div>
+            <div class="shop-content">
+                <div class="shop-card">
+                    <div class="card-image">
+                        <!-- 그림 영역 (Canvas로 그릴 예정) -->
+                        <canvas id="cardCanvas" width="250" height="200"></canvas>
+                    </div>
+                    <div class="card-info">
+                        <div class="card-name">다이아몬드</div>
+                        <div class="card-price-row">
+                            <div class="card-price">무료</div>
+                            <button class="card-equip-btn" id="equipBtn">장착 중</button>
+                        </div>
+                        <div class="card-description">점프,점프,점프!!</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="game-container">
+            <canvas id="gameCanvas"></canvas>
+        </div>
+    </div>
+    <script src="game.js"></script>
+</body>
+</html>

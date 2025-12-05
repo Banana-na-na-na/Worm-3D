@@ -21,7 +21,9 @@ class TacticalGame {
             width: 0, // 플레이어 너비 (스터드보다 조금 큼)
             height: 0, // 플레이어 높이 (스터드보다 조금 큼)
             speed: 3, // 이동 속도 (픽셀/프레임)
-            stunTimer: 0 // 기절 타이머 (0이면 기절하지 않음)
+            stunTimer: 0, // 기절 타이머 (0이면 기절하지 않음)
+            fireSpeedBoostTimer: 0, // 불 속도 증가 타이머 (10초 = 600프레임)
+            fireEffect: { active: false, damageCooldown: 0, durationTimer: 0 } // 불 효과 (1초마다 대미지, 벗어난 후 7초 지속)
         };
         
         // 마우스 상태
@@ -55,6 +57,10 @@ class TacticalGame {
         this.showRewardSelection = false; // 보상 선택 화면 표시 여부
         this.rewards = []; // 보상 선택지 배열
         this.rewardButtons = []; // 보상 버튼 영역 배열
+        this.skipRewardButtonArea = null; // 건너뛰기 버튼 영역
+        this.rerollRewardButtonArea = null; // 리롤 버튼 영역
+        this.rerollCost = 50; // 리롤 비용 (처음 50, 누를 때마다 50씩 증가)
+        this.rerollCountdown = null; // 리롤 카운트다운 (null이면 리롤 가능, 3,2,1,0)
         this.showCraftingTableReward = false; // 제작대 보상 화면 표시 여부
         this.craftingTableRewardButtonArea = null; // 제작대 보상 받기 버튼 영역
         this.showCraftingTable = false; // 제작대 UI 표시 여부
@@ -92,6 +98,19 @@ class TacticalGame {
         this.playerHitColorTimer = 0; // 플레이어 피격 색상 타이머
         this.enemyAttackCooldown = {}; // 적별 공격 쿨다운 (적 ID를 키로 사용)
         
+        // 메인 메뉴 시스템
+        this.showMainMenu = true; // 메인 메뉴 표시 여부
+        this.menuState = 'start'; // 'start', 'modeSelect', 'chapterSelect'
+        this.selectedMode = null; // 'main', 'sub'
+        this.selectedChapter = null; // 1, 2, ...
+        this.chapterScrollX = 0; // 장 선택 화면 스크롤 X
+        this.targetScrollX = 0; // 목표 스크롤 X
+        this.hoveredChapter = null; // 마우스 오버된 장
+        this.chapterLastClickTime = {}; // 장별 마지막 클릭 시간 (더블클릭용)
+        this.defenseTextShake = { x: 0, y: 0, timer: 0 }; // '공 방어' 텍스트 흔들림
+        this.defeatedBosses = new Set(); // 잡은 보스 목록 (10: 워터밤, 20: 코뿔소, 30: 탱크)
+        this.chapterClearMessage = { show: false, timer: 0, duration: 60 }; // 1장 클리어 메시지 (1초 = 60프레임)
+        
         // 게임 오버 시스템
         this.gameOver = false; // 게임 오버 상태
         this.fadeAlpha = 0; // 페이드 아웃 알파값 (0 = 투명, 1 = 완전히 검음)
@@ -102,6 +121,8 @@ class TacticalGame {
         this.restartButtonArea = null; // 재시작 버튼 영역
         this.monsterName = '동그라미'; // 몬스터 이름
         this.diedFromPoison = false; // 독으로 죽었는지 여부
+        this.diedFromBleeding = false; // 출혈로 죽었는지 여부
+        this.diedFromFire = false; // 불로 죽었는지 여부
         this.savedWaveNumber = 1; // 저장된 웨이브 번호 (재시작 시 사용)
         this.savedInventory = []; // 저장된 인벤토리 (재시작 시 사용)
         this.savedExperience = 0; // 저장된 경험치 (재시작 시 사용)
@@ -153,6 +174,11 @@ class TacticalGame {
         this.waterParticles = []; // 물 파티클 배열 [{x, y, vx, vy, life, maxLife, ...}]
         this.waterPoolsGenerated = false; // 물 웅덩이 생성 완료 플래그
         
+        // 화염병 시스템
+        this.gasolineBombProjectiles = []; // 화염병 발사체 배열 [{x, y, vx, vy, radius, targetEnemy}]
+        this.gasolineBombHitboxes = []; // 화염병 히트박스 배열 [{x, y, radius, timer, duration, particles}]
+        this.fireParticles = []; // 불 파티클 배열 [{x, y, vx, vy, life, maxLife, size}]
+        
         // 플레이어 업그레이드 시스템
         this.playerUpgrades = {
             damage: { level: 1, baseCost: 100 }, // 대미지 레벨 및 기본 비용
@@ -189,6 +215,7 @@ class TacticalGame {
             '섬광탄': 10,
             '섬광 지뢰': 1,
             '총알 지뢰': 1,
+            '화염병': 1,
             '색상(제작용)': 5
         };
         
@@ -223,8 +250,10 @@ class TacticalGame {
         // 보스 시스템
         this.boss = null; // 보스 객체
         this.bossProjectiles = []; // 보스 발사체 배열 [{x, y, vx, vy, damage, isPoison, ...}]
+        this.cannonProjectiles = []; // 대포 발사체 배열 [{x, y, vx, vy, radius, damage}]
         this.poisonEffect = { active: false, damage: 0, timer: 0, initialDamage: 0 }; // 독 효과 (initialDamage로 뱀/보스 구분)
         this.bleedingEffect = { active: false, damage: 0, timer: 0, particles: [] }; // 출혈 효과 (15대미지까지 2대미지씩)
+        this.speedDebuffTimer = 0; // 속도 감소 타이머 (5초 = 300프레임)
         
         // 맵 도트딜 시스템 (맵에 닿으면 독 효과로 20데미지)
         this.mapDotDamage = { active: false, damage: 0, timer: 0, interval: 0.2 * 60, totalDamage: 20 }; // 0.2초마다 1데미지씩 총 20데미지
@@ -275,7 +304,8 @@ class TacticalGame {
             '개틀링 건': '연사력이 빠른 개틀링 건\n빠른 속도로 적을 공격합니다',
             '자석석': '자석석\n자석 효과를 가진 블럭',
             '스펀치벽': '스펀지 벽\n적을 튕겨내는 벽',
-            '섬광탄': '섬광탄\n0 키로 장착\n히트박스 안의 적을 5초간 기절시킵니다\n쿨타임 2초'
+            '섬광탄': '섬광탄\n0 키로 장착\n히트박스 안의 적을 5초간 기절시킵니다\n쿨타임 2초',
+            '화염병': '화염병\n범위 안에 적이 들어오면 발사체를 발사합니다\n적에게 닿으면 7.5초 동안 화염 히트박스를 생성합니다'
         };
         
         // 물총 발사체 배열
@@ -334,7 +364,8 @@ class TacticalGame {
             '섬광 지뢰': 'flash_mine.png',
             '빛(제작용)': 'Light.png',
             '색상(제작용)': 'color_element.png',
-            '총알 지뢰': 'Bullets_mine.png'
+            '총알 지뢰': 'Bullets_mine.png',
+            '화염병': 'gasoline_bomb.png'
         };
         
         // 각 아이템 타입별 이미지 로드
@@ -361,6 +392,7 @@ class TacticalGame {
             img.onerror = () => {
                 console.warn(`${type} 적 이미지(${file})를 로드할 수 없습니다. 경로: images/${file}`);
             };
+            // 적 이미지들은 src/index.html 기준으로 images 폴더에 있음
             img.src = `images/${file}`;
         };
         
@@ -374,6 +406,12 @@ class TacticalGame {
         loadEnemyImage('elephant', 'e-7.png');
         loadEnemyImage('rhino', 'e-8.png');
         loadEnemyImage('skunk', 'e-9.png');
+        loadEnemyImage('knight', 'e-10.png');
+        loadEnemyImage('soldier', 'e-11.png');
+        loadEnemyImage('flash', 'e-12.png'); // 섬광 동그라미 이미지
+        loadEnemyImage('fire', 'e-13.png'); // 화염 동그라미 이미지
+        loadEnemyImage('cannon', 'e-14.png'); // 대포 이미지
+        loadEnemyImage('tank', 'e-15.png'); // 탱크 이미지
     }
     
     setupCanvas() {
@@ -415,8 +453,29 @@ class TacticalGame {
         // 마우스 이동
         this.canvas.addEventListener('mousemove', (e) => {
             const rect = this.canvas.getBoundingClientRect();
-            this.mouse.x = e.clientX - rect.left;
-            this.mouse.y = e.clientY - rect.top;
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+            this.mouse.x = mouseX;
+            this.mouse.y = mouseY;
+            
+            // 메인 메뉴 호버 처리
+            if (this.showMainMenu && this.menuState === 'chapterSelect' && this.chapterAreas) {
+                let foundHover = false;
+                for (let chapter in this.chapterAreas) {
+                    const area = this.chapterAreas[chapter];
+                    if (mouseX >= area.x && 
+                        mouseX <= area.x + area.width &&
+                        mouseY >= area.y && 
+                        mouseY <= area.y + area.height) {
+                        this.hoveredChapter = parseInt(chapter);
+                        foundHover = true;
+                        break;
+                    }
+                }
+                if (!foundHover) {
+                    this.hoveredChapter = null;
+                }
+            }
         });
         
         // 마우스 누름
@@ -470,6 +529,87 @@ class TacticalGame {
             const mouseX = e.clientX - rect.left;
             const mouseY = e.clientY - rect.top;
             
+            // 메인 메뉴 클릭 처리
+            if (this.showMainMenu) {
+                if (this.menuState === 'start' && this.playButtonArea) {
+                    if (mouseX >= this.playButtonArea.x && 
+                        mouseX <= this.playButtonArea.x + this.playButtonArea.width &&
+                        mouseY >= this.playButtonArea.y && 
+                        mouseY <= this.playButtonArea.y + this.playButtonArea.height) {
+                        this.menuState = 'modeSelect';
+                        return;
+                    }
+                } else if (this.menuState === 'modeSelect') {
+                    if (this.mainModeButtonArea) {
+                        if (mouseX >= this.mainModeButtonArea.x && 
+                            mouseX <= this.mainModeButtonArea.x + this.mainModeButtonArea.width &&
+                            mouseY >= this.mainModeButtonArea.y && 
+                            mouseY <= this.mainModeButtonArea.y + this.mainModeButtonArea.height) {
+                            this.selectedMode = 'main';
+                            this.menuState = 'chapterSelect';
+                            this.selectedChapter = 1;
+                            this.targetScrollX = 0;
+                            return;
+                        }
+                    }
+                    if (this.subModeButtonArea) {
+                        if (mouseX >= this.subModeButtonArea.x && 
+                            mouseX <= this.subModeButtonArea.x + this.subModeButtonArea.width &&
+                            mouseY >= this.subModeButtonArea.y && 
+                            mouseY <= this.subModeButtonArea.y + this.subModeButtonArea.height) {
+                            this.selectedMode = 'sub';
+                            // 서브 모드 처리 (나중에 구현)
+                            return;
+                        }
+                    }
+                } else if (this.menuState === 'chapterSelect' && this.chapterAreas) {
+                    // 장 클릭 처리
+                    for (let chapter in this.chapterAreas) {
+                        const area = this.chapterAreas[chapter];
+                        if (mouseX >= area.x && 
+                            mouseX <= area.x + area.width &&
+                            mouseY >= area.y && 
+                            mouseY <= area.y + area.height) {
+                            const chapterNum = parseInt(chapter);
+                            
+                            // 더블클릭 체크
+                            const now = Date.now();
+                            const lastClickTime = this.chapterLastClickTime[chapterNum] || 0;
+                            if (now - lastClickTime < 300) { // 300ms 내 더블클릭
+                                // 게임 시작 (웨이브는 시작하지 않음, 버튼을 눌러야 시작)
+                                this.showMainMenu = false;
+                                this.waveNumber = 1;
+                                this.waveStarted = false; // 웨이브 시작 안 함
+                                // startWave() 호출하지 않음 - 웨이브 시작 버튼을 눌러야 시작
+                                return;
+                            }
+                            this.chapterLastClickTime[chapterNum] = now;
+                            
+                            // 장 선택
+                            const centerX = this.canvas.width / 2;
+                            const chapterWidth = 400;
+                            const chapterSpacing = 50;
+                            
+                            // 이미 선택된 장을 다시 클릭한 경우
+                            if (this.selectedChapter === chapterNum && chapterNum === 2) {
+                                // 2장이 이미 선택되어 있고 다시 클릭하면 '1장 클리어' 메시지 표시
+                                this.chapterClearMessage.show = true;
+                                this.chapterClearMessage.timer = 0;
+                            } else {
+                                // 장 선택
+                                this.selectedChapter = chapterNum;
+                                // 선택된 장이 화면 중앙에 오도록 스크롤
+                                // 1장은 중앙(0), 2장은 오른쪽(chapterWidth + chapterSpacing)
+                                const targetOffset = (chapterNum - 1) * (chapterWidth + chapterSpacing);
+                                this.targetScrollX = -targetOffset;
+                            }
+                            return;
+                        }
+                    }
+                }
+                return; // 메인 메뉴가 표시되면 다른 클릭 처리는 하지 않음
+            }
+            
             // 게임 오버 상태에서 돌아가기 버튼 클릭 체크
             if (this.gameOver && this.showRestartButton && this.restartButtonArea) {
                 if (mouseX >= this.restartButtonArea.x && 
@@ -514,8 +654,8 @@ class TacticalGame {
                 }
             }
             
-            // 적 소환 버튼 클릭 체크 (웨이브가 시작 안됐을 때만)
-            if (this.spawnEnemyButtonArea && !this.gameOver && !this.showRewardSelection && !this.waveStarted) {
+            // 적 소환 버튼 클릭 체크
+            if (this.spawnEnemyButtonArea && !this.gameOver && !this.showRewardSelection) {
                 if (mouseX >= this.spawnEnemyButtonArea.x && 
                     mouseX <= this.spawnEnemyButtonArea.x + this.spawnEnemyButtonArea.width &&
                     mouseY >= this.spawnEnemyButtonArea.y && 
@@ -540,7 +680,7 @@ class TacticalGame {
                 }
                 
                 // 적 타입 버튼 클릭 체크
-                const enemyTypes = ['normal', 'defense', 'sharp', 'archer', 'snake', 'poisonSnake', 'monkey', 'elephant', 'rhino', 'skunk', 'soldier', 'knight', 'boss'];
+                const enemyTypes = ['normal', 'defense', 'sharp', 'archer', 'flash', 'snake', 'poisonSnake', 'monkey', 'elephant', 'rhino', 'skunk', 'soldier', 'knight', 'boss'];
                 for (let i = 0; i < enemyTypes.length; i++) {
                     const enemyType = enemyTypes[i];
                     const buttonArea = this.enemySpawnButtonAreas[enemyType];
@@ -551,7 +691,8 @@ class TacticalGame {
                             mouseY <= buttonArea.y + buttonArea.height) {
                             // 선택한 적 타입 소환
                             if (enemyType === 'boss') {
-                                this.spawnBoss(true);
+                                // X(적 소환 창)를 통해 워터밤을 소환할 때는 물고기 소환 비활성화
+                                this.spawnBoss(true, { disableFishSpawn: true });
                             } else {
                                 this.spawnEnemy(enemyType);
                             }
@@ -1065,6 +1206,61 @@ class TacticalGame {
             
             // 보상 선택 버튼 클릭 체크
             if (this.showRewardSelection) {
+                // 건너뛰기 버튼 클릭 체크
+                if (this.skipRewardButtonArea) {
+                    const skipButton = this.skipRewardButtonArea;
+                    if (mouseX >= skipButton.x && 
+                        mouseX <= skipButton.x + skipButton.width &&
+                        mouseY >= skipButton.y && 
+                        mouseY <= skipButton.y + skipButton.height) {
+                        // 아무것도 안 받고 넘어감
+                        this.selectReward(null);
+                        return;
+                    }
+                }
+                
+                // 리롤 버튼 클릭 체크
+                if (this.rerollRewardButtonArea) {
+                    const rerollButton = this.rerollRewardButtonArea;
+                    if (mouseX >= rerollButton.x && 
+                        mouseX <= rerollButton.x + rerollButton.width &&
+                        mouseY >= rerollButton.y && 
+                        mouseY <= rerollButton.y + rerollButton.height) {
+                        // 물블럭 등이 나올 때는 리롤 불가
+                        const hasSpecialReward = this.rewards.some(r => 
+                            r === '물블럭' || r === '물총' || r === '깊은물블럭'
+                        );
+                        if (hasSpecialReward) {
+                            return; // 리롤 불가
+                        }
+                        
+                        // 0이면 클릭 불가
+                        if (this.rerollCountdown === 0) {
+                            return;
+                        }
+                        
+                        // 리롤 카운트다운 처리
+                        if (this.rerollCountdown === null) {
+                            // 처음 리롤 버튼 클릭
+                            if (this.experience >= this.rerollCost) {
+                                this.experience -= this.rerollCost;
+                                this.rerollCountdown = 3;
+                                this.rerollRewards(); // 리롤 실행
+                            }
+                        } else if (this.rerollCountdown > 0) {
+                            // 카운트다운 중
+                            this.rerollCountdown--;
+                            if (this.rerollCountdown > 0) {
+                                // 아직 카운트다운 중이면 리롤 실행
+                                this.rerollRewards();
+                            }
+                            // 0이 되면 자동으로 회색으로 변하고 못 누르게 됨
+                        }
+                        return;
+                    }
+                }
+                
+                // 보상 버튼 클릭 체크
                 for (let button of this.rewardButtons) {
                     if (mouseX >= button.x && 
                         mouseX <= button.x + button.width &&
@@ -1191,7 +1387,7 @@ class TacticalGame {
             e.preventDefault();
             
             // 적 소환 창이 열려있을 때만 스크롤
-            if (this.showEnemySpawnWindow && !this.gameOver && !this.showRewardSelection && !this.waveStarted) {
+            if (this.showEnemySpawnWindow && !this.gameOver && !this.showRewardSelection) {
                 const scrollSpeed = 20;
                 this.enemySpawnScrollOffset += e.deltaY > 0 ? scrollSpeed : -scrollSpeed;
                 
@@ -1294,6 +1490,48 @@ class TacticalGame {
             }
         }
         
+        // 불 속도 증가 타이머 감소
+        if (this.player.fireSpeedBoostTimer > 0) {
+            this.player.fireSpeedBoostTimer--;
+        }
+        
+        // 불 효과 업데이트 (1초마다 대미지)
+        if (this.player.fireEffect.active) {
+            // 불 효과 지속 시간 타이머 감소
+            if (this.player.fireEffect.durationTimer > 0) {
+                this.player.fireEffect.durationTimer--;
+                // 타이머가 0이 되면 불 효과 비활성화
+                if (this.player.fireEffect.durationTimer <= 0) {
+                    this.player.fireEffect.active = false;
+                    this.player.fireEffect.damageCooldown = 0;
+                }
+            }
+            
+            // 불 효과가 활성화되어 있으면 1초마다 대미지
+            if (this.player.fireEffect.active) {
+                this.player.fireEffect.damageCooldown--;
+                if (this.player.fireEffect.damageCooldown <= 0) {
+                    // 1초마다 대미지 적용
+                    const damage = 1;
+                    this.health -= damage;
+                    if (this.health < 0) this.health = 0;
+                    this.playerHitColorTimer = 10; // 10프레임 동안 빨강
+                    this.updateHealthDisplay();
+                    
+                    // 체력이 0이 되면 게임 오버
+                    if (this.health <= 0 && !this.gameOver) {
+                        this.monsterName = '화염 동그라미';
+                        this.diedFromFire = true; // 불로 죽었음을 표시
+                        this.saveGameState();
+                        this.gameOver = true;
+                    }
+                    
+                    // 다음 대미지를 위해 쿨다운 리셋
+                    this.player.fireEffect.damageCooldown = 60; // 1초 = 60프레임
+                }
+            }
+        }
+        
         // 속도 계산
         let currentSpeed = this.player.speed;
         if (inWater) {
@@ -1305,6 +1543,28 @@ class TacticalGame {
         } else if (onWaterBlock) {
             // 물블럭 위에 있으면 속도 증가 (1.5배)
             currentSpeed = this.player.speed * 1.5;
+        }
+        
+        // 출혈 효과: 속도 절반으로 감소
+        if (this.bleedingEffect.active) {
+            currentSpeed = currentSpeed * 0.5;
+        }
+        
+        // 속도 감소 효과 (대포 발사체에 맞았을 때)
+        if (this.speedDebuffTimer > 0) {
+            this.speedDebuffTimer--;
+            currentSpeed = currentSpeed * 0.5; // 속도 절반
+        }
+        
+        // 탱크 총알 속도 감소 효과 (1/2 감소)
+        if (this.player.tankSlowTimer > 0) {
+            this.player.tankSlowTimer--;
+            currentSpeed = currentSpeed * 0.5; // 속도 절반
+        }
+        
+        // 불 속도 증가 효과 (1.5배)
+        if (this.player.fireSpeedBoostTimer > 0) {
+            currentSpeed = currentSpeed * 1.5;
         }
         
         if (this.keys.w && this.player.y > 0) {
@@ -2175,11 +2435,13 @@ class TacticalGame {
     spawnEnemy(specificType = null) {
         // 화면 밖에서 적 생성 (랜덤한 위치)
         let radius = this.studSize / 2; // 1 스터드 크기 (반지름)
-        // 코끼리는 크게, 코뿔소는 조금 작게
+        // 코끼리는 크게, 코뿔소는 조금 작게, 대포는 크게
         if (specificType === 'elephant') {
             radius = this.studSize * 1.5; // 코끼리는 1.5배 크기
         } else if (specificType === 'rhino') {
             radius = this.studSize * 1.2; // 코뿔소는 코끼리보다 조금 작게 (1.2배)
+        } else if (specificType === 'cannon') {
+            radius = this.studSize * 1.2; // 대포는 플레이어의 2배 크기
         }
         
             let x, y;
@@ -2205,6 +2467,8 @@ class TacticalGame {
         const currentMonkeyCount = this.enemies.filter(e => e.type === 'monkey').length;
         // 현재 코뿔소 수 확인
         const currentRhinoCount = this.enemies.filter(e => e.type === 'rhino').length;
+        // 현재 탱크 수 확인
+        const currentTankCount = this.enemies.filter(e => e.type === 'tank').length;
         
         // 적 타입 결정
         let enemyType = 'normal'; // 기본 타입
@@ -2219,6 +2483,10 @@ class TacticalGame {
             // 코뿔소는 1마리만 소환 가능 (적 소환 창에서도 제한)
             if (specificType === 'rhino' && currentRhinoCount >= 1) {
                 return; // 코뿔소가 이미 1마리 있으면 소환하지 않음
+            }
+            // 탱크는 1마리만 소환 가능 (적 소환 창에서도 제한)
+            if (specificType === 'tank' && currentTankCount >= 1) {
+                return; // 탱크가 이미 1마리 있으면 소환하지 않음
             }
             enemyType = specificType;
         } else {
@@ -2246,34 +2514,132 @@ class TacticalGame {
                     enemyType = 'elephant'; // 코끼리
                 }
             } else if (this.waveNumber >= 21 && this.waveNumber <= 30) {
-                // 21-30 스테이지 (전쟁터): 작은 뱀, 동그라미, 기사, 군인 소환
+                // 21-30 스테이지 (전쟁터)
                 const rand = Math.random();
                 if (this.waveNumber <= 23) {
-                    // 21-23 스테이지: 작은 뱀, 동그라미, 기사
-                    if (rand < 0.1) {
-                        enemyType = 'normal'; // 동그라미 (10%)
-                    } else if (rand < 0.7) {
-                        enemyType = 'snake'; // 작은 뱀 (60%)
-                    } else {
-                        enemyType = 'knight'; // 기사 (30%)
+                    if (this.waveNumber === 22) {
+                        // 22 스테이지: 작은 뱀, 동그라미, 기사
+                        // (섬광 동그라미는 항상 5명을 따로 유지하므로 여기에서는 소환하지 않음)
+                        if (rand < 0.2) {
+                            enemyType = 'normal'; // 동그라미 (20%)
+                        } else if (rand < 0.7) {
+                            enemyType = 'snake'; // 작은 뱀 (50%)
+                        } else {
+                            enemyType = 'knight'; // 기사 (30%)
+                        }
+                    } else if (this.waveNumber === 21) {
+                        // 21 스테이지: 작은 뱀, 동그라미, 기사
+                        if (rand < 0.1) {
+                            enemyType = 'normal'; // 동그라미 (10%)
+                        } else if (rand < 0.7) {
+                            enemyType = 'snake'; // 작은 뱀 (60%)
+                        } else {
+                            enemyType = 'knight'; // 기사 (30%)
+                        }
+                    } else if (this.waveNumber === 23) {
+                        // 23 스테이지: 스컹크, 화염 동그라미, 기사, 원거리 뱀
+                        const currentFireCount = this.enemies.filter(e => e.type === 'fire').length;
+                        const canSpawnFire = currentFireCount < 5; // 최대 5명
+                        
+                        if (rand < 0.5 && canSpawnFire) {
+                            enemyType = 'fire'; // 화염 동그라미 (50%)
+                        } else {
+                            // 화염 동그라미를 스폰할 수 없거나 확률에 해당하지 않으면 다른 적 스폰
+                            const adjustedRand = Math.random();
+                            if (adjustedRand < 0.3) {
+                                enemyType = 'skunk'; // 스컹크 (30%)
+                            } else if (adjustedRand < 0.6) {
+                                enemyType = 'knight'; // 기사 (30%)
+                            } else if (adjustedRand < 0.75) {
+                                enemyType = 'poisonSnake'; // 원거리 뱀 (15%)
+                            } else {
+                                enemyType = 'normal'; // 일반 (25%)
+                            }
+                        }
                     }
                 } else {
-                    // 24-30 스테이지: 작은 뱀, 동그라미, 기사, 군인
-                    if (rand < 0.1) {
-                        enemyType = 'normal'; // 동그라미 (10%)
-                    } else if (rand < 0.5) {
-                        enemyType = 'snake'; // 작은 뱀 (40%)
-                    } else if (rand < 0.75) {
-                        enemyType = 'knight'; // 기사 (25%)
+                    if (this.waveNumber === 24) {
+                        // 24 스테이지: 작은 뱀, 동그라미, 기사, 군인
+                        if (rand < 0.1) {
+                            enemyType = 'normal'; // 동그라미 (10%)
+                        } else if (rand < 0.5) {
+                            enemyType = 'snake'; // 작은 뱀 (40%)
+                        } else if (rand < 0.75) {
+                            enemyType = 'knight'; // 기사 (25%)
+                        } else {
+                            enemyType = 'soldier'; // 군인 (25%)
+                        }
                     } else {
-                        enemyType = 'soldier'; // 군인 (25%)
+                        if (this.waveNumber === 25) {
+                            // 25 스테이지: 기사, 대포, 군인, 섬광 동그라미, 화염 동그라미
+                            const currentFireCount = this.enemies.filter(e => e.type === 'fire').length;
+                            const canSpawnFire = currentFireCount < 5; // 최대 5명
+                            
+                            if (rand < 0.2) {
+                                enemyType = 'knight'; // 기사 (20%)
+                            } else if (rand < 0.4) {
+                                enemyType = 'cannon'; // 대포 (20%)
+                            } else if (rand < 0.6) {
+                                enemyType = 'soldier'; // 군인 (20%)
+                            } else if (rand < 0.8) {
+                                enemyType = 'flash'; // 섬광 동그라미 (20%)
+                            } else {
+                                // 화염 동그라미 (20%)
+                                if (canSpawnFire) {
+                                    enemyType = 'fire';
+                                } else {
+                                    // 화염 동그라미가 최대치면 기사로 대체
+                                    enemyType = 'knight';
+                                }
+                            }
+                        } else {
+                            if (this.waveNumber === 30) {
+                                // 30 스테이지: 기사, 군인, 화염 동그라미, 섬광 동그라미만
+                                const currentFireCount = this.enemies.filter(e => e.type === 'fire').length;
+                                const canSpawnFire = currentFireCount < 5; // 최대 5명
+                                
+                                const rand = Math.random();
+                                if (rand < 0.25) {
+                                    enemyType = 'knight'; // 기사 (25%)
+                                } else if (rand < 0.5) {
+                                    enemyType = 'soldier'; // 군인 (25%)
+                                } else if (rand < 0.75 && canSpawnFire) {
+                                    enemyType = 'fire'; // 화염 동그라미 (25%, 최대 5명)
+                                } else if (rand < 0.75) {
+                                    // 화염 동그라미가 최대치면 기사로 대체
+                                    enemyType = 'knight';
+                                } else {
+                                    enemyType = 'flash'; // 섬광 동그라미 (25%)
+                                }
+                            } else {
+                                // 26-29 스테이지: 작은 뱀, 동그라미, 기사, 군인
+                                if (rand < 0.1) {
+                                    enemyType = 'normal'; // 동그라미 (10%)
+                                } else if (rand < 0.5) {
+                                    enemyType = 'snake'; // 작은 뱀 (40%)
+                                } else if (rand < 0.75) {
+                                    enemyType = 'knight'; // 기사 (25%)
+                                } else {
+                                    enemyType = 'soldier'; // 군인 (25%)
+                                }
+                            }
+                        }
                     }
                 }
             } else if (this.waveNumber === 20) {
-                // 20 스테이지: 코뿔소 소환 (1마리만)
+                // 20 스테이지: 스컹크, 뱀, 코뿔소(1마리만), 원거리 뱀 조금, 원숭이
                 if (currentRhinoCount >= 1) {
-                    // 코뿔소가 이미 1마리 있으면 다른 적으로 대체
-                    enemyType = 'snake';
+                    // 코뿔소가 이미 1마리 있으면 다른 적으로
+                    const rand = Math.random();
+                    if (rand < 0.4) {
+                        enemyType = 'skunk'; // 스컹크 (40%)
+                    } else if (rand < 0.7) {
+                        enemyType = 'snake'; // 뱀 (30%)
+                    } else if (rand < 0.85) {
+                        enemyType = 'monkey'; // 원숭이 (15%)
+                    } else {
+                        enemyType = 'poisonSnake'; // 원거리 뱀 (15%)
+                    }
                 } else {
                     enemyType = 'rhino'; // 코뿔소
                 }
@@ -2360,6 +2726,10 @@ class TacticalGame {
             enemyHealth = 30; // 날카로운 동그라미도 체력 30
         } else if (enemyType === 'archer') {
             enemyHealth = 30; // 석궁 동그라미도 체력 30
+        } else if (enemyType === 'flash') {
+            enemyHealth = 40; // 섬광 동그라미 체력 40
+        } else if (enemyType === 'fire') {
+            enemyHealth = 50; // 화염 동그라미 체력 50
         } else if (enemyType === 'monkey') {
             enemyHealth = 5; // 원숭이 체력 5
         } else if (enemyType === 'elephant') {
@@ -2372,6 +2742,10 @@ class TacticalGame {
             enemyHealth = 50; // 군인 체력 50
         } else if (enemyType === 'knight') {
             enemyHealth = 100; // 기사 체력 100
+        } else if (enemyType === 'cannon') {
+            enemyHealth = 80; // 대포 체력 80
+        } else if (enemyType === 'tank') {
+            enemyHealth = 200; // 탱크 체력 200
         }
         
         // 뱀 적 생성
@@ -2408,6 +2782,7 @@ class TacticalGame {
                 radius: headRadius, // 머리 반지름
                 type: enemyType, // 'snake' 또는 'poisonSnake'
                 segments: segments, // 세그먼트 배열
+                bodySegmentCount: segmentCount - 1, // 몸통 세그먼트 개수 (머리 제외)
                 direction: Math.random() * Math.PI * 2, // 초기 방향
                 targetAngle: 0, // 목표 각도
                 speed: this.enemySpeed * 0.8, // 뱀 속도 (일반 적보다 조금 느림)
@@ -2504,11 +2879,43 @@ class TacticalGame {
                 enemy.armor = 50; // 방어력 (파란 피, 체력처럼 작동)
                 enemy.armorDamage = 0; // 방어력에 누적된 피해 (사용 안함, 체력처럼 직접 감소)
                 this.enemies.push(enemy);
+            } else if (enemyType === 'fire') {
+                // 화염 동그라미 특수 속성
+                enemy.speed = 1.5; // 속도 1.5
+                enemy.projectileCooldown = 0; // 화염 발사체 쿨다운
+                this.enemies.push(enemy);
             } else if (enemyType === 'skunk') {
                 // 스컹크 특수 속성
                 enemy.speed = this.enemySpeed * 1.5; // 원숭이와 같은 속도
                 enemy.fartCooldown = 0; // 방구 쿨타임 (5초 = 300프레임)
                 enemy.fartRange = 100; // 방구를 뀌는 범위 (플레이어와의 거리)
+                this.enemies.push(enemy);
+            } else if (enemyType === 'cannon') {
+                // 대포 특수 속성
+                // 플레이어의 2배 크기: 플레이어 최대 크기(studSize * 1.2) * 2 = studSize * 2.4
+                // radius는 반지름이므로 지름의 절반: (studSize * 2.4) / 2 = studSize * 1.2
+                enemy.radius = this.studSize * 1.2; // 플레이어의 2배 크기
+                enemy.speed = this.enemySpeed * 0.6; // 느린 속도 (60%)
+                enemy.keepDistance = 250; // 플레이어와 유지할 거리
+                enemy.lastDirection = { x: 0, y: 0 }; // 마지막 이동 방향 (뒤로 가지 못하게)
+                enemy.cannonCooldown = 0; // 대포 발사 쿨다운 (4초 = 240프레임)
+                enemy.lastAngle = 0; // 마지막 각도 (8방향)
+                this.enemies.push(enemy);
+            } else if (enemyType === 'tank') {
+                // 탱크 특수 속성
+                enemy.radius = this.studSize * 1.5; // 크게 (1.5배)
+                enemy.speed = 4; // 속도 4
+                enemy.keepDistance = 300; // 플레이어와 유지할 거리
+                enemy.lastDirection = { x: 0, y: 0 }; // 마지막 이동 방향
+                enemy.angle = 0; // 현재 각도 (16방향, 0~15)
+                enemy.shakeOffset = { x: 0, y: 0 }; // 흔들림 오프셋
+                enemy.shakeTimer = 0; // 흔들림 타이머
+                enemy.isShaking = false; // 특수 공격 전 흔들림 여부
+                enemy.shootCooldown = 0; // 발사 쿨다운
+                enemy.shotsFired = 0; // 발사한 총알 수
+                enemy.shotsToSpecial = 3 + Math.floor(Math.random() * 3); // 3~5번
+                enemy.specialCooldown = 0; // 특수 공격 쿨다운
+                enemy.trackMarks = []; // 바퀴 자국 배열 [{x, y, life, maxLife}]
                 this.enemies.push(enemy);
             } else {
             this.enemies.push(enemy);
@@ -2544,6 +2951,17 @@ class TacticalGame {
         
         // 웨이브가 시작되고 종료되지 않았을 때만 적 생성
         if (this.waveStarted && !this.waveEnded) {
+            // 22 스테이지: 섬광 동그라미(flash)가 항상 5명이 되도록 유지
+            if (this.waveNumber === 22) {
+                const currentFlashCount = this.enemies.filter(e => e.type === 'flash').length;
+                for (let i = currentFlashCount; i < 5; i++) {
+                    this.spawnEnemy('flash');
+                }
+            }
+            
+            // 23 스테이지: 화염 동그라미(fire)는 스폰 확률로만 생성 (최대 5명, 최소 0명)
+            // 강제 스폰 로직 제거 - 스폰 확률에 따라 자연스럽게 생성됨
+            
             // 적 생성 타이머 업데이트
             this.enemySpawnTimer++;
             
@@ -2810,6 +3228,8 @@ class TacticalGame {
                     let expGain = 0;
                     if (enemy.type === 'normal') {
                         expGain = 25; // 동그라미
+                    } else if (enemy.type === 'flash') {
+                        expGain = 80; // 섬광 동그라미
                     } else if (enemy.type === 'defense') {
                         expGain = 50; // 방어 동그라미
                     } else if (enemy.type === 'sharp') {
@@ -2839,9 +3259,15 @@ class TacticalGame {
                     });
                 }
                 
-                // 코뿔소를 잡으면 웨이브 종료
+                // 코뿔소를 잡으면 웨이브 종료 및 보스 기록
                 if (enemy.type === 'rhino') {
+                    this.defeatedBosses.add(20); // 코뿔소 (20스테이지)
                     this.endWave();
+                }
+                
+                // 탱크를 잡으면 보스 기록
+                if (enemy.type === 'tank') {
+                    this.defeatedBosses.add(30); // 탱크 (30스테이지)
                 }
                 
                 // 적 제거 (시체는 사라짐)
@@ -2964,6 +3390,122 @@ class TacticalGame {
                         dirY = 0;
                         distance = 0;
                     }
+                } else if (enemy.type === 'cannon') {
+                    // 대포는 앞으로만 이동, 플레이어와 거리 유지
+                    const dx = playerCenterX - enemy.x;
+                    const dy = playerCenterY - enemy.y;
+                    const distToPlayer = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (distToPlayer > 0) {
+                        const targetDirX = dx / distToPlayer;
+                        const targetDirY = dy / distToPlayer;
+                        
+                        // 마지막 이동 방향이 없으면 초기화
+                        if (!enemy.lastDirection) {
+                            enemy.lastDirection = { x: targetDirX, y: targetDirY };
+                        }
+                        
+                        // 거리가 너무 가까우면 제자리 (뒤로 가지 못함)
+                        if (distToPlayer < enemy.keepDistance) {
+                            dirX = 0;
+                            dirY = 0;
+                        } else if (distToPlayer > enemy.keepDistance * 1.2) {
+                            // 너무 멀면 앞으로만 이동 (뒤로 가지 못함)
+                            // 현재 방향과 목표 방향의 내적을 계산하여 앞으로만 이동
+                            const dotProduct = enemy.lastDirection.x * targetDirX + enemy.lastDirection.y * targetDirY;
+                            
+                            if (dotProduct >= -0.5) {
+                                // 앞으로 이동 가능 (약간의 뒤로 이동도 허용하여 자연스럽게)
+                                dirX = targetDirX;
+                                dirY = targetDirY;
+                                enemy.lastDirection.x = targetDirX;
+                                enemy.lastDirection.y = targetDirY;
+                            } else {
+                                // 뒤로 가려고 하면 제자리
+                                dirX = 0;
+                                dirY = 0;
+                            }
+                        } else {
+                            // 적절한 거리면 제자리
+                            dirX = 0;
+                            dirY = 0;
+                        }
+                        distance = distToPlayer;
+                    } else {
+                        dirX = 0;
+                        dirY = 0;
+                        distance = 0;
+                    }
+                } else if (enemy.type === 'tank') {
+                    // 탱크는 앞뒤로만 이동, 플레이어와 거리 유지
+                    const dx = playerCenterX - enemy.x;
+                    const dy = playerCenterY - enemy.y;
+                    const distToPlayer = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (distToPlayer > 0) {
+                        const targetDirX = dx / distToPlayer;
+                        const targetDirY = dy / distToPlayer;
+                        
+                        // 마지막 이동 방향이 없으면 초기화
+                        if (!enemy.lastDirection || (enemy.lastDirection.x === 0 && enemy.lastDirection.y === 0)) {
+                            enemy.lastDirection = { x: targetDirX, y: targetDirY };
+                        }
+                        
+                        // 거리가 너무 가까우면 뒤로 이동
+                        if (distToPlayer < enemy.keepDistance) {
+                            // 뒤로 이동 (마지막 방향의 반대)
+                            dirX = -enemy.lastDirection.x;
+                            dirY = -enemy.lastDirection.y;
+                            enemy.lastDirection.x = dirX;
+                            enemy.lastDirection.y = dirY;
+                        } else if (distToPlayer > enemy.keepDistance * 1.2) {
+                            // 너무 멀면 앞으로 이동
+                            // 현재 방향과 목표 방향의 내적을 계산하여 앞뒤로만 이동
+                            const dotProduct = enemy.lastDirection.x * targetDirX + enemy.lastDirection.y * targetDirY;
+                            
+                            if (dotProduct >= -0.5) {
+                                // 앞으로 이동 가능
+                                dirX = targetDirX;
+                                dirY = targetDirY;
+                                enemy.lastDirection.x = targetDirX;
+                                enemy.lastDirection.y = targetDirY;
+                            } else {
+                                // 뒤로 이동
+                                dirX = -targetDirX;
+                                dirY = -targetDirY;
+                                enemy.lastDirection.x = dirX;
+                                enemy.lastDirection.y = dirY;
+                            }
+                        } else {
+                            // 적절한 거리면 제자리
+                            dirX = 0;
+                            dirY = 0;
+                        }
+                        distance = distToPlayer;
+                    } else {
+                        dirX = 0;
+                        dirY = 0;
+                        distance = 0;
+                    }
+                    
+                    // 움직일 때 흔들림 효과
+                    if (dirX !== 0 || dirY !== 0) {
+                        enemy.shakeOffset.x = (Math.random() - 0.5) * 2;
+                        enemy.shakeOffset.y = (Math.random() - 0.5) * 2;
+                    } else {
+                        enemy.shakeOffset.x *= 0.9;
+                        enemy.shakeOffset.y *= 0.9;
+                    }
+                    
+                    // 바퀴 자국 생성
+                    if (dirX !== 0 || dirY !== 0) {
+                        enemy.trackMarks.push({
+                            x: enemy.x,
+                            y: enemy.y,
+                            life: 600, // 10초 = 600프레임
+                            maxLife: 600
+                        });
+                    }
                 } else {
                 // 만렙 가시 히트박스 체크 (적이 히트박스 안에 들어가면 가시쪽으로 빨려 들어감)
                 for (let block of this.blocks) {
@@ -3043,6 +3585,9 @@ class TacticalGame {
                 
                 if (enemy.type === 'sharp') {
                     enemySpeed = this.enemySpeed * 0.75; // 날카로운 동그라미는 25% 느림
+                } else if (enemy.type === 'knight') {
+                    // 기사는 기본 속도(또는 필요하면 별도 속도)를 사용
+                    enemySpeed = this.enemySpeed;
                 } else if (enemy.type === 'monkey') {
                     enemySpeed = this.enemySpeed * 1.5; // 원숭이는 50% 빠름
                 } else if (enemy.type === 'skunk') {
@@ -3063,6 +3608,10 @@ class TacticalGame {
                     } else {
                         enemySpeed = 0; // 돌진 중이거나 멈춤 중이면 속도 0
                     }
+                } else if (enemy.type === 'cannon') {
+                    enemySpeed = enemy.speed || (this.enemySpeed * 0.6); // 대포는 느림
+                } else if (enemy.type === 'tank') {
+                    enemySpeed = enemy.speed || 4; // 탱크는 속도 4
                 }
                 
                 // 물블럭 위에 있는지 체크
@@ -3150,6 +3699,13 @@ class TacticalGame {
                 if (enemy.waterGunSlowTimer && enemy.waterGunSlowTimer > 0) {
                     enemySpeed = enemySpeed * (1/3); // 3분의 1 속도
                     enemy.waterGunSlowTimer--;
+                }
+                
+                // 불 속도 증가 타이머 감소 및 속도 증가 적용
+                if (enemy.fireSpeedBoostTimer !== undefined && enemy.fireSpeedBoostTimer > 0) {
+                    enemy.fireSpeedBoostTimer--;
+                    // 불 속도 증가 효과 (1.5배)
+                    enemySpeed = enemySpeed * 1.5;
                 }
                 
                 // 스컹크 방구 로직
@@ -3962,15 +4518,8 @@ class TacticalGame {
                     
                     // 충돌 시 데미지 처리 (원숭이는 제외, 코끼리는 일반 공격 가능)
                     if ((enemy.type === 'normal' || enemy.type === 'sharp' || enemy.type === 'rhino' || enemy.type === 'elephant') && enemy.attackCooldown === 0) {
-                        // 체력 감소 (타입에 따라 데미지 다름)
-                        let damage = 10;
-                        if (enemy.type === 'sharp') {
-                            damage = 20;
-                        } else if (enemy.type === 'rhino') {
-                            damage = 30; // 코뿔소 일반 공격 대미지 30
-                        } else if (enemy.type === 'elephant') {
-                            damage = 50; // 코끼리 일반 공격 대미지 50
-                        }
+                        // 모든 적의 플레이어 공격력은 블럭을 때리는 공격력과 동일하게 1로 통일
+                        const damage = 1;
                         this.health -= damage;
                         if (this.health < 0) this.health = 0;
                         
@@ -3992,6 +4541,8 @@ class TacticalGame {
                                 this.monsterName = '방어 동그라미';
                             } else if (enemy.type === 'archer') {
                                 this.monsterName = '석궁 동그라미';
+                            } else if (enemy.type === 'flash') {
+                                this.monsterName = '섬광 동그라미';
                             } else if (enemy.type === 'soldier') {
                                 this.monsterName = '군인';
                             } else if (enemy.type === 'rhino') {
@@ -4100,6 +4651,240 @@ class TacticalGame {
                 }
             }
             
+            // 섬광 동그라미(플레이어와 거리를 두며 섬광탄을 던지는 적) 로직
+            if (enemy.type === 'flash') {
+                const playerCenterX = this.player.x + this.player.width / 2;
+                const playerCenterY = this.player.y + this.player.height / 2;
+                const dx = playerCenterX - enemy.x;
+                const dy = playerCenterY - enemy.y;
+                const distance = Math.sqrt(dx * dx + dy * dy) || 1;
+                
+                const desiredMin = 180; // 너무 가까우면 멀어지기
+                const desiredMax = 260; // 너무 멀면 다가가기
+                
+                let moveDx = 0;
+                let moveDy = 0;
+                
+                if (distance < desiredMin) {
+                    // 플레이어와 거리를 벌리기 (반대 방향으로 이동)
+                    moveDx = -dx;
+                    moveDy = -dy;
+                } else if (distance > desiredMax) {
+                    // 플레이어와 거리를 줄이기
+                    moveDx = dx;
+                    moveDy = dy;
+                }
+                
+                const moveDist = Math.sqrt(moveDx * moveDx + moveDy * moveDy);
+                if (moveDist > 0) {
+                    const speed = this.enemySpeed * 0.9; // 일반 적보다 약간 빠르게
+                    enemy.x += (moveDx / moveDist) * speed;
+                    enemy.y += (moveDy / moveDist) * speed;
+                }
+                
+                // 섬광탄 던지기: 일정 거리 범위 안에 있을 때 쿨다운마다 1발
+                const throwRangeMin = 180;
+                const throwRangeMax = 320;
+                if (distance >= throwRangeMin && distance <= throwRangeMax && enemy.projectileCooldown === 0) {
+                    const projSpeed = 7;
+                    const vx = (dx / distance) * projSpeed;
+                    const vy = (dy / distance) * projSpeed;
+                    
+                    this.enemyProjectiles.push({
+                        x: enemy.x,
+                        y: enemy.y,
+                        vx,
+                        vy,
+                        damage: 0,      // 섬광탄은 데미지 대신 시야를 가림
+                        radius: 8,
+                        type: 'flash'   // 섬광탄 발사체 타입
+                    });
+                    
+                    enemy.projectileCooldown = 180; // 3초 쿨다운 (180프레임)
+                }
+            }
+            
+            // 대포 발사체 생성 로직
+            if (enemy.type === 'cannon') {
+                // 대포 발사 쿨다운 감소
+                if (enemy.cannonCooldown > 0) {
+                    enemy.cannonCooldown--;
+                }
+                
+                // 4초마다 발사 (240프레임)
+                if (enemy.cannonCooldown === 0) {
+                    const playerCenterX = this.player.x + this.player.width / 2;
+                    const playerCenterY = this.player.y + this.player.height / 2;
+                    const dx = playerCenterX - enemy.x;
+                    const dy = playerCenterY - enemy.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy) || 1;
+                    
+                    // 8방향으로 제한된 각도 계산
+                    let angle = Math.atan2(dy, dx);
+                    const directions = 8;
+                    const angleStep = (Math.PI * 2) / directions;
+                    angle = Math.round(angle / angleStep) * angleStep;
+                    enemy.lastAngle = angle;
+                    
+                    // 발사체 속도
+                    const projSpeed = 8;
+                    const vx = Math.cos(angle) * projSpeed;
+                    const vy = Math.sin(angle) * projSpeed;
+                    
+                    // 대포 발사체 생성
+                    this.cannonProjectiles.push({
+                        x: enemy.x,
+                        y: enemy.y,
+                        vx: vx,
+                        vy: vy,
+                        radius: 15, // 발사체 반지름
+                        damage: Math.floor(Math.random() * 41) + 10 // 10~50 랜덤 대미지
+                    });
+                    
+                    enemy.cannonCooldown = 240; // 4초 쿨다운 (240프레임)
+                }
+            }
+            
+            // 화염 동그라미(플레이어와 거리를 두며 화염 발사체를 던지는 적) 로직
+            if (enemy.type === 'fire') {
+                const playerCenterX = this.player.x + this.player.width / 2;
+                const playerCenterY = this.player.y + this.player.height / 2;
+                const dx = playerCenterX - enemy.x;
+                const dy = playerCenterY - enemy.y;
+                const distance = Math.sqrt(dx * dx + dy * dy) || 1;
+                
+                const desiredMin = 180; // 너무 가까우면 멀어지기
+                const desiredMax = 260; // 너무 멀면 다가가기
+                
+                let moveDx = 0;
+                let moveDy = 0;
+                
+                if (distance < desiredMin) {
+                    // 플레이어와 거리를 벌리기 (반대 방향으로 이동)
+                    moveDx = -dx;
+                    moveDy = -dy;
+                } else if (distance > desiredMax) {
+                    // 플레이어와 거리를 줄이기
+                    moveDx = dx;
+                    moveDy = dy;
+                }
+                
+                const moveDist = Math.sqrt(moveDx * moveDx + moveDy * moveDy);
+                if (moveDist > 0) {
+                    const speed = 1.5; // 속도 1.5
+                    enemy.x += (moveDx / moveDist) * speed;
+                    enemy.y += (moveDy / moveDist) * speed;
+                }
+                
+                // 화염 발사체 던지기: 일정 거리 범위 안에 있을 때 쿨다운마다 1발
+                const throwRangeMin = 180;
+                const throwRangeMax = 320;
+                if (distance >= throwRangeMin && distance <= throwRangeMax && enemy.projectileCooldown === 0) {
+                    const projSpeed = 7;
+                    const vx = (dx / distance) * projSpeed;
+                    const vy = (dy / distance) * projSpeed;
+                    
+                    this.enemyProjectiles.push({
+                        x: enemy.x,
+                        y: enemy.y,
+                        vx,
+                        vy,
+                        damage: 15,      // 화염 발사체는 데미지를 줌
+                        radius: 8,
+                        type: 'fire'   // 화염 발사체 타입
+                    });
+                    
+                    enemy.projectileCooldown = 300; // 5초 쿨다운 (300프레임)
+                }
+            }
+            
+            // 탱크 공격 로직
+            if (enemy.type === 'tank') {
+                const playerCenterX = this.player.x + this.player.width / 2;
+                const playerCenterY = this.player.y + this.player.height / 2;
+                const dx = playerCenterX - enemy.x;
+                const dy = playerCenterY - enemy.y;
+                const distance = Math.sqrt(dx * dx + dy * dy) || 1;
+                
+                // 16방향으로 제한된 각도 계산
+                let angle = Math.atan2(dy, dx);
+                const directions = 16;
+                const angleStep = (Math.PI * 2) / directions;
+                angle = Math.round(angle / angleStep) * angleStep;
+                enemy.angle = Math.round((angle + Math.PI * 2) % (Math.PI * 2) / angleStep);
+                
+                // 특수 공격 전 흔들림 처리
+                if (enemy.isShaking) {
+                    enemy.shakeTimer++;
+                    const shakeIntensity = 5;
+                    enemy.shakeOffset.x = (Math.random() - 0.5) * shakeIntensity * 2;
+                    enemy.shakeOffset.y = (Math.random() - 0.5) * shakeIntensity * 2;
+                    
+                    if (enemy.shakeTimer >= 60) { // 1초 = 60프레임
+                        // 특수 공격 발사
+                        const specialSpeed = 12; // 빠른 공
+                        const vx = Math.cos(angle) * specialSpeed;
+                        const vy = Math.sin(angle) * specialSpeed;
+                        
+                        this.enemyProjectiles.push({
+                            x: enemy.x,
+                            y: enemy.y,
+                            vx: vx,
+                            vy: vy,
+                            damage: 20,
+                            radius: 10,
+                            type: 'tankSpecial', // 어두운 빨강 빠른 공
+                            color: '#8b0000' // 어두운 빨강
+                        });
+                        
+                        enemy.isShaking = false;
+                        enemy.shakeTimer = 0;
+                        enemy.shotsFired = 0;
+                        enemy.shotsToSpecial = 3 + Math.floor(Math.random() * 3); // 3~5번
+                    }
+                } else {
+                    // 일반 공격
+                    if (enemy.shootCooldown > 0) {
+                        enemy.shootCooldown--;
+                    }
+                    
+                    if (enemy.shootCooldown === 0 && enemy.shotsFired < enemy.shotsToSpecial) {
+                        // 노란색 총알 발사
+                        const projSpeed = 6;
+                        const vx = Math.cos(angle) * projSpeed;
+                        const vy = Math.sin(angle) * projSpeed;
+                        
+                        this.enemyProjectiles.push({
+                            x: enemy.x,
+                            y: enemy.y,
+                            vx: vx,
+                            vy: vy,
+                            damage: 0, // 대미지는 직접 처리 (체력의 1/4)
+                            radius: 8,
+                            type: 'tank', // 탱크 총알
+                            color: '#ffff00' // 노란색
+                        });
+                        
+                        enemy.shootCooldown = 90; // 1.5초 쿨다운 (90프레임)
+                        enemy.shotsFired++;
+                        
+                        // 발사 횟수 도달 시 흔들림 시작
+                        if (enemy.shotsFired >= enemy.shotsToSpecial) {
+                            enemy.isShaking = true;
+                            enemy.shakeTimer = 0;
+                        }
+                    }
+                }
+                
+                // 바퀴 자국 업데이트
+                for (let i = enemy.trackMarks.length - 1; i >= 0; i--) {
+                    enemy.trackMarks[i].life--;
+                    if (enemy.trackMarks[i].life <= 0) {
+                        enemy.trackMarks.splice(i, 1);
+                    }
+                }
+            }
+            
             // 다른 몬스터들과 충돌 체크 및 밀어내기
             for (let j = i + 1; j < this.enemies.length; j++) {
                 const otherEnemy = this.enemies[j];
@@ -4124,26 +4909,10 @@ class TacticalGame {
             }
         }
         
-        // 체력이 0 이하인 블록 제거 (벽과 가시는 인벤토리로 돌아감)
+        // 체력이 0 이하인 블록 제거 (적이나 다른 원인으로 파괴된 블록은 인벤토리에 돌아가지 않음)
         for (let i = this.blocks.length - 1; i >= 0; i--) {
             const block = this.blocks[i];
             if (block.health <= 0) {
-                // 벽과 가시 블록은 인벤토리로 돌아감
-                if (block.type === '벽' || block.type === '가시') {
-                    const existingItem = this.inventory.find(item => item.type === block.type);
-                    if (existingItem) {
-                        // 같은 타입의 아이템이 있으면 개수 증가
-                        existingItem.count++;
-                    } else {
-                        // 새로운 아이템 추가
-                        const appearFrame = this.inventory.length * this.inventoryAppearDelay;
-                        this.inventory.push({
-                            type: block.type,
-                            count: 1,
-                            appearFrame: appearFrame
-                        });
-                    }
-                }
                 // 블록 제거
                 this.blocks.splice(i, 1);
             }
@@ -4168,6 +4937,9 @@ class TacticalGame {
         // 적 발사체 업데이트
         this.updateEnemyProjectiles();
         
+        // 대포 발사체 업데이트
+        this.updateCannonProjectiles();
+        
         // 경험치 구슬 업데이트
         this.updateExperienceOrbs();
         
@@ -4176,6 +4948,12 @@ class TacticalGame {
         
         // 물 파티클 업데이트
         this.updateWaterParticles();
+        
+        // 화염병 시스템 업데이트
+        this.updateGasolineBombs();
+        this.updateGasolineBombProjectiles();
+        this.updateGasolineBombHitboxes();
+        this.updateFireParticles();
         
         // 10스테이지 물고기 시스템
         if (this.waveNumber >= 10) {
@@ -4762,7 +5540,8 @@ class TacticalGame {
         }
     }
     
-    spawnBoss(isFinalBoss) {
+    spawnBoss(isFinalBoss, options = {}) {
+        const { disableFishSpawn = false } = options;
         // 보스 생성 (적 소환 창에서 호출 시 웨이브 제한 없음)
         if (isFinalBoss) {
             const bossId = Date.now() + Math.random();
@@ -4802,7 +5581,8 @@ class TacticalGame {
                 attackCooldown: 0,
                 touchCooldown: 0, // 플레이어와 닿았을 때 쿨다운
                 spikeDamageCooldown: 0, // 가시 데미지 쿨다운
-                fishSpawnCooldown: 0, // 물고기 소환 쿨다운
+                fishSpawnCooldown: disableFishSpawn ? -1 : 0, // 물고기 소환 쿨다운 (-1이면 비활성화)
+                disableFishSpawn: disableFishSpawn,
                 leftGun: { x: 0, y: 0, width: 15, height: 40 }, // 왼쪽 회색 네모
                 rightGun: { x: 0, y: 0, width: 15, height: 40 } // 오른쪽 회색 네모
             };
@@ -4945,14 +5725,16 @@ class TacticalGame {
         }
         
         // 물고기 소환 쿨다운 감소
-        if (this.boss.fishSpawnCooldown > 0) {
-            this.boss.fishSpawnCooldown--;
-        }
-        
-        // 5초마다 물고기 소환
-        if (this.boss.fishSpawnCooldown === 0) {
-            this.spawnBossFish();
-            this.boss.fishSpawnCooldown = 5 * 60; // 5초
+        if (!this.boss.disableFishSpawn) {
+            if (this.boss.fishSpawnCooldown > 0) {
+                this.boss.fishSpawnCooldown--;
+            }
+            
+            // 5초마다 물고기 소환
+            if (this.boss.fishSpawnCooldown === 0) {
+                this.spawnBossFish();
+                this.boss.fishSpawnCooldown = 5 * 60; // 5초
+            }
         }
         
         // 가시 블록과의 충돌 체크 및 데미지
@@ -5112,6 +5894,7 @@ class TacticalGame {
             // 워터밤을 죽였는지 표시
             if (this.waveNumber === 10) {
                 this.bossKilled = true;
+                this.defeatedBosses.add(10); // 워터밤 (10스테이지)
             }
             
             this.boss = null;
@@ -5191,6 +5974,15 @@ class TacticalGame {
             
             // 체력이 0이 되면 게임 오버
             if (this.health <= 0 && !this.gameOver) {
+                // 어떤 독으로 죽었는지에 따라 몬스터 이름 설정
+                if (this.poisonEffect.initialDamage === 20) {
+                    // 뱀/독뱀 독
+                    this.monsterName = '독 뱀';
+                } else if (this.poisonEffect.initialDamage === 15) {
+                    // 보스 독
+                    this.monsterName = '워터밤';
+                }
+                
                 // 독으로 죽었는지 표시
                 this.diedFromPoison = true;
                 this.saveGameState(); // 게임 상태 저장
@@ -5242,6 +6034,7 @@ class TacticalGame {
             // 체력이 0이 되면 게임 오버
             if (this.health <= 0 && !this.gameOver) {
                 this.monsterName = '기사';
+                this.diedFromBleeding = true; // 출혈로 죽음
                 this.saveGameState();
                 this.gameOver = true;
             }
@@ -5673,6 +6466,63 @@ class TacticalGame {
         }
     }
     
+    updateCannonProjectiles() {
+        // 대포 발사체 업데이트
+        for (let i = this.cannonProjectiles.length - 1; i >= 0; i--) {
+            const projectile = this.cannonProjectiles[i];
+            
+            // 발사체 이동
+            projectile.x += projectile.vx;
+            projectile.y += projectile.vy;
+            
+            // 화면 밖으로 나가면 제거
+            if (projectile.x < -projectile.radius || projectile.x > this.canvas.width + projectile.radius ||
+                projectile.y < -projectile.radius || projectile.y > this.canvas.height + projectile.radius) {
+                this.cannonProjectiles.splice(i, 1);
+                continue;
+            }
+            
+            // 플레이어와 충돌 체크
+            const playerCenterX = this.player.x + this.player.width / 2;
+            const playerCenterY = this.player.y + this.player.height / 2;
+            const dx = projectile.x - playerCenterX;
+            const dy = projectile.y - playerCenterY;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            const playerRadius = Math.max(this.player.width, this.player.height) / 2;
+            if (distance < playerRadius + projectile.radius) {
+                // 대미지 적용 (10~50 랜덤)
+                this.health -= projectile.damage;
+                if (this.health < 0) this.health = 0;
+                
+                // 속도 감소 효과 (5초 = 300프레임)
+                this.speedDebuffTimer = 300;
+                
+                // 출혈 효과 (10초 동안)
+                this.bleedingEffect.active = true;
+                this.bleedingEffect.damage = 15; // 총 15대미지
+                this.bleedingEffect.timer = 0;
+                
+                // 피격 색상 적용
+                this.playerHitColorTimer = 10;
+                
+                // UI 업데이트
+                this.updateHealthDisplay();
+                
+                // 체력이 0이 되면 게임 오버
+                if (this.health <= 0 && !this.gameOver) {
+                    this.monsterName = '대포';
+                    this.saveGameState();
+                    this.gameOver = true;
+                }
+                
+                // 발사체 제거
+                this.cannonProjectiles.splice(i, 1);
+                continue;
+            }
+        }
+    }
+    
     updateEnemyProjectiles() {
         // 적 발사체 업데이트
         for (let i = this.enemyProjectiles.length - 1; i >= 0; i--) {
@@ -5698,38 +6548,94 @@ class TacticalGame {
             
             const playerRadius = Math.max(this.player.width, this.player.height) / 2;
             if (distance < playerRadius + projectile.radius) {
-                // 플레이어에게 데미지
-                this.health -= projectile.damage;
-                if (this.health < 0) this.health = 0;
-                
-                // 독 발사체인 경우 독 효과 추가
-                if (projectile.isPoison && projectile.poisonDamage) {
-                    this.poisonEffect.active = true;
-                    this.poisonEffect.damage = projectile.poisonDamage; // 5 대미지
-                    this.poisonEffect.initialDamage = projectile.poisonDamage;
-                    this.poisonEffect.timer = 0;
+                if (projectile.type === 'flash') {
+                    // 섬광탄: 데미지 대신 화면 섬광 효과만 적용 (섬광 동그라미의 섬광은 1초 + 그라데이션 페이드아웃)
+                    this.triggerPlayerFlash(60, 30); // 약 1초 유지 후 0.5초 동안 그라데이션으로 서서히 사라짐
+                } else if (projectile.type === 'fire') {
+                    // 화염 발사체: 데미지를 주고 화염 효과 적용
+                    this.health -= projectile.damage;
+                    if (this.health < 0) this.health = 0;
+                    this.playerHitColorTimer = 10; // 10프레임 동안 빨강
+                    
+                    // 화염 동그라미가 플레이어에게 던질 때,
+                    // 플레이어 주변에 큰 히트박스를 생성하고 그 위에 불 파티클을 생성
+                    const aoeRadius = 120; // 큰 범위
+                    const aoeDuration = 90; // 약 1.5초 (90프레임)
+                    this.gasolineBombHitboxes.push({
+                        x: playerCenterX,
+                        y: playerCenterY,
+                        radius: aoeRadius,
+                        timer: 0,
+                        duration: aoeDuration,
+                        particles: [],
+                        playerOnly: true // 플레이어만 데미지를 받는 히트박스
+                    });
+                    
+                    // 즉시 한 번 불 파티클 생성 (시작 연출)
+                    this.createFireParticles(playerCenterX, playerCenterY);
+                } else if (projectile.type === 'tank') {
+                    // 탱크 총알: 속도 1/2 감소, 체력 1/4 대미지
+                    const maxHealth = this.maxHealth || 100;
+                    const damage = Math.floor(maxHealth / 4);
+                    this.health -= damage;
+                    if (this.health < 0) this.health = 0;
+                    this.playerHitColorTimer = 10; // 10프레임 동안 빨강
+                    
+                    // 속도 1/2 감소 (최소 1초 = 60프레임 동안)
+                    if (!this.player.tankSlowTimer) {
+                        this.player.tankSlowTimer = 0;
+                    }
+                    this.player.tankSlowTimer = Math.max(this.player.tankSlowTimer, 60); // 최소 1초
+                    
+                    this.updateHealthDisplay();
+                } else if (projectile.type === 'tankSpecial') {
+                    // 탱크 특수 공격: 일반 데미지
+                    this.health -= projectile.damage;
+                    if (this.health < 0) this.health = 0;
+                    this.playerHitColorTimer = 10; // 10프레임 동안 빨강
+                    this.updateHealthDisplay();
+                } else {
+                    // 플레이어에게 데미지
+                    this.health -= projectile.damage;
+                    if (this.health < 0) this.health = 0;
+                    
+                    // 독 발사체인 경우 독 효과 추가
+                    if (projectile.isPoison && projectile.poisonDamage) {
+                        this.poisonEffect.active = true;
+                        this.poisonEffect.damage = projectile.poisonDamage; // 5 대미지
+                        this.poisonEffect.initialDamage = projectile.poisonDamage;
+                        this.poisonEffect.timer = 0;
+                    }
+                    
+                    // 피격 색상 적용 (넉백은 없음 - 아처 발사체)
+                    this.playerHitColorTimer = 10; // 10프레임 동안 빨강
+                    
+                    // UI 업데이트
+                    this.updateHealthDisplay();
+                    
+            // 체력이 0이 되면 게임 오버
+            if (this.health <= 0 && !this.gameOver) {
+                // 발사체 타입에 따라 몬스터 이름 설정
+                if (projectile.type === 'soldier') {
+                    this.monsterName = '군인';
+                } else if (projectile.type === 'tank' || projectile.type === 'tankSpecial') {
+                    this.monsterName = '탱크';
+                } else {
+                    this.monsterName = projectile.isPoison ? '독 뱀' : '석궁 동그라미';
                 }
                 
-                // 피격 색상 적용 (넉백은 없음 - 아처 발사체)
-                this.playerHitColorTimer = 10; // 10프레임 동안 빨강
+                // 독뱀(독 발사체)에게 즉사했을 때도 독으로 죽은 것으로 처리
+                if (projectile.isPoison) {
+                    this.diedFromPoison = true;
+                }
                 
-                // UI 업데이트
-                this.updateHealthDisplay();
+                this.saveGameState(); // 게임 상태 저장
+                this.gameOver = true;
+            }
+                }
                 
                 // 발사체 제거
                 this.enemyProjectiles.splice(i, 1);
-                
-                // 체력이 0이 되면 게임 오버
-                if (this.health <= 0 && !this.gameOver) {
-                    // 발사체 타입에 따라 몬스터 이름 설정
-                    if (projectile.type === 'soldier') {
-                        this.monsterName = '군인';
-                    } else {
-                        this.monsterName = projectile.isPoison ? '독 뱀' : '석궁 동그라미';
-                    }
-                    this.saveGameState(); // 게임 상태 저장
-                    this.gameOver = true;
-                }
                 continue;
             }
             
@@ -5955,6 +6861,289 @@ class TacticalGame {
         }
     }
     
+    updateGasolineBombs() {
+        // 화염병 블록 업데이트 (섬광탄 블록과 동일한 쿨타임 사용)
+        const cooldownDuration = 150; // 섬광탄 블록과 동일 (2.5초)
+        
+        for (let block of this.blocks) {
+            if (block.type !== '화염병') continue;
+            
+            // 감지 범위 기본값 설정
+            if (block.range === undefined || block.range === null) {
+                block.range = this.studSize * 2;
+            }
+            
+            // 쿨타임 초기화
+            if (block.gasolineCooldown === undefined) {
+                block.gasolineCooldown = 0;
+            }
+            
+            // 쿨타임 감소
+            if (block.gasolineCooldown > 0) {
+                block.gasolineCooldown--;
+                continue;
+            }
+            
+            const blockCenterX = block.x + this.studSize / 2;
+            const blockCenterY = block.y + this.studSize / 2;
+            let closestEnemy = null;
+            let closestDistance = Infinity;
+            
+            // 범위 안의 가장 가까운 적 찾기
+            for (let enemy of this.enemies) {
+                const dx = enemy.x - blockCenterX;
+                const dy = enemy.y - blockCenterY;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                if (distance <= block.range + enemy.radius && distance < closestDistance) {
+                    closestDistance = distance;
+                    closestEnemy = enemy;
+                }
+            }
+            
+            // 적이 범위 안에 있으면 발사체 생성 및 쿨타임 설정
+            if (closestEnemy) {
+                const dx = closestEnemy.x - blockCenterX;
+                const dy = closestEnemy.y - blockCenterY;
+                const distToEnemy = Math.sqrt(dx * dx + dy * dy);
+                
+                if (distToEnemy > 0) {
+                    const projectileSpeed = 8;
+                    const vx = (dx / distToEnemy) * projectileSpeed;
+                    const vy = (dy / distToEnemy) * projectileSpeed;
+                    
+                    this.gasolineBombProjectiles.push({
+                        x: blockCenterX,
+                        y: blockCenterY,
+                        vx: vx,
+                        vy: vy,
+                        radius: 8,
+                        targetEnemy: closestEnemy
+                    });
+                    
+                    // 쿨타임 설정
+                    block.gasolineCooldown = cooldownDuration;
+                }
+            }
+        }
+    }
+    
+    updateGasolineBombProjectiles() {
+        // 화염병 발사체 업데이트
+        for (let i = this.gasolineBombProjectiles.length - 1; i >= 0; i--) {
+            const projectile = this.gasolineBombProjectiles[i];
+            
+            // 발사체 이동
+            projectile.x += projectile.vx;
+            projectile.y += projectile.vy;
+            
+            // 화면 밖으로 나가면 제거
+            if (projectile.x < 0 || projectile.x > this.canvas.width ||
+                projectile.y < 0 || projectile.y > this.canvas.height) {
+                this.gasolineBombProjectiles.splice(i, 1);
+                continue;
+            }
+            
+            // 타겟 적이 여전히 존재하는지 확인
+            if (projectile.targetEnemy && this.enemies.includes(projectile.targetEnemy)) {
+                // 적과의 거리 계산
+                const dx = projectile.targetEnemy.x - projectile.x;
+                const dy = projectile.targetEnemy.y - projectile.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                // 적에 닿으면 히트박스 생성
+                if (distance < projectile.targetEnemy.radius + projectile.radius) {
+                    // 히트박스 생성 (7.5초 = 450프레임)
+                    this.gasolineBombHitboxes.push({
+                        x: projectile.targetEnemy.x,
+                        y: projectile.targetEnemy.y,
+                        radius: 50, // 히트박스 반경
+                        timer: 0,
+                        duration: 450, // 7.5초
+                        particles: [] // 불 파티클 배열
+                    });
+                    
+                    // 발사체 제거
+                    this.gasolineBombProjectiles.splice(i, 1);
+                    continue;
+                }
+            } else {
+                // 타겟 적이 사라졌으면 발사체 제거
+                this.gasolineBombProjectiles.splice(i, 1);
+                continue;
+            }
+            
+            // 모든 적과 충돌 체크 (타겟이 아닌 적도 체크)
+            for (let j = 0; j < this.enemies.length; j++) {
+                const enemy = this.enemies[j];
+                const dx = projectile.x - enemy.x;
+                const dy = projectile.y - enemy.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                if (distance < enemy.radius + projectile.radius) {
+                    // 히트박스 생성 (7.5초 = 450프레임)
+                    this.gasolineBombHitboxes.push({
+                        x: enemy.x,
+                        y: enemy.y,
+                        radius: 50, // 히트박스 반경
+                        timer: 0,
+                        duration: 450, // 7.5초
+                        particles: [] // 불 파티클 배열
+                    });
+                    
+                    // 발사체 제거
+                    this.gasolineBombProjectiles.splice(i, 1);
+                    break;
+                }
+            }
+        }
+    }
+    
+    updateGasolineBombHitboxes() {
+        // 화염병 히트박스 업데이트
+        let playerInFire = false; // 플레이어가 불에 있는지 확인
+        
+        for (let i = this.gasolineBombHitboxes.length - 1; i >= 0; i--) {
+            const hitbox = this.gasolineBombHitboxes[i];
+            
+            // 타이머 증가
+            hitbox.timer++;
+            
+            // 지속 시간이 지나면 제거
+            if (hitbox.timer >= hitbox.duration) {
+                this.gasolineBombHitboxes.splice(i, 1);
+                continue;
+            }
+            
+            // 불 파티클 생성 (지속적으로)
+            if (hitbox.timer % 5 === 0) { // 5프레임마다 파티클 생성
+                this.createFireParticles(hitbox.x, hitbox.y);
+            }
+            
+            // 플레이어 전용 히트박스가 아니면 적에게 데미지
+            if (!hitbox.playerOnly) {
+                // 히트박스 안의 적에게 데미지 (매 프레임)
+                for (let j = 0; j < this.enemies.length; j++) {
+                    const enemy = this.enemies[j];
+                    const dx = enemy.x - hitbox.x;
+                    const dy = enemy.y - hitbox.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (distance < hitbox.radius + enemy.radius) {
+                        // 불에 들어가면 10초 동안 속도 증가 효과 적용
+                        if (enemy.fireSpeedBoostTimer === undefined) {
+                            enemy.fireSpeedBoostTimer = 0;
+                        }
+                        enemy.fireSpeedBoostTimer = 600; // 10초 = 600프레임
+                        
+                        // 적에게 데미지 (매 프레임 작은 데미지)
+                        const damage = 1; // 매 프레임 1 데미지
+                        if (enemy.type === 'soldier' || enemy.type === 'knight') {
+                            if (enemy.armor === undefined) enemy.armor = 50;
+                            if (enemy.armor > 0) {
+                                enemy.armor -= damage;
+                                if (enemy.armor < 0) enemy.armor = 0;
+                            } else {
+                                enemy.health -= damage;
+                            }
+                        } else {
+                            enemy.health -= damage;
+                        }
+                        
+                        if (enemy.health < 0) enemy.health = 0;
+                        enemy.showHealthBar = true;
+                    }
+                }
+                
+                // 보스도 체크
+                if (this.boss) {
+                    const bossDx = this.boss.x - hitbox.x;
+                    const bossDy = this.boss.y - hitbox.y;
+                    const bossDistance = Math.sqrt(bossDx * bossDx + bossDy * bossDy);
+                    
+                    if (bossDistance < hitbox.radius + this.boss.radius) {
+                        const damage = 1;
+                        this.boss.health -= damage;
+                        if (this.boss.health < 0) this.boss.health = 0;
+                    }
+                }
+            } else {
+                // 플레이어 전용 히트박스: 플레이어에게만 데미지
+                const playerCenterX = this.player.x + this.player.width / 2;
+                const playerCenterY = this.player.y + this.player.height / 2;
+                const dx = playerCenterX - hitbox.x;
+                const dy = playerCenterY - hitbox.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                const playerRadius = Math.max(this.player.width, this.player.height) / 2;
+                
+                if (distance < hitbox.radius + playerRadius) {
+                    // 불에 들어가면 10초 동안 속도 증가 효과 적용
+                    this.player.fireSpeedBoostTimer = 600; // 10초 = 600프레임
+                    
+                    // 불 효과 활성화 (불이 있을 때만)
+                    this.player.fireEffect.active = true;
+                    this.player.fireEffect.durationTimer = 420; // 7초 = 420프레임 (불에 있는 동안 계속 갱신)
+                    if (this.player.fireEffect.damageCooldown <= 0) {
+                        this.player.fireEffect.damageCooldown = 60; // 1초 = 60프레임
+                    }
+                    playerInFire = true;
+                }
+            }
+        }
+        
+        // 플레이어가 어떤 불에도 들어가지 않으면 불 효과 지속 타이머 시작 (7초)
+        if (!playerInFire && this.player.fireEffect.active) {
+            // 불에서 벗어났을 때만 타이머 설정 (이미 설정되어 있으면 유지)
+            if (this.player.fireEffect.durationTimer === 0) {
+                this.player.fireEffect.durationTimer = 420; // 7초 = 420프레임
+            }
+        }
+    }
+    
+    createFireParticles(x, y) {
+        // 불 파티클 생성
+        const particleCount = 3;
+        
+        for (let i = 0; i < particleCount; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const speed = 0.5 + Math.random() * 1.5;
+            
+            this.fireParticles.push({
+                x: x + (Math.random() - 0.5) * 20,
+                y: y + (Math.random() - 0.5) * 20,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed - 1, // 위로 올라가는 효과
+                life: 30,
+                maxLife: 30,
+                size: 3 + Math.random() * 3
+            });
+        }
+    }
+    
+    updateFireParticles() {
+        // 불 파티클 업데이트
+        for (let i = this.fireParticles.length - 1; i >= 0; i--) {
+            const particle = this.fireParticles[i];
+            
+            particle.life--;
+            
+            if (particle.life <= 0) {
+                this.fireParticles.splice(i, 1);
+                continue;
+            }
+            
+            particle.x += particle.vx;
+            particle.y += particle.vy;
+            
+            // 속도 감소
+            particle.vx *= 0.95;
+            particle.vy *= 0.95;
+            
+            // 위로 올라가는 효과
+            particle.vy -= 0.1;
+        }
+    }
+    
     updateHealthDisplay() {
         // 체력 바는 draw 함수에서 자동으로 업데이트됨
         // HTML 버튼은 제거되었으므로 여기서는 아무것도 하지 않음
@@ -6047,6 +7236,8 @@ class TacticalGame {
         this.craftingRecipes['빛(제작용),지뢰'] = '섬광 지뢰';
         this.craftingRecipes['아처,지뢰'] = '총알 지뢰';
         this.craftingRecipes['지뢰,아처'] = '총알 지뢰';
+        this.craftingRecipes['빨강,아처'] = '화염병';
+        this.craftingRecipes['아처,빨강'] = '화염병';
         // 추가 조합 레시피는 여기에 추가
     }
     
@@ -6054,8 +7245,24 @@ class TacticalGame {
         // 조합 결과 업데이트
         if (this.craftingSlots[0] && this.craftingSlots[1]) {
             // 두 슬롯에 아이템이 모두 있을 때
-            const recipeKey1 = `${this.craftingSlots[0]},${this.craftingSlots[1]}`;
-            const recipeKey2 = `${this.craftingSlots[1]},${this.craftingSlots[0]}`;
+            // 색상 아이템의 경우 실제 색상 이름으로 변환
+            let item1 = this.craftingSlots[0];
+            let item2 = this.craftingSlots[1];
+            
+            // 색상(제작용) 아이템인 경우 실제 색상 이름으로 변환
+            if (item1 === '색상(제작용)') {
+                const colorIndex1 = this.craftingSlotColors[0] || 0;
+                const colorEntry1 = this.getColorPaletteEntry(colorIndex1);
+                item1 = colorEntry1.name;
+            }
+            if (item2 === '색상(제작용)') {
+                const colorIndex2 = this.craftingSlotColors[1] || 0;
+                const colorEntry2 = this.getColorPaletteEntry(colorIndex2);
+                item2 = colorEntry2.name;
+            }
+            
+            const recipeKey1 = `${item1},${item2}`;
+            const recipeKey2 = `${item2},${item1}`;
             
             if (this.craftingRecipes[recipeKey1]) {
                 this.craftingResult = this.craftingRecipes[recipeKey1];
@@ -6357,6 +7564,12 @@ class TacticalGame {
                 newBlock.pulseTimer = 0; // 맥박 타이머
                 newBlock.isExploding = false; // 폭발 중인지
                 newBlock.explosionTimer = 0; // 폭발 타이머
+                
+            // 화염병 블록의 경우 초기 상태 설정
+            if (blockType === '화염병') {
+                newBlock.hasFired = false; // 발사 여부
+                newBlock.range = this.studSize * 2; // 감지 범위
+            }
             if (blockType === '섬광 지뢰') {
                 newBlock.range = this.studSize * 2.5;
             } else if (blockType === '총알 지뢰') {
@@ -7202,12 +8415,12 @@ class TacticalGame {
         
         // 머리가 죽으면 모든 세그먼트 제거
         if (head.health <= 0) {
-            // 독 뱀은 1000 경험치, 일반 뱀은 500 경험치
-            const expValue = snake.type === 'poisonSnake' ? 1000 : 500;
+            // 머리 경험치: 일반 뱀 100, 원거리 뱀(poisonSnake) 250
+            const headExpValue = snake.type === 'poisonSnake' ? 250 : 100;
             this.experienceOrbs.push({
                 x: head.x,
                 y: head.y,
-                expValue: expValue,
+                expValue: headExpValue,
                 radius: 10,
                 collected: false,
                 isBossOrb: false,
@@ -7223,10 +8436,15 @@ class TacticalGame {
             const segment = snake.segments[i];
             if (segment.health <= 0) {
                 // 몸통 세그먼트가 죽으면 경험치 구슬 생성
+                // 몸통 경험치 = 머리 경험치 / 몸통 개수
+                const bodyCount = snake.bodySegmentCount || Math.max(snake.segments.length - 1, 1);
+                const headExpValue = snake.type === 'poisonSnake' ? 250 : 100;
+                const bodyExpValue = headExpValue / bodyCount;
+                
                 this.experienceOrbs.push({
                     x: segment.x,
                     y: segment.y,
-                    expValue: 100, // 몸통 경험치 100
+                    expValue: bodyExpValue,
                     radius: 10,
                     collected: false,
                     isBossOrb: false,
@@ -7294,9 +8512,64 @@ class TacticalGame {
                 return;
             }
             
+            // 메인 메뉴가 표시되어 있으면 메뉴만 렌더링
+            if (this.showMainMenu) {
+                this.drawMainMenu();
+                return;
+            }
+            
             // 바닥 배경 (5번째 웨이브부터 조금 붉게, 6번째부터 다시 회색, 10번째는 파란색, 15번째는 매우 짙은 초록, 20번째는 각 스터드마다 랜덤 갈색, 21-30번째는 각 스터드마다 랜덤 사막 색상, 10 이후는 짙은 초록)
-            if (this.waveNumber >= 21 && this.waveNumber <= 30) {
-                // 21-30스테이지: 각 스터드마다 랜덤 사막 색상 (전쟁터 느낌)
+            if (this.waveNumber === 30) {
+                // 30스테이지: 흑백 바닥
+                const grayScaleColors = [
+                    '#ffffff', // 흰색
+                    '#e0e0e0', // 밝은 회색
+                    '#c0c0c0', // 회색
+                    '#a0a0a0', // 중간 회색
+                    '#808080', // 어두운 회색
+                    '#606060', // 더 어두운 회색
+                    '#404040', // 매우 어두운 회색
+                    '#202020', // 거의 검은색
+                    '#000000'  // 검은색
+                ];
+                
+                // 각 스터드를 개별적으로 그리기
+                for (let x = 0; x < this.gridWidth; x++) {
+                    for (let y = 0; y < this.gridHeight; y++) {
+                        // 각 스터드의 위치를 기반으로 고정된 랜덤 색상 선택 (깜빡임 방지)
+                        const seed = x * 1000 + y;
+                        const colorIndex = seed % grayScaleColors.length;
+                        this.ctx.fillStyle = grayScaleColors[colorIndex];
+                        this.ctx.fillRect(x * this.studSize, y * this.studSize, this.studSize, this.studSize);
+                    }
+                }
+            } else if (this.waveNumber === 25) {
+                // 25스테이지: 바닥을 살짝 어둡게
+                const darkDesertColors = [
+                    '#b8860b', // 다크골든로드 (어두운 버전)
+                    '#8b7355', // 카키 (어두운 버전)
+                    '#6b5b3d', // 어두운 갈색
+                    '#5c4a2e', // 더 어두운 갈색
+                    '#4d3a1f', // 매우 어두운 갈색
+                    '#a0522d', // 시에나 (약간 밝게)
+                    '#8b4513', // 새들브라운
+                    '#654321', // 다크브라운
+                    '#5c4033', // 매우 어두운 갈색
+                    '#4a3520'  // 거의 검은 갈색
+                ]; // 어두운 사막 색상 팔레트
+                
+                // 각 스터드를 개별적으로 그리기
+                for (let x = 0; x < this.gridWidth; x++) {
+                    for (let y = 0; y < this.gridHeight; y++) {
+                        // 각 스터드의 위치를 기반으로 고정된 랜덤 색상 선택 (깜빡임 방지)
+                        const seed = x * 1000 + y;
+                        const colorIndex = seed % darkDesertColors.length;
+                        this.ctx.fillStyle = darkDesertColors[colorIndex];
+                        this.ctx.fillRect(x * this.studSize, y * this.studSize, this.studSize, this.studSize);
+                    }
+                }
+            } else if (this.waveNumber >= 21 && this.waveNumber <= 30) {
+                // 21-24, 26-29스테이지: 각 스터드마다 랜덤 사막 색상 (전쟁터 느낌)
                 const desertColors = [
                     '#f4a460', // 모래색
                     '#daa520', // 골든로드
@@ -8097,6 +9370,32 @@ class TacticalGame {
                         this.ctx.arc(centerX, centerY, blockSize * 5 * explosionScale, 0, Math.PI * 2);
                         this.ctx.fill();
                     }
+                } else if (block.type === '화염병') {
+                    // 화염병 블록
+                    const centerX = block.x + blockSize / 2;
+                    const centerY = block.y + blockSize / 2;
+                    
+                    // 빨강 배경
+                    this.ctx.fillStyle = '#ff0000'; // 빨강
+                    this.ctx.fillRect(block.x, block.y, blockSize, blockSize);
+                    
+                    // 어두운 빨강 테두리
+                    this.ctx.strokeStyle = '#8b0000'; // 어두운 빨강
+                    this.ctx.lineWidth = 3;
+                    this.ctx.strokeRect(block.x, block.y, blockSize, blockSize);
+                    
+                    // 가운데 어두운 빨강 동그라미
+                    this.ctx.fillStyle = '#8b0000'; // 어두운 빨강
+                    this.ctx.beginPath();
+                    this.ctx.arc(centerX, centerY, blockSize * 0.3, 0, Math.PI * 2);
+                    this.ctx.fill();
+                    
+                    // 범위 표시 (적이 감지되면 어두운 초록 테두리)
+                    if (block.hasFired) {
+                        this.ctx.strokeStyle = '#006400'; // 어두운 초록
+                        this.ctx.lineWidth = 3;
+                        this.ctx.strokeRect(block.x, block.y, blockSize, blockSize);
+                    }
                 } else {
                     // 기본 색상 (예상치 못한 타입)
                     console.warn('알 수 없는 블록 타입:', block.type);
@@ -8223,6 +9522,36 @@ class TacticalGame {
                 this.ctx.stroke();
             }
             
+            // 대포 발사체 그리기
+            for (let projectile of this.cannonProjectiles) {
+                // 회색 동그라미
+                this.ctx.fillStyle = '#888888'; // 회색
+                this.ctx.beginPath();
+                this.ctx.arc(projectile.x, projectile.y, projectile.radius, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                // 검정 테두리
+                this.ctx.strokeStyle = '#000000'; // 검정
+                this.ctx.lineWidth = 2;
+                this.ctx.stroke();
+            }
+            
+            // 화염병 발사체 그리기
+            for (let projectile of this.gasolineBombProjectiles) {
+                // 어두운 초록 테두리
+                this.ctx.strokeStyle = '#006400'; // 어두운 초록
+                this.ctx.lineWidth = 2;
+                this.ctx.beginPath();
+                this.ctx.arc(projectile.x, projectile.y, projectile.radius, 0, Math.PI * 2);
+                this.ctx.stroke();
+                
+                // 노란빛 하양 가운데 동그라미
+                this.ctx.fillStyle = '#fffacd'; // 노란빛 하양
+                this.ctx.beginPath();
+                this.ctx.arc(projectile.x, projectile.y, projectile.radius * 0.6, 0, Math.PI * 2);
+                this.ctx.fill();
+            }
+            
             // 플레이어 총알 그리기
             for (let bullet of this.playerBullets) {
                 this.ctx.fillStyle = '#ffff00'; // 노란색
@@ -8261,24 +9590,42 @@ class TacticalGame {
                 this.ctx.stroke();
             }
             
-            // 적 발사체 그리기 (석궁 동그라미용, 독 뱀용)
+            // 적 발사체 그리기 (석궁 동그라미용, 독 뱀용, 화염 동그라미용)
             for (let projectile of this.enemyProjectiles) {
-                if (projectile.isPoison) {
+                if (projectile.type === 'fire') {
+                    // 화염 발사체: 빨간색
+                    this.ctx.fillStyle = '#ff4444'; // 빨간색
+                } else if (projectile.type === 'tank') {
+                    // 탱크 총알: 노란색
+                    this.ctx.fillStyle = projectile.color || '#ffff00'; // 노란색
+                } else if (projectile.type === 'tankSpecial') {
+                    // 탱크 특수 공격: 어두운 빨강
+                    this.ctx.fillStyle = projectile.color || '#8b0000'; // 어두운 빨강
+                } else if (projectile.isPoison) {
                     // 독 발사체: 보라색
                     this.ctx.fillStyle = '#8b00ff'; // 보라색
+                } else if (projectile.type === 'flash') {
+                    // 섬광 발사체: 노란색 (렌더링하지 않거나 투명하게)
+                    continue; // 섬광 발사체는 렌더링하지 않음
                 } else {
                     // 일반 발사체: 갈색
-                this.ctx.fillStyle = '#8b4513'; // 갈색
+                    this.ctx.fillStyle = '#8b4513'; // 갈색
                 }
                 this.ctx.beginPath();
                 this.ctx.arc(projectile.x, projectile.y, projectile.radius, 0, Math.PI * 2);
                 this.ctx.fill();
                 
                 // 발사체 테두리
-                if (projectile.isPoison) {
+                if (projectile.type === 'fire') {
+                    this.ctx.strokeStyle = '#cc0000'; // 진한 빨강
+                } else if (projectile.type === 'tank') {
+                    this.ctx.strokeStyle = '#cccc00'; // 진한 노란색
+                } else if (projectile.type === 'tankSpecial') {
+                    this.ctx.strokeStyle = '#660000'; // 매우 어두운 빨강
+                } else if (projectile.isPoison) {
                     this.ctx.strokeStyle = '#6a0080'; // 진한 보라색
                 } else {
-                this.ctx.strokeStyle = '#654321'; // 진한 갈색
+                    this.ctx.strokeStyle = '#654321'; // 진한 갈색
                 }
                 this.ctx.lineWidth = 1;
                 this.ctx.stroke();
@@ -8437,6 +9784,93 @@ class TacticalGame {
                         
                         this.ctx.restore();
                     }
+                } else if (enemy.type === 'flash') {
+                    // 섬광 동그라미: e-12 이미지 사용
+                    const flashImage = this.enemyImages['flash'];
+                    const hasFlashImage = flashImage && flashImage.complete && flashImage.naturalWidth > 0;
+                    
+                    if (hasFlashImage) {
+                        const spriteScale = 1.25;
+                        const width = enemy.radius * 2 * spriteScale;
+                        const height = enemy.radius * 2 * spriteScale;
+                        this.ctx.save();
+                        this.ctx.translate(enemy.x, enemy.y);
+                        this.ctx.drawImage(
+                            flashImage,
+                            -width / 2,
+                            -height / 2,
+                            width,
+                            height
+                        );
+                        this.ctx.restore();
+                    } else {
+                        // 이미지가 없으면 기본 노란 동그라미 스타일
+                        this.ctx.fillStyle = '#ffff99'; // 연한 노랑
+                        this.ctx.beginPath();
+                        this.ctx.arc(enemy.x, enemy.y, enemy.radius, 0, Math.PI * 2);
+                        this.ctx.fill();
+                        
+                        this.ctx.strokeStyle = '#ffcc00'; // 노랑 테두리
+                        this.ctx.lineWidth = 2;
+                        this.ctx.stroke();
+                    }
+                } else if (enemy.type === 'fire') {
+                    // 화염 동그라미: e-13 이미지 사용
+                    const fireImage = this.enemyImages['fire'];
+                    const hasFireImage = fireImage && fireImage.complete && fireImage.naturalWidth > 0;
+                    
+                    if (hasFireImage) {
+                        const spriteScale = 1.25;
+                        const width = enemy.radius * 2 * spriteScale;
+                        const height = enemy.radius * 2 * spriteScale;
+                        this.ctx.save();
+                        this.ctx.translate(enemy.x, enemy.y);
+                        this.ctx.drawImage(
+                            fireImage,
+                            -width / 2,
+                            -height / 2,
+                            width,
+                            height
+                        );
+                        this.ctx.restore();
+                    } else {
+                        // 이미지가 없으면 기본 빨간 동그라미 스타일
+                        this.ctx.fillStyle = '#ff6666'; // 연한 빨강
+                        this.ctx.beginPath();
+                        this.ctx.arc(enemy.x, enemy.y, enemy.radius, 0, Math.PI * 2);
+                        this.ctx.fill();
+                        
+                        this.ctx.strokeStyle = '#ff0000'; // 빨강 테두리
+                        this.ctx.lineWidth = 2;
+                        this.ctx.stroke();
+                    }
+                } else if (enemy.type === 'knight') {
+                    // 기사: e-10 이미지 사용
+                    if (this.enemyImages['knight'] && this.enemyImages['knight'].complete && this.enemyImages['knight'].naturalWidth > 0) {
+                        const spriteScale = 1.25;
+                        const width = enemy.radius * 2 * spriteScale;
+                        const height = enemy.radius * 2 * spriteScale;
+                        this.ctx.save();
+                        this.ctx.translate(enemy.x, enemy.y);
+                        this.ctx.drawImage(
+                            this.enemyImages['knight'],
+                            -width / 2,
+                            -height / 2,
+                            width,
+                            height
+                        );
+                        this.ctx.restore();
+                    } else {
+                        // 이미지가 없으면 기존 스타일로 표시 (회색 기사)
+                        this.ctx.fillStyle = '#bbbbbb';
+                        this.ctx.beginPath();
+                        this.ctx.arc(enemy.x, enemy.y, enemy.radius, 0, Math.PI * 2);
+                        this.ctx.fill();
+                        
+                        this.ctx.strokeStyle = '#888888';
+                        this.ctx.lineWidth = 2;
+                        this.ctx.stroke();
+                    }
                 } else if (enemy.type === 'monkey') {
                     const originalAlpha = this.ctx.globalAlpha;
                     const isInvincible = enemy.invincibleTimer && enemy.invincibleTimer > 0;
@@ -8590,6 +10024,70 @@ class TacticalGame {
                     this.ctx.strokeStyle = '#000000';
                     this.ctx.lineWidth = 1;
                     this.ctx.strokeRect(rhinoHealthBarX, rhinoHealthBarY, rhinoHealthBarWidth, rhinoHealthBarHeight);
+                } else if (enemy.type === 'cannon') {
+                    // 대포: 이미지가 있으면 사용
+                    const cannonImage = this.enemyImages['cannon'];
+                    if (cannonImage && cannonImage.complete && cannonImage.naturalWidth > 0) {
+                        const spriteScale = 1.0; // 플레이어의 2배 크기로 설정 (radius가 이미 조정됨)
+                        const width = enemy.radius * 2 * spriteScale;
+                        const height = enemy.radius * 2 * spriteScale;
+                        this.ctx.save();
+                        this.ctx.translate(enemy.x, enemy.y);
+                        // 플레이어 방향으로 회전 (8방향으로 제한)
+                        const playerCenterX = this.player.x + this.player.width / 2;
+                        const playerCenterY = this.player.y + this.player.height / 2;
+                        const dx = playerCenterX - enemy.x;
+                        const dy = playerCenterY - enemy.y;
+                        let angle = Math.atan2(dy, dx);
+                        
+                        // 8방향으로 제한 (0, 45, 90, 135, 180, 225, 270, 315도)
+                        const directions = 8;
+                        const angleStep = (Math.PI * 2) / directions;
+                        // 가장 가까운 방향으로 스냅
+                        angle = Math.round(angle / angleStep) * angleStep;
+                        
+                        this.ctx.rotate(angle);
+                        this.ctx.drawImage(
+                            cannonImage,
+                            -width / 2,
+                            -height / 2,
+                            width,
+                            height
+                        );
+                        this.ctx.restore();
+                    } else {
+                        // 이미지가 없으면 기존 색상 원으로 표시
+                        this.ctx.fillStyle = '#8b4513'; // 갈색
+                        this.ctx.beginPath();
+                        this.ctx.arc(enemy.x, enemy.y, enemy.radius, 0, Math.PI * 2);
+                        this.ctx.fill();
+                        
+                        // 진한 갈색 테두리
+                        this.ctx.strokeStyle = '#654321'; // 진한 갈색
+                        this.ctx.lineWidth = 2;
+                        this.ctx.stroke();
+                        
+                        // 대포 방향 표시 (플레이어 방향, 8방향으로 제한)
+                        const playerCenterX = this.player.x + this.player.width / 2;
+                        const playerCenterY = this.player.y + this.player.height / 2;
+                        const dx = playerCenterX - enemy.x;
+                        const dy = playerCenterY - enemy.y;
+                        let angle = Math.atan2(dy, dx);
+                        
+                        // 8방향으로 제한 (0, 45, 90, 135, 180, 225, 270, 315도)
+                        const directions = 8;
+                        const angleStep = (Math.PI * 2) / directions;
+                        // 가장 가까운 방향으로 스냅
+                        angle = Math.round(angle / angleStep) * angleStep;
+                        
+                        this.ctx.save();
+                        this.ctx.translate(enemy.x, enemy.y);
+                        this.ctx.rotate(angle);
+                        // 대포 포신 그리기
+                        this.ctx.fillStyle = '#555555'; // 회색
+                        this.ctx.fillRect(0, -enemy.radius * 0.2, enemy.radius * 0.8, enemy.radius * 0.4);
+                        this.ctx.restore();
+                    }
                 } else if (enemy.type === 'skunk') {
                     const skunkImage = this.enemyImages['skunk'];
                     if (skunkImage && skunkImage.complete && skunkImage.naturalWidth > 0) {
@@ -8639,52 +10137,44 @@ class TacticalGame {
                         );
                     }
                 } else if (enemy.type === 'soldier') {
-                    // 군인: 녹색 동그라미, 가운데 살구색 길쭉한 모양(권총)이 플레이어를 향함
-                    // 녹색 동그라미
-                    this.ctx.fillStyle = '#228b22'; // 녹색
-                    this.ctx.beginPath();
-                    this.ctx.arc(enemy.x, enemy.y, enemy.radius, 0, Math.PI * 2);
-                    this.ctx.fill();
+                    // 군인: e-11 스프라이트 사용
+                    const soldierImg = this.enemyImages['soldier'];
+                    const hasSoldierImage = soldierImg && soldierImg.complete && soldierImg.naturalWidth > 0;
                     
-                    // 테두리
-                    this.ctx.strokeStyle = '#006400'; // 진한 녹색
-                    this.ctx.lineWidth = 2;
-                    this.ctx.stroke();
+                    if (hasSoldierImage) {
+                        const spriteScale = 1.4;
+                        const width = enemy.radius * 2 * spriteScale;
+                        const height = enemy.radius * 2 * spriteScale;
+                        this.ctx.save();
+                        this.ctx.translate(enemy.x, enemy.y);
+                        this.ctx.drawImage(
+                            soldierImg,
+                            -width / 2,
+                            -height / 2,
+                            width,
+                            height
+                        );
+                        this.ctx.restore();
+                    } else {
+                        // 이미지가 없으면 기존 도형 스타일로 표시
+                        this.ctx.fillStyle = '#228b22'; // 녹색
+                        this.ctx.beginPath();
+                        this.ctx.arc(enemy.x, enemy.y, enemy.radius, 0, Math.PI * 2);
+                        this.ctx.fill();
+                        
+                        this.ctx.strokeStyle = '#006400'; // 진한 녹색
+                        this.ctx.lineWidth = 2;
+                        this.ctx.stroke();
+                    }
                     
-                    // 권총 (살구색, 플레이어를 향함)
-                    const playerCenterX = this.player.x + this.player.width / 2;
-                    const playerCenterY = this.player.y + this.player.height / 2;
-                    const dx = playerCenterX - enemy.x;
-                    const dy = playerCenterY - enemy.y;
-                    const angle = Math.atan2(dy, dx);
-                    
-                    this.ctx.save();
-                    this.ctx.translate(enemy.x, enemy.y);
-                    this.ctx.rotate(angle);
-                    
-                    // 살구색 권총 (길쭉한 모양)
-                    this.ctx.fillStyle = '#ffd4a3'; // 살구색
-                    this.ctx.beginPath();
-                    // 권총 몸체 (길쭉한 타원)
-                    this.ctx.ellipse(enemy.radius * 0.6, 0, enemy.radius * 0.4, enemy.radius * 0.15, 0, 0, Math.PI * 2);
-                    this.ctx.fill();
-                    
-                    // 권총 손잡이
-                    this.ctx.fillStyle = '#ffb366'; // 약간 진한 살구색
-                    this.ctx.beginPath();
-                    this.ctx.ellipse(enemy.radius * 0.3, 0, enemy.radius * 0.2, enemy.radius * 0.12, 0, 0, Math.PI * 2);
-                    this.ctx.fill();
-                    
-                    this.ctx.restore();
-                    
-                    // 장전 중 표시 (반투명)
+                    // 장전 중 표시 (반투명) - 이미지/도형 공통
                     if (enemy.isReloading) {
                         this.ctx.globalAlpha = 0.5;
                         this.ctx.fillStyle = '#ff0000'; // 빨간색
                         this.ctx.beginPath();
                         this.ctx.arc(enemy.x, enemy.y, enemy.radius, 0, Math.PI * 2);
                         this.ctx.fill();
-                    this.ctx.globalAlpha = 1.0;
+                        this.ctx.globalAlpha = 1.0;
                     }
                 } else if (enemy.type === 'knight') {
                     // 기사: 회색 갑옷, 검, 방패
@@ -8759,6 +10249,81 @@ class TacticalGame {
                         this.ctx.beginPath();
                         this.ctx.arc(enemy.x, enemy.y, enemy.radius * 1.2, 0, Math.PI * 2);
                         this.ctx.fill();
+                        this.ctx.globalAlpha = 1.0;
+                    }
+                } else if (enemy.type === 'tank') {
+                    // 탱크 렌더링
+                    const drawX = enemy.x + enemy.shakeOffset.x;
+                    const drawY = enemy.y + enemy.shakeOffset.y;
+                    
+                    // 16방향 각도 계산
+                    const directions = 16;
+                    const angleStep = (Math.PI * 2) / directions;
+                    const angle = enemy.angle * angleStep;
+                    
+                    // 탱크 이미지가 있으면 사용
+                    const tankImage = this.enemyImages['tank'];
+                    const hasTankImage = tankImage && tankImage.complete && tankImage.naturalWidth > 0;
+                    
+                    if (hasTankImage) {
+                        const spriteScale = 1.0;
+                        const width = enemy.radius * 2 * spriteScale * 1.5; // 가로로 1.5배 늘림
+                        const height = enemy.radius * 2 * spriteScale;
+                        this.ctx.save();
+                        this.ctx.translate(drawX, drawY);
+                        this.ctx.rotate(angle);
+                        // 좌우 반전 (scaleX를 -1로)
+                        this.ctx.scale(-1, 1);
+                        this.ctx.drawImage(
+                            tankImage,
+                            width / 2, // 반전 후 위치 조정
+                            -height / 2,
+                            -width, // 반전을 위해 음수 너비
+                            height
+                        );
+                        this.ctx.restore();
+                    } else {
+                        // 이미지가 없으면 기본 도형으로 표시
+                        this.ctx.save();
+                        this.ctx.translate(drawX, drawY);
+                        this.ctx.rotate(angle);
+                        
+                        // 탱크 본체
+                        this.ctx.fillStyle = '#555555'; // 회색
+                        this.ctx.fillRect(-enemy.radius * 0.8, -enemy.radius * 0.6, enemy.radius * 1.6, enemy.radius * 1.2);
+                        
+                        // 탱크 포신 (앞쪽)
+                        this.ctx.fillStyle = '#444444'; // 진한 회색
+                        this.ctx.fillRect(enemy.radius * 0.6, -enemy.radius * 0.2, enemy.radius * 0.4, enemy.radius * 0.4);
+                        
+                        // 탱크 바퀴 (양쪽)
+                        this.ctx.fillStyle = '#333333'; // 더 진한 회색
+                        // 왼쪽 바퀴
+                        this.ctx.fillRect(-enemy.radius * 0.7, enemy.radius * 0.3, enemy.radius * 0.3, enemy.radius * 0.4);
+                        // 오른쪽 바퀴
+                        this.ctx.fillRect(enemy.radius * 0.4, enemy.radius * 0.3, enemy.radius * 0.3, enemy.radius * 0.4);
+                        
+                        this.ctx.restore();
+                    }
+                    
+                    // 바퀴 자국 렌더링
+                    for (let track of enemy.trackMarks) {
+                        const alpha = track.life / track.maxLife;
+                        this.ctx.globalAlpha = alpha * 0.5; // 반투명
+                        this.ctx.fillStyle = '#888888'; // 회색
+                        
+                        // 바퀴 자국 (타원형)
+                        this.ctx.beginPath();
+                        this.ctx.ellipse(track.x, track.y, enemy.radius * 0.3, enemy.radius * 0.2, angle, 0, Math.PI * 2);
+                        this.ctx.fill();
+                        
+                        // 다른 바퀴 자국 (약간 옆으로)
+                        this.ctx.beginPath();
+                        const offsetX = Math.cos(angle + Math.PI / 2) * enemy.radius * 0.5;
+                        const offsetY = Math.sin(angle + Math.PI / 2) * enemy.radius * 0.5;
+                        this.ctx.ellipse(track.x + offsetX, track.y + offsetY, enemy.radius * 0.3, enemy.radius * 0.2, angle, 0, Math.PI * 2);
+                        this.ctx.fill();
+                        
                         this.ctx.globalAlpha = 1.0;
                     }
                 } else if (enemy.type === 'snake' || enemy.type === 'poisonSnake') {
@@ -8969,6 +10534,29 @@ class TacticalGame {
                     this.ctx.strokeRect(healthBarX, healthBarY, healthBarWidth, healthBarHeight);
                 }
                 
+                // 불 효과 오버레이 (반투명 빨강)
+                if (enemy.fireSpeedBoostTimer !== undefined && enemy.fireSpeedBoostTimer > 0) {
+                    this.ctx.save();
+                    this.ctx.globalAlpha = 0.3; // 반투명
+                    this.ctx.fillStyle = '#ff0000'; // 빨강
+                    if (enemy.type === 'snake' || enemy.type === 'poisonSnake') {
+                        // 뱀은 각 세그먼트에 오버레이
+                        if (enemy.segments) {
+                            for (let segment of enemy.segments) {
+                                this.ctx.beginPath();
+                                this.ctx.arc(segment.x, segment.y, segment.radius, 0, Math.PI * 2);
+                                this.ctx.fill();
+                            }
+                        }
+                    } else {
+                        // 일반 적은 원형 오버레이
+                        this.ctx.beginPath();
+                        this.ctx.arc(enemy.x, enemy.y, enemy.radius, 0, Math.PI * 2);
+                        this.ctx.fill();
+                    }
+                    this.ctx.restore();
+                }
+                
                 // 심연블럭 투명도 복원
                 this.ctx.restore();
             }
@@ -9020,6 +10608,31 @@ class TacticalGame {
                 
                 // 물 파티클 (파란색)
                 this.ctx.fillStyle = `rgba(100, 200, 255, ${alpha})`;
+                this.ctx.beginPath();
+                this.ctx.arc(particle.x, particle.y, particle.size * alpha, 0, Math.PI * 2);
+                this.ctx.fill();
+            }
+            
+            // 화염병 히트박스 그리기 (75% 투명 주황, 안 보이게)
+            for (let hitbox of this.gasolineBombHitboxes) {
+                // 히트박스는 안 보이게 (투명하게)
+                // 실제로는 그리지 않지만, 데미지는 계속 적용됨
+            }
+            
+            // 불 파티클 그리기
+            for (let particle of this.fireParticles) {
+                const alpha = particle.life / particle.maxLife;
+                
+                // 불 파티클 (주황-빨강 그라데이션)
+                const gradient = this.ctx.createRadialGradient(
+                    particle.x, particle.y, 0,
+                    particle.x, particle.y, particle.size * alpha
+                );
+                gradient.addColorStop(0, `rgba(255, 100, 0, ${alpha})`); // 밝은 주황
+                gradient.addColorStop(0.5, `rgba(255, 50, 0, ${alpha * 0.8})`); // 주황
+                gradient.addColorStop(1, `rgba(200, 0, 0, ${alpha * 0.5})`); // 어두운 빨강
+                
+                this.ctx.fillStyle = gradient;
                 this.ctx.beginPath();
                 this.ctx.arc(particle.x, particle.y, particle.size * alpha, 0, Math.PI * 2);
                 this.ctx.fill();
@@ -9184,6 +10797,15 @@ class TacticalGame {
                 }
             }
             
+            // 불 효과 오버레이 (반투명 빨강)
+            if (this.player.fireEffect.active) {
+                this.ctx.save();
+                this.ctx.globalAlpha = 0.3; // 반투명
+                this.ctx.fillStyle = '#ff0000'; // 빨강
+                this.ctx.fillRect(this.player.x, this.player.y, this.player.width, this.player.height);
+                this.ctx.restore();
+            }
+            
             // 기절 알파값 복원
             this.ctx.globalAlpha = 1.0;
             
@@ -9343,7 +10965,12 @@ class TacticalGame {
             
             // 보스가 있을 때는 보스 정보 표시, 없을 때는 웨이브 타이머 표시
             if (!this.gameOver && !this.showRewardSelection) {
-                if (this.boss) {
+                // 코뿔소나 탱크가 있는지 확인
+                const rhino = this.enemies.find(e => e.type === 'rhino');
+                const tank = this.enemies.find(e => e.type === 'tank');
+                const bossEnemy = this.boss || rhino || tank;
+                
+                if (bossEnemy) {
                     // 보스 정보 표시 (화면 중앙 기준 맨 위)
                     const centerX = this.canvas.width / 2;
                     const topY = 20; // 맨 위
@@ -9357,7 +10984,13 @@ class TacticalGame {
                     
                     // 보스 이름 표시
                     this.ctx.font = 'bold 28px Arial';
-                    this.ctx.fillText('워터밤', centerX, topY + 60);
+                    let bossName = '워터밤';
+                    if (rhino) {
+                        bossName = '코뿔소';
+                    } else if (tank) {
+                        bossName = '탱크';
+                    }
+                    this.ctx.fillText(bossName, centerX, topY + 60);
                     
                     // 보스 체력바 표시 (화면 중앙 기준)
                     const bossHealthBarWidth = 400;
@@ -9370,7 +11003,7 @@ class TacticalGame {
                     this.ctx.fillRect(bossHealthBarX, bossHealthBarY, bossHealthBarWidth, bossHealthBarHeight);
                     
                     // 체력바 (체력 비율에 따라)
-                    const bossHealthPercent = this.boss.health / this.boss.maxHealth;
+                    const bossHealthPercent = bossEnemy.health / bossEnemy.maxHealth;
                     this.ctx.fillStyle = bossHealthPercent > 0.5 ? '#00ff00' : bossHealthPercent > 0.25 ? '#ffff00' : '#ff0000';
                     this.ctx.fillRect(bossHealthBarX, bossHealthBarY, bossHealthBarWidth * bossHealthPercent, bossHealthBarHeight);
                     
@@ -9383,7 +11016,7 @@ class TacticalGame {
                     this.ctx.fillStyle = '#ffffff';
                     this.ctx.font = 'bold 20px Arial';
                     this.ctx.textAlign = 'center';
-                    this.ctx.fillText(`${Math.ceil(this.boss.health)} / ${this.boss.maxHealth}`, 
+                    this.ctx.fillText(`${Math.ceil(bossEnemy.health)} / ${bossEnemy.maxHealth}`, 
                         centerX, bossHealthBarY + bossHealthBarHeight / 2);
                 } else {
                     // 웨이브 타이머 표시 (화면 왼쪽 위)
@@ -10193,7 +11826,7 @@ class TacticalGame {
             }
             
             // 적 소환 창
-            if (this.showEnemySpawnWindow && !this.gameOver && !this.showRewardSelection && !this.waveStarted) {
+            if (this.showEnemySpawnWindow && !this.gameOver && !this.showRewardSelection) {
                 // 반투명 배경
                 this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
                 this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
@@ -10838,8 +12471,9 @@ class TacticalGame {
                     this.ctx.textAlign = 'center';
                     this.ctx.textBaseline = 'middle';
                     
-                    // 보상 텍스트 표시
+                    // 보상 텍스트 및 경험치 비용 표시
                     let displayText = button.reward;
+                    // 보상 개수 표기
                     if (button.reward === '벽') {
                         displayText = '벽 5x';
                     } else if (button.reward === '가시') {
@@ -10853,6 +12487,108 @@ class TacticalGame {
                     }
                     
                     this.ctx.fillText(displayText, button.x + button.width / 2, button.y + button.height / 2);
+                    
+                    // 보상별 경험치 비용 설정
+                    let rewardCost = 0;
+                    if (button.reward === '벽') {
+                        rewardCost = 50;
+                    } else if (button.reward === '아처') {
+                        rewardCost = 50;
+                    } else if (button.reward === '문') {
+                        rewardCost = 25;
+                    } else if (button.reward === '가시') {
+                        rewardCost = 50;
+                    } else if (button.reward === '물블럭') {
+                        rewardCost = 100;
+                    } else if (button.reward === '물총') {
+                        rewardCost = 50;
+                    } else if (button.reward === '깊은물블럭') {
+                        rewardCost = 150;
+                    }
+                    
+                    // 블록 위에 경험치 비용 표시 (블록 위쪽)
+                    this.ctx.fillStyle = '#ffd700'; // 금색
+                    this.ctx.font = 'bold 18px Arial';
+                    this.ctx.textAlign = 'center';
+                    this.ctx.textBaseline = 'bottom';
+                    this.ctx.fillText(`${rewardCost} XP`, button.x + button.width / 2, button.y - 5);
+                }
+                
+                // 건너뛰기 버튼 그리기
+                if (this.skipRewardButtonArea) {
+                    const skipButton = this.skipRewardButtonArea;
+                    const isHovered = this.mouse.x >= skipButton.x && 
+                                    this.mouse.x <= skipButton.x + skipButton.width &&
+                                    this.mouse.y >= skipButton.y && 
+                                    this.mouse.y <= skipButton.y + skipButton.height;
+                    
+                    // 버튼 배경
+                    this.ctx.fillStyle = isHovered ? '#e0e0e0' : '#cccccc';
+                    this.ctx.fillRect(skipButton.x, skipButton.y, skipButton.width, skipButton.height);
+                    
+                    // 버튼 테두리
+                    this.ctx.strokeStyle = '#000000';
+                    this.ctx.lineWidth = 2;
+                    this.ctx.strokeRect(skipButton.x, skipButton.y, skipButton.width, skipButton.height);
+                    
+                    // 버튼 텍스트
+                    this.ctx.fillStyle = '#000000';
+                    this.ctx.font = 'bold 20px Arial';
+                    this.ctx.textAlign = 'center';
+                    this.ctx.textBaseline = 'middle';
+                    this.ctx.fillText('건너뛰기', skipButton.x + skipButton.width / 2, skipButton.y + skipButton.height / 2);
+                }
+                
+                // 리롤 버튼 그리기
+                if (this.rerollRewardButtonArea) {
+                    const rerollButton = this.rerollRewardButtonArea;
+                    const isHovered = this.mouse.x >= rerollButton.x && 
+                                    this.mouse.x <= rerollButton.x + rerollButton.width &&
+                                    this.mouse.y >= rerollButton.y && 
+                                    this.mouse.y <= rerollButton.y + rerollButton.height;
+                    
+                    // 물블럭 등이 나올 때는 리롤 불가
+                    const hasSpecialReward = this.rewards.some(r => 
+                        r === '물블럭' || r === '물총' || r === '깊은물블럭'
+                    );
+                    const canReroll = !hasSpecialReward && this.rerollCountdown === null && this.experience >= this.rerollCost;
+                    const isDisabled = hasSpecialReward || this.rerollCountdown === 0;
+                    
+                    // 버튼 배경
+                    if (isDisabled) {
+                        this.ctx.fillStyle = '#808080'; // 회색 (비활성화)
+                    } else {
+                        this.ctx.fillStyle = isHovered ? '#e0e0e0' : '#cccccc';
+                    }
+                    this.ctx.fillRect(rerollButton.x, rerollButton.y, rerollButton.width, rerollButton.height);
+                    
+                    // 버튼 테두리
+                    this.ctx.strokeStyle = '#000000';
+                    this.ctx.lineWidth = 2;
+                    this.ctx.strokeRect(rerollButton.x, rerollButton.y, rerollButton.width, rerollButton.height);
+                    
+                    // 버튼 텍스트
+                    this.ctx.fillStyle = isDisabled ? '#555555' : '#000000';
+                    this.ctx.font = 'bold 20px Arial';
+                    this.ctx.textAlign = 'center';
+                    this.ctx.textBaseline = 'middle';
+                    
+                    // 리롤 카운트다운 표시
+                    if (this.rerollCountdown !== null && this.rerollCountdown > 0) {
+                        this.ctx.fillText(`${this.rerollCountdown}`, rerollButton.x + rerollButton.width / 2, rerollButton.y + rerollButton.height / 2);
+                    } else if (this.rerollCountdown === 0) {
+                        this.ctx.fillText('0', rerollButton.x + rerollButton.width / 2, rerollButton.y + rerollButton.height / 2);
+                    } else {
+                        this.ctx.fillText('리롤', rerollButton.x + rerollButton.width / 2, rerollButton.y + rerollButton.height / 2);
+                    }
+                    
+                    // 가격 표시 (버튼 위쪽)
+                    if (!isDisabled && this.rerollCountdown === null) {
+                        this.ctx.fillStyle = '#ffd700'; // 금색
+                        this.ctx.font = 'bold 16px Arial';
+                        this.ctx.textBaseline = 'bottom';
+                        this.ctx.fillText(`${this.rerollCost} XP`, rerollButton.x + rerollButton.width / 2, rerollButton.y - 5);
+                    }
                 }
                 
                 // 호버된 버튼 설명 표시
@@ -11010,13 +12746,218 @@ class TacticalGame {
                     this.ctx.fillStyle = 'rgba(0, 0, 0, 1)';
                     this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
                     
-                    // 게임 오버 메시지
-                    this.ctx.fillStyle = '#ffffff';
-                    this.ctx.font = 'bold 48px Arial';
+                    // 게임 오버 화면: 중앙 기준 위에서부터
+                    const centerX = this.canvas.width / 2;
+                    const centerY = this.canvas.height / 2;
+                    let currentY = centerY - 120;
+                    
+                    // 1) 누구에게/어떻게 죽었는지 그림 (enemyImages 또는 상태 기반)
+                    if (this.monsterName === '독 뱀') {
+                        // 독뱀에게 죽었을 때: 독뱀 머리 이미지 사용
+                        const deathImageKeyMap = {
+                            '독 뱀': 'snakeHead'
+                        };
+                        const imageKey = deathImageKeyMap[this.monsterName];
+                        const enemyImg = imageKey ? this.enemyImages[imageKey] : null;
+                        
+                        if (enemyImg && enemyImg.complete && enemyImg.naturalWidth > 0) {
+                            const imgSize = 120;
+                            this.ctx.drawImage(
+                                enemyImg,
+                                centerX - imgSize / 2,
+                                currentY - imgSize / 2,
+                                imgSize,
+                                imgSize
+                            );
+                            
+                            // 물고기 계열은 이미지 위에 얼굴 이모티콘을 텍스트로 표시
+                            if (this.monsterName === '물고기' ||
+                                this.monsterName === '하늘색 물고기' ||
+                                this.monsterName === '폭발 물고기') {
+                                this.ctx.save();
+                                this.ctx.font = '48px Arial';
+                                this.ctx.textAlign = 'center';
+                                this.ctx.textBaseline = 'middle';
+                                
+                                if (this.monsterName === '물고기') {
+                                    this.ctx.fillStyle = '#ffffff'; // 흰 글씨
+                                    this.ctx.fillText(':0', centerX, currentY);
+                                } else if (this.monsterName === '하늘색 물고기') {
+                                    this.ctx.fillStyle = '#ffffff'; // 흰 글씨
+                                    this.ctx.fillText(';)', centerX, currentY);
+                                } else if (this.monsterName === '폭발 물고기') {
+                                    this.ctx.fillStyle = '#ff3333'; // 빨간 글씨
+                                    this.ctx.fillText('XD', centerX, currentY);
+                                }
+                                
+                                this.ctx.restore();
+                            }
+                        } else {
+                            // 이미지가 없으면 기본 독 오라 연출 사용
+                            const r = 40;
+                            this.ctx.fillStyle = 'rgba(138, 43, 226, 0.7)';
+                            this.ctx.beginPath();
+                            this.ctx.arc(centerX, currentY, r + 10, 0, Math.PI * 2);
+                            this.ctx.fill();
+                        }
+                    } else if (this.diedFromFire) {
+                        // 불로 죽었을 때: 플레이어 실루엣 + 주황색 오라
+                        const r = 40;
+                        // 주황색 오라
+                        this.ctx.fillStyle = 'rgba(255, 140, 0, 0.7)'; // 주황색
+                        this.ctx.beginPath();
+                        this.ctx.arc(centerX, currentY, r + 10, 0, Math.PI * 2);
+                        this.ctx.fill();
+                        // 흰색 플레이어 실루엣
+                        this.ctx.fillStyle = '#ffffff';
+                        this.ctx.beginPath();
+                        this.ctx.rect(centerX - 12, currentY - 24, 24, 36);
+                        this.ctx.fill();
+                        this.ctx.beginPath();
+                        this.ctx.arc(centerX, currentY - 32, 10, 0, Math.PI * 2);
+                        this.ctx.fill();
+                    } else if (this.diedFromPoison) {
+                        // 독으로 죽었을 때: 플레이어 실루엣 + 보라색 오라
+                        const r = 40;
+                        // 보라색 오라
+                        this.ctx.fillStyle = 'rgba(138, 43, 226, 0.7)'; // 보라색
+                        this.ctx.beginPath();
+                        this.ctx.arc(centerX, currentY, r + 10, 0, Math.PI * 2);
+                        this.ctx.fill();
+                        // 흰색 플레이어 실루엣
+                        this.ctx.fillStyle = '#ffffff';
+                        this.ctx.beginPath();
+                        this.ctx.rect(centerX - 12, currentY - 24, 24, 36);
+                        this.ctx.fill();
+                        this.ctx.beginPath();
+                        this.ctx.arc(centerX, currentY - 32, 10, 0, Math.PI * 2);
+                        this.ctx.fill();
+                    } else if (this.diedFromBleeding) {
+                        // 출혈로 죽었을 때: 플레이어 실루엣 + 피 효과
+                        const r = 40;
+                        // 어두운 빨강 배경 원
+                        this.ctx.fillStyle = '#4b0000';
+                        this.ctx.beginPath();
+                        this.ctx.arc(centerX, currentY, r + 10, 0, Math.PI * 2);
+                        this.ctx.fill();
+                        // 밝은 빨강 피 웅덩이
+                        this.ctx.fillStyle = '#b30000';
+                        this.ctx.beginPath();
+                        this.ctx.arc(centerX, currentY + 10, r, 0, Math.PI * 2);
+                        this.ctx.fill();
+                        // 흰색 플레이어 실루엣
+                        this.ctx.fillStyle = '#ffffff';
+                        this.ctx.beginPath();
+                        this.ctx.rect(centerX - 12, currentY - 24, 24, 36);
+                        this.ctx.fill();
+                        this.ctx.beginPath();
+                        this.ctx.arc(centerX, currentY - 32, 10, 0, Math.PI * 2);
+                        this.ctx.fill();
+                    } else {
+                        // 일반적인 몬스터에게 맞아 죽었을 때: 몬스터 이미지
+                        const deathImageKeyMap = {
+                            '동그라미': 'normal',
+                            '방어 동그라미': 'defense',
+                            '날카로운 동그라미': 'sharp',
+                            '석궁 동그라미': 'archer',
+                            '섬광 동그라미': 'flash',
+                            '군인': 'soldier',
+                            '코끼리': 'elephant',
+                            '코뿔소': 'rhino',
+                            '폭발 물고기': 'fishExplode',
+                            '하늘색 물고기': 'fishBlue',
+                            '물고기': 'fish',
+                            '기사': 'knight',
+                            '워터밤': 'boss',
+                            '뱀': 'snakeHead', // 뱀에게 죽으면 뱀 머리 이미지
+                            '독 뱀': 'snakeHead', // 독뱀에게 죽으면 독뱀 머리(같은 스프라이트) 이미지
+                            '대포': 'cannon' // 대포에게 죽으면 대포 이미지
+                        };
+                        
+                        const imageKey = deathImageKeyMap[this.monsterName];
+                        const enemyImg = imageKey ? this.enemyImages[imageKey] : null;
+                        
+                        if (enemyImg && enemyImg.complete && enemyImg.naturalWidth > 0) {
+                            const imgSize = 120;
+                            this.ctx.drawImage(
+                                enemyImg,
+                                centerX - imgSize / 2,
+                                currentY - imgSize / 2,
+                                imgSize,
+                                imgSize
+                            );
+                        }
+                        // 이미지가 없어도 회색 동그라미를 그리지 않음
+                    }
+                    
+                    // 간격 조정
+                    currentY += 90;
+                    
+                    // 2) 설명 텍스트 (누가 어떻게 죽였는지)
+                    this.ctx.fillStyle = '#dddddd';
+                    this.ctx.font = '24px Arial';
                     this.ctx.textAlign = 'center';
                     this.ctx.textBaseline = 'middle';
-                    const message = this.diedFromPoison ? '당신은 독 중독으로 죽었습니다' : `당신은 '${this.monsterName}'에게 죽었습니다.`;
-                    this.ctx.fillText(message, this.canvas.width / 2, this.canvas.height / 2);
+                    
+                    let detailText;
+                    if (this.monsterName === '독 뱀') {
+                        // 독뱀에게 죽었을 때 전용 문구
+                        detailText = '캬아아아';
+                    } else if (this.diedFromPoison) {
+                        detailText = '독 상태 이상으로 서서히 체력이 모두 깎였습니다.';
+                    } else if (this.diedFromBleeding) {
+                        detailText = '출혈로 인해 피를 너무 많이 흘려 쓰러졌습니다.';
+                    } else if (this.monsterName === '동그라미') {
+                        // 동그라미에게 죽었을 때는 특별한 인삿말을 표시
+                        detailText = '안녕하세요?';
+                    } else if (this.monsterName === '날카로운 동그라미') {
+                        // 날카로운 동그라미에게 죽었을 때 전용 문구
+                        detailText = '아우치, 따갑습니다.';
+                    } else if (this.monsterName === '석궁 동그라미') {
+                        // 석궁 동그라미에게 죽었을 때 전용 문구
+                        detailText = '내 총알은 누구보다 빠릅니다!';
+                    } else if (this.monsterName === '뱀') {
+                        // 뱀에게 죽었을 때 전용 문구
+                        detailText = '냐미';
+                    } else if (this.monsterName === '코끼리') {
+                        // 코끼리에게 죽었을 때 전용 문구
+                        detailText = '무게는 무겁지만 발바닥은 말랑합니다!';
+                    } else if (this.monsterName === '군인') {
+                        // 군인에게 죽었을 때 전용 문구
+                        detailText = '전쟁은 무섭습니다...';
+                    } else if (this.monsterName === '코뿔소') {
+                        // 코뿔소에게 죽었을 때 전용 문구
+                        detailText = '맵 밖으로 쉽게 나갈 수 있습니다.';
+                    } else if (this.monsterName === '폭발 물고기') {
+                        // 폭발 물고기에게 죽었을 때 전용 문구
+                        detailText = 'boom!';
+                    } else if (this.monsterName === '하늘색 물고기') {
+                        // 하늘색 물고기에게 죽었을 때 전용 문구
+                        detailText = '나는 강합니다! >: )';
+                    } else if (this.monsterName === '물고기') {
+                        // 일반 물고기에게 죽었을 때 전용 문구
+                        detailText = '생성 완료됨.';
+                    } else if (this.monsterName === '기사') {
+                        // 기사에게 죽었을 때 전용 문구
+                        detailText = '코뿔소에게 배운 기술!!!';
+                    } else if (this.monsterName === '워터밤') {
+                        // 워터밤에게 죽었을 때 전용 문구
+                        detailText = '나는 물고기가 좋아요. ; )';
+                    } else {
+                        detailText = `'${this.monsterName}'의 공격에 의해 쓰러졌습니다.`;
+                    }
+                    this.ctx.fillText(detailText, centerX, currentY);
+                    
+                    // 간격 조정
+                    currentY += 60;
+                    
+                    // 3) 기존 게임 오버 메시지 ("누구에게 죽었습니다")
+                    this.ctx.fillStyle = '#ffffff';
+                    this.ctx.font = 'bold 36px Arial';
+                    const message = this.diedFromPoison
+                        ? '당신은 독 중독으로 죽었습니다'
+                        : `당신은 '${this.monsterName}'에게 죽었습니다.`;
+                    this.ctx.fillText(message, centerX, currentY);
                     
                     // 1초 후 돌아가기 버튼 표시
                     if (this.showRestartButton) {
@@ -11065,6 +13006,32 @@ class TacticalGame {
         }
     }
     
+    // 모든 효과 제거 (게임 오버 시)
+    clearAllEffects() {
+        // 화염병 관련 효과 제거
+        this.gasolineBombProjectiles = [];
+        this.gasolineBombHitboxes = [];
+        this.fireParticles = [];
+        
+        // 적 발사체 제거
+        this.enemyProjectiles = [];
+        
+        // 기타 발사체 제거
+        this.archerProjectiles = [];
+        this.playerBullets = [];
+        this.bossProjectiles = [];
+        
+        // 파티클 효과 제거
+        this.expParticles = [];
+        this.waterParticles = [];
+        
+        // 기타 효과 제거
+        this.poisonEffect = { active: false, damage: 0, timer: 0, initialDamage: 0 };
+        this.mapDotDamage = { active: false, damage: 0, timer: 0, interval: 0.2 * 60, totalDamage: 20 };
+        this.bleedingEffect = { active: false, damage: 0, timer: 0, particles: [] };
+        this.skunkFartEffect = { active: false, timer: 0, maxDuration: 600 };
+    }
+    
     // 게임 오버 시 웨이브와 인벤토리 저장
     saveGameState() {
         this.savedWaveNumber = this.waveNumber;
@@ -11085,15 +13052,17 @@ class TacticalGame {
         
         // 게임 상태 초기화
         this.gameOver = false;
+        this.previousGameOver = false;
         this.fadeAlpha = 0;
         this.showGameOverMessage = false;
         this.messageShowTime = 0;
         this.showRestartButton = false;
         this.restartButtonArea = null;
         this.diedFromPoison = false;
+        this.diedFromFire = false;
         
-        // 체력 초기화
-        this.health = 100;
+        // 체력 초기화 (실제 값은 아래에서 업그레이드 기준으로 다시 설정됨)
+        this.health = 0;
         this.updateHealthDisplay();
         
         // 적 초기화
@@ -11102,8 +13071,13 @@ class TacticalGame {
         this.monkeySpawnTimer = 0;
         this.bossKilled = false; // 워터밤 처치 상태 초기화
         
-        // 웨이브 복원 (저장된 웨이브 - 1, 최소 1)
-        const restoredWave = Math.max(1, this.savedWaveNumber - 1);
+        // 웨이브 복원
+        // 기본은 "저장된 웨이브 - 1" 로 한 단계 이전 웨이브에서 재시작하지만,
+        // 이전 웨이브가 보스 스테이지(5의 배수)라면 다시 보스 스테이지로 돌아가지 않도록
+        // 현재 웨이브(저장된 웨이브)에서 그대로 재시작한다.
+        const restoredWaveCandidate = Math.max(1, this.savedWaveNumber - 1);
+        const previousIsBossStage = restoredWaveCandidate > 0 && restoredWaveCandidate % 5 === 0;
+        const restoredWave = previousIsBossStage ? this.savedWaveNumber : restoredWaveCandidate;
         this.waveNumber = restoredWave;
         this.waveTimer = this.waveTime;
         this.waveStarted = false;
@@ -11139,20 +13113,20 @@ class TacticalGame {
             if (this.playerUpgrades.damage) {
                 this.swordAttack.damage = 2 * Math.pow(1.1, this.playerUpgrades.damage.level - 1);
             } else {
-        this.swordAttack.damage = 2;
+                this.swordAttack.damage = 2;
             }
             // 체력 업그레이드 반영
+            let maxHealth = 100;
             if (this.playerUpgrades.health) {
-                const maxHealth = 100 + (this.playerUpgrades.health.level - 1) * 10;
-                this.health = maxHealth;
-            } else {
-        this.health = 100;
+                maxHealth = 100 + (this.playerUpgrades.health.level - 1) * 10;
             }
+            // 죽고 다시 태어날 때 최대 체력의 10%로 시작 (최소 1)
+            this.health = Math.max(1, Math.floor(maxHealth * 0.1));
             // 속도 업그레이드 반영
             if (this.playerUpgrades.speed) {
                 this.player.speed = 3 + (this.playerUpgrades.speed.level - 1) * 0.5;
             } else {
-        this.player.speed = 3;
+                this.player.speed = 3;
             }
             // 사거리 업그레이드 반영
             if (this.playerUpgrades.range) {
@@ -11166,7 +13140,8 @@ class TacticalGame {
         } else {
             // 업그레이드가 없으면 기본값
             this.swordAttack.damage = 2;
-            this.health = 100;
+            const maxHealth = 100;
+            this.health = Math.max(1, Math.floor(maxHealth * 0.1)); // 기본 최대 체력 100의 10% = 10
             this.player.speed = 3;
         }
         
@@ -11197,6 +13172,11 @@ class TacticalGame {
         // 무기 선택은 유지 (리셋하지 않음)
         // this.selectedWeapon은 그대로 유지
         this.enemyProjectiles = [];
+        
+        // 화염병 시스템 초기화
+        this.gasolineBombProjectiles = [];
+        this.gasolineBombHitboxes = [];
+        this.fireParticles = [];
         
         // 보스 초기화
         this.boss = null;
@@ -11276,9 +13256,21 @@ class TacticalGame {
             }
         }
         
-        // 10스테이지에서만 워터밤 보스 생성, 5스테이지마다 중간보스 생성
+        // 10, 20, 30 스테이지에서 보스 생성
         if (this.waveNumber === 10) {
             this.spawnBoss(true); // 워터밤 보스 (10스테이지에서만)
+        } else if (this.waveNumber === 20) {
+            // 20스테이지: 코뿔소 보스 생성
+            const currentRhinoCount = this.enemies.filter(e => e.type === 'rhino').length;
+            if (currentRhinoCount === 0) {
+                this.spawnEnemy('rhino');
+            }
+        } else if (this.waveNumber === 30) {
+            // 30스테이지: 탱크 보스 생성
+            const currentTankCount = this.enemies.filter(e => e.type === 'tank').length;
+            if (currentTankCount === 0) {
+                this.spawnEnemy('tank');
+            }
         } else if (this.waveNumber % 5 === 0) {
             this.spawnBoss(false); // 중간보스 (5의 배수 스테이지)
         }
@@ -11440,6 +13432,11 @@ class TacticalGame {
         // this.selectedWeapon은 그대로 유지
         this.enemyProjectiles = [];
         
+        // 화염병 시스템 초기화
+        this.gasolineBombProjectiles = [];
+        this.gasolineBombHitboxes = [];
+        this.fireParticles = [];
+        
         // 20 스테이지 클리어 시 제작대 보상 화면 표시
         if (this.waveNumber === 20) {
             this.showCraftingTableReward = true;
@@ -11458,6 +13455,9 @@ class TacticalGame {
         // 보상 선택지 생성
         this.rewards = [];
         this.rewardButtons = [];
+        
+        // 리롤 카운트다운 초기화
+        this.rerollCountdown = null;
         
         // 워터밤을 잡았을 때는 특별한 보상 3개 고정
         // endWave()에서 웨이브 번호가 증가하기 전에 호출되므로, 10 또는 11 모두 체크
@@ -11496,13 +13496,93 @@ class TacticalGame {
                 reward: this.rewards[i]
             });
         }
+        
+        // 건너뛰기 버튼 영역 설정 (화면 중앙 기준 맨 아래 오른쪽 모서리)
+        const skipButtonWidth = 120;
+        const skipButtonHeight = 50;
+        const skipButtonX = this.canvas.width / 2 + 150; // 중앙에서 오른쪽으로 150픽셀
+        const skipButtonY = this.canvas.height - 80; // 맨 아래에서 80픽셀 위
+        this.skipRewardButtonArea = {
+            x: skipButtonX,
+            y: skipButtonY,
+            width: skipButtonWidth,
+            height: skipButtonHeight
+        };
+        
+        // 리롤 버튼 영역 설정 (건너뛰기 버튼 왼쪽)
+        const rerollButtonWidth = 120;
+        const rerollButtonHeight = 50;
+        const rerollButtonX = skipButtonX - rerollButtonWidth - 20; // 건너뛰기 버튼 왼쪽에 20픽셀 간격
+        const rerollButtonY = skipButtonY;
+        this.rerollRewardButtonArea = {
+            x: rerollButtonX,
+            y: rerollButtonY,
+            width: rerollButtonWidth,
+            height: rerollButtonHeight
+        };
     }
     
     selectReward(reward) {
         // 보상 선택 처리
+        // reward가 null이면 건너뛰기 (아무것도 안 받음, 경험치 감소 없음)
+        if (reward !== null) {
+            // 보상별 경험치 비용 계산
+            let rewardCost = 0;
+            if (reward === '벽') {
+                rewardCost = 50;
+            } else if (reward === '아처') {
+                rewardCost = 50;
+            } else if (reward === '문') {
+                rewardCost = 25;
+            } else if (reward === '가시') {
+                rewardCost = 50;
+            } else if (reward === '물블럭') {
+                rewardCost = 100;
+            } else if (reward === '물총') {
+                rewardCost = 50;
+            } else if (reward === '깊은물블럭') {
+                rewardCost = 150;
+            }
+            
+            // 경험치가 부족하면 보상 선택 불가
+            if (this.experience < rewardCost) {
+                return;
+            }
+            
+            // 경험치 차감
+            this.experience -= rewardCost;
+            
+            // 보상에 따른 처리 - 인벤토리에 추가
+            if (reward === '물블럭') {
+                // 물 블럭 20개 추가
+                this.addToInventory('물블럭', 20);
+            } else if (reward === '물총') {
+                // 물총 1개 추가
+                this.addToInventory('물총', 1);
+            } else if (reward === '깊은물블럭') {
+                // 깊은 물블럭 추가
+                this.addToInventory('깊은물블럭', 10);
+            } else if (reward === '벽') {
+                // 벽은 5개씩 추가
+                this.addToInventory('벽', 5);
+            } else if (reward === '가시') {
+                // 가시는 3개씩 추가
+                this.addToInventory('가시', 3);
+            } else if (reward === '문') {
+                // 문은 1개씩 추가
+                this.addToInventory('문', 1);
+            } else {
+                // 아처는 1개씩 추가 (또는 기타 보상)
+                this.addToInventory(reward, 1);
+            }
+        }
+
+        // 보상 창 닫기 및 리롤 상태 초기화
         this.showRewardSelection = false;
         this.rewards = [];
         this.rewardButtons = [];
+        this.rerollCountdown = null;
+        this.rerollCost = 50; // 리롤 비용 초기화
         
         // 체력 회복하지 않음 (체력이 닳아도 웨이브를 끝내도 다시 안 차게)
         
@@ -11510,35 +13590,51 @@ class TacticalGame {
         this.waveTimer = this.waveTime;
         this.waveStarted = false;
         this.waveEnded = false;
+    }
+    
+    rerollRewards() {
+        // 리롤 비용 증가
+        this.rerollCost += 50;
         
-        // 보상에 따른 처리 - 인벤토리에 추가
-        if (reward === '물블럭') {
-            // 물 블럭 20개 추가
-            this.addToInventory('물블럭', 20);
-        } else if (reward === '물총') {
-            // 물총 1개 추가
-            this.addToInventory('물총', 1);
-        } else if (reward === '깊은물블럭') {
-            // 깊은 물블럭 추가
-            this.addToInventory('깊은물블럭', 10);
-        } else if (reward === '벽') {
-            // 벽은 5개씩 추가
-            this.addToInventory('벽', 5);
-        } else if (reward === '가시') {
-            // 가시는 3개씩 추가
-            this.addToInventory('가시', 3);
-        } else if (reward === '문') {
-            // 문은 1개씩 추가
-            this.addToInventory('문', 1);
-        } else {
-            // 아처는 1개씩 추가
-            this.addToInventory(reward, 1);
+        // 보상 다시 생성 (물블럭 등은 제외)
+        const allRewards = ['아처', '벽', '가시', '문'];
+        this.rewards = [];
+        
+        // 3개 선택 (중복 가능)
+        for (let i = 0; i < 3; i++) {
+            const randomReward = allRewards[Math.floor(Math.random() * allRewards.length)];
+            this.rewards.push(randomReward);
+        }
+        
+        // 버튼 영역 다시 설정
+        const buttonWidth = 200;
+        const buttonHeight = 80;
+        const buttonSpacing = 30;
+        const totalWidth = buttonWidth * 3 + buttonSpacing * 2;
+        const startX = (this.canvas.width - totalWidth) / 2;
+        const buttonY = this.canvas.height / 2 + 50;
+        
+        this.rewardButtons = [];
+        for (let i = 0; i < 3; i++) {
+            this.rewardButtons.push({
+                x: startX + i * (buttonWidth + buttonSpacing),
+                y: buttonY,
+                width: buttonWidth,
+                height: buttonHeight,
+                reward: this.rewards[i]
+            });
         }
     }
     
     gameLoop() {
         try {
             this.frameCount++;
+            
+            // 게임 오버가 되었을 때 모든 효과 제거 (한 번만)
+            if (this.gameOver && !this.previousGameOver) {
+                this.clearAllEffects();
+            }
+            this.previousGameOver = this.gameOver;
             
             // 게임 오버가 아니고 보상 선택 화면이 아닐 때만 업데이트
             if (!this.gameOver && !this.showRewardSelection) {
@@ -11600,6 +13696,285 @@ class TacticalGame {
         } finally {
             // 에러가 발생해도 게임 루프는 계속 실행
             requestAnimationFrame(() => this.gameLoop());
+        }
+    }
+    
+    drawMainMenu() {
+        const centerX = this.canvas.width / 2;
+        const centerY = this.canvas.height / 2;
+        
+        if (this.menuState === 'start') {
+            // 시작 화면: 1스테이지 맵 미리보기
+            this.ctx.fillStyle = '#808080'; // 회색 바닥
+            this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+            
+            // 스터드 구분선
+            this.ctx.strokeStyle = '#666666';
+            this.ctx.lineWidth = 1.5;
+            for (let x = 0; x <= this.gridWidth; x++) {
+                const lineX = x * this.studSize;
+                this.drawRoundedRect(lineX - 1, 0, 2, this.canvas.height, 1);
+            }
+            for (let y = 0; y <= this.gridHeight; y++) {
+                const lineY = y * this.studSize;
+                this.drawRoundedRect(0, lineY - 1, this.canvas.width, 2, 1);
+            }
+            
+            // 플레이어 미리보기 (중앙)
+            const playerPreviewX = centerX;
+            const playerPreviewY = centerY;
+            this.ctx.fillStyle = '#4a90e2'; // 파란색
+            this.ctx.fillRect(
+                playerPreviewX - this.studSize * 0.4,
+                playerPreviewY - this.studSize * 0.6,
+                this.studSize * 0.8,
+                this.studSize * 1.2
+            );
+            
+            // '공 방어' 텍스트 (흔들림 효과)
+            this.defenseTextShake.timer++;
+            const shakeAmount = 2;
+            const shakeX = Math.sin(this.defenseTextShake.timer * 0.05) * shakeAmount;
+            const shakeY = Math.cos(this.defenseTextShake.timer * 0.07) * shakeAmount;
+            
+            this.ctx.font = 'bold 36px Arial';
+            this.ctx.textAlign = 'center';
+            this.ctx.textBaseline = 'middle';
+            
+            // 검은색 테두리
+            this.ctx.strokeStyle = '#000000';
+            this.ctx.lineWidth = 4;
+            this.ctx.strokeText('공 방어', centerX + shakeX, centerY - 150 + shakeY);
+            
+            // 하얀색 글씨
+            this.ctx.fillStyle = '#ffffff';
+            this.ctx.fillText('공 방어', centerX + shakeX, centerY - 150 + shakeY);
+            
+            // 플레이 버튼 (중앙 기준 맨 왼쪽에 살짝 위)
+            const playButtonX = centerX - this.canvas.width / 2 + 100;
+            const playButtonY = centerY - 50;
+            const playButtonWidth = 150;
+            const playButtonHeight = 60;
+            
+            this.playButtonArea = {
+                x: playButtonX,
+                y: playButtonY,
+                width: playButtonWidth,
+                height: playButtonHeight
+            };
+            
+            // 버튼 배경
+            this.ctx.fillStyle = '#4a90e2';
+            this.ctx.fillRect(playButtonX, playButtonY, playButtonWidth, playButtonHeight);
+            
+            // 버튼 테두리
+            this.ctx.strokeStyle = '#000000';
+            this.ctx.lineWidth = 2;
+            this.ctx.strokeRect(playButtonX, playButtonY, playButtonWidth, playButtonHeight);
+            
+            // 버튼 텍스트
+            this.ctx.fillStyle = '#ffffff';
+            this.ctx.font = 'bold 24px Arial';
+            this.ctx.textAlign = 'center';
+            this.ctx.textBaseline = 'middle';
+            this.ctx.fillText('플레이', playButtonX + playButtonWidth / 2, playButtonY + playButtonHeight / 2);
+            
+        } else if (this.menuState === 'modeSelect') {
+            // 모드 선택 화면
+            this.ctx.fillStyle = '#1a1a1a';
+            this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+            
+            // 메인 모드 버튼
+            const mainModeButtonY = centerY - 60;
+            const buttonWidth = 300;
+            const buttonHeight = 80;
+            const mainModeButtonX = centerX - buttonWidth / 2;
+            
+            this.mainModeButtonArea = {
+                x: mainModeButtonX,
+                y: mainModeButtonY,
+                width: buttonWidth,
+                height: buttonHeight
+            };
+            
+            this.ctx.fillStyle = '#4a90e2';
+            this.ctx.fillRect(mainModeButtonX, mainModeButtonY, buttonWidth, buttonHeight);
+            this.ctx.strokeStyle = '#ffffff';
+            this.ctx.lineWidth = 3;
+            this.ctx.strokeRect(mainModeButtonX, mainModeButtonY, buttonWidth, buttonHeight);
+            
+            this.ctx.fillStyle = '#ffffff';
+            this.ctx.font = 'bold 32px Arial';
+            this.ctx.textAlign = 'center';
+            this.ctx.textBaseline = 'middle';
+            this.ctx.fillText('메인 모드', centerX, mainModeButtonY + buttonHeight / 2);
+            
+            // 서브 모드 버튼
+            const subModeButtonY = centerY + 60;
+            const subModeButtonX = centerX - buttonWidth / 2;
+            
+            this.subModeButtonArea = {
+                x: subModeButtonX,
+                y: subModeButtonY,
+                width: buttonWidth,
+                height: buttonHeight
+            };
+            
+            this.ctx.fillStyle = '#4a90e2';
+            this.ctx.fillRect(subModeButtonX, subModeButtonY, buttonWidth, buttonHeight);
+            this.ctx.strokeStyle = '#ffffff';
+            this.ctx.lineWidth = 3;
+            this.ctx.strokeRect(subModeButtonX, subModeButtonY, buttonWidth, buttonHeight);
+            
+            this.ctx.fillStyle = '#ffffff';
+            this.ctx.fillText('서브 모드', centerX, subModeButtonY + buttonHeight / 2);
+            
+        } else if (this.menuState === 'chapterSelect') {
+            // 장 선택 화면
+            this.ctx.fillStyle = '#1a1a1a';
+            this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+            
+            // 스크롤 애니메이션
+            const scrollSpeed = 0.1;
+            this.chapterScrollX += (this.targetScrollX - this.chapterScrollX) * scrollSpeed;
+            
+            // 장들 그리기
+            const chapterWidth = 400;
+            const chapterHeight = 500;
+            const chapterSpacing = 50;
+            const chapters = [1, 2];
+            
+            chapters.forEach((chapter, index) => {
+                // 장 배치: 1장은 중앙(0), 2장은 오른쪽(chapterWidth + chapterSpacing)
+                const baseOffset = (chapter - 1) * (chapterWidth + chapterSpacing);
+                const chapterX = centerX - chapterWidth / 2 + baseOffset + this.chapterScrollX;
+                const chapterY = centerY - chapterHeight / 2;
+                
+                // 호버 효과
+                const isHovered = this.hoveredChapter === chapter;
+                const scale = isHovered ? 1.1 : 1.0;
+                const scaledWidth = chapterWidth * scale;
+                const scaledHeight = chapterHeight * scale;
+                const scaledX = chapterX - (scaledWidth - chapterWidth) / 2;
+                const scaledY = chapterY - (scaledHeight - chapterHeight) / 2;
+                
+                // 장 카드 배경
+                if (chapter === 1 || this.defeatedBosses.has(10)) {
+                    // 1장이거나 10스테이지 보스를 잡았으면 1스테이지 맵 그림
+                    this.ctx.fillStyle = '#808080';
+                    this.ctx.fillRect(scaledX, scaledY, scaledWidth, scaledHeight);
+                    
+                    // 스터드 구분선
+                    this.ctx.strokeStyle = '#666666';
+                    this.ctx.lineWidth = 1;
+                    const studSize = 20;
+                    for (let x = 0; x < scaledWidth / studSize; x++) {
+                        this.ctx.beginPath();
+                        this.ctx.moveTo(scaledX + x * studSize, scaledY);
+                        this.ctx.lineTo(scaledX + x * studSize, scaledY + scaledHeight);
+                        this.ctx.stroke();
+                    }
+                    for (let y = 0; y < scaledHeight / studSize; y++) {
+                        this.ctx.beginPath();
+                        this.ctx.moveTo(scaledX, scaledY + y * studSize);
+                        this.ctx.lineTo(scaledX + scaledWidth, scaledY + y * studSize);
+                        this.ctx.stroke();
+                    }
+                    
+                    // 플레이어 미리보기
+                    this.ctx.fillStyle = '#4a90e2';
+                    this.ctx.fillRect(
+                        scaledX + scaledWidth / 2 - studSize * 0.4,
+                        scaledY + scaledHeight / 2 - studSize * 0.6,
+                        studSize * 0.8,
+                        studSize * 1.2
+                    );
+                } else {
+                    // 아직 잡지 않은 보스면 검은색
+                    this.ctx.fillStyle = '#000000';
+                    this.ctx.fillRect(scaledX, scaledY, scaledWidth, scaledHeight);
+                }
+                
+                // 장 번호 텍스트
+                this.ctx.font = 'bold 48px Arial';
+                this.ctx.textAlign = 'center';
+                this.ctx.textBaseline = 'middle';
+                
+                // 검은색 테두리
+                this.ctx.strokeStyle = '#000000';
+                this.ctx.lineWidth = 6;
+                this.ctx.strokeText(`${chapter}장`, scaledX + scaledWidth / 2, scaledY + scaledHeight - 80);
+                
+                // 하얀색 글씨
+                this.ctx.fillStyle = '#ffffff';
+                this.ctx.fillText(`${chapter}장`, scaledX + scaledWidth / 2, scaledY + scaledHeight - 80);
+                
+                // 장 영역 저장
+                if (!this.chapterAreas) this.chapterAreas = {};
+                this.chapterAreas[chapter] = {
+                    x: chapterX,
+                    y: chapterY,
+                    width: chapterWidth,
+                    height: chapterHeight
+                };
+            });
+            
+            // 선택된 장이 있을 때 양옆에 보스 표시
+            if (this.selectedChapter === 1) {
+                // 왼쪽 보스 (워터밤 - 10스테이지)
+                if (this.defeatedBosses.has(10)) {
+                    const bossX = 100;
+                    const bossY = centerY;
+                    const bossRadius = 60;
+                    
+                    // 보스 원
+                    this.ctx.fillStyle = '#1e90ff';
+                    this.ctx.beginPath();
+                    this.ctx.arc(bossX, bossY, bossRadius, 0, Math.PI * 2);
+                    this.ctx.fill();
+                    
+                    // 보스 이름
+                    this.ctx.fillStyle = '#ffffff';
+                    this.ctx.font = 'bold 20px Arial';
+                    this.ctx.textAlign = 'center';
+                    this.ctx.fillText('워터밤', bossX, bossY + bossRadius + 30);
+                }
+                
+                // 오른쪽 보스 (코뿔소 - 20스테이지)
+                if (this.defeatedBosses.has(20)) {
+                    const bossX = this.canvas.width - 100;
+                    const bossY = centerY;
+                    const bossRadius = 60;
+                    
+                    // 보스 원
+                    this.ctx.fillStyle = '#666666';
+                    this.ctx.beginPath();
+                    this.ctx.arc(bossX, bossY, bossRadius, 0, Math.PI * 2);
+                    this.ctx.fill();
+                    
+                    // 보스 이름
+                    this.ctx.fillStyle = '#ffffff';
+                    this.ctx.font = 'bold 20px Arial';
+                    this.ctx.textAlign = 'center';
+                    this.ctx.fillText('코뿔소', bossX, bossY + bossRadius + 30);
+                }
+            }
+            
+            // 1장 클리어 메시지 표시
+            if (this.chapterClearMessage.show) {
+                this.chapterClearMessage.timer++;
+                if (this.chapterClearMessage.timer >= this.chapterClearMessage.duration) {
+                    this.chapterClearMessage.show = false;
+                    this.chapterClearMessage.timer = 0;
+                } else {
+                    // 연한 빨강 글씨로 '1장 클리어' 표시
+                    this.ctx.fillStyle = '#ff9999'; // 연한 빨강
+                    this.ctx.font = 'bold 48px Arial';
+                    this.ctx.textAlign = 'center';
+                    this.ctx.textBaseline = 'middle';
+                    this.ctx.fillText('1장 클리어', centerX, centerY - 200);
+                }
+            }
         }
     }
 }
