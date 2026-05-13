@@ -1,114 +1,47 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ko">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>2D 원형 돌벽 테스트</title>
-    <link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>New Game Starter</title>
+  <link rel="stylesheet" href="./style.css" />
 </head>
 <body>
-    <div id="gameContainer">
-        <div id="ui">
-            <div id="score">점수: 0</div>
-            <div id="items">아이템: 0</div>
-            <div id="eventLog" aria-live="polite"></div>
-            <div id="instructions">
-                <p>WASD·↑↓: 이동 / ←·→: 스킬</p>
-            </div>
-            <div id="gunInfo">
-                <div id="gunName">-</div>
-                <div id="gunAmmo">-</div>
-            </div>
-            <div id="startScreen">
-                <h1>원형 돌벽 테스트</h1>
-                <p>시작하면 가운데 스폰 + 원형 돌벽 맵</p>
-
-                <div id="lobbyShop">
-                    <h3>상점</h3>
-                    <div id="shopCoinsRow">코인: <span id="shopCoinsValue">100</span></div>
-
-                    <div id="shopPanelArea">
-                        <div id="shopUpgradesPanel" class="shopPanel">
-                            <div id="skillList">
-                                <div class="skillRow" id="skillRowStrength">
-                                    <div class="skillLeft">
-                                        <div class="skillName">근력</div>
-                                        <div class="skillStatus" id="skillStrengthStatus">비장착</div>
-                                    </div>
-                                    <button id="skillEquipStrength" class="skillEquipBtn" type="button">장착</button>
-                                </div>
-                            </div>
-
-                            <div id="skillEquipChooserStrength" class="hidden">
-                                <div class="skillChooserTitle">근력 장착 위치 선택</div>
-                                <div class="skillChooserButtons">
-                                    <button id="skillEquipToLeft" type="button">←</button>
-                                    <button id="skillEquipToRight" type="button">→</button>
-                                    <button id="skillEquipChooserClose" type="button">닫기</button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div id="lobbyCodex" class="hidden">
-                    <h3>공 도감</h3>
-                    <p class="codexHint">플레이 중 등장한 이벤트 공이 해금됩니다. 기본 공은 처음부터 표시됩니다.</p>
-                    <div id="codexGrid" class="codexGrid"></div>
-                    <button type="button" id="codexBackBtn">상점으로</button>
-                </div>
-
-                <div class="lobbyActions">
-                    <button type="button" onclick="startGame()">시작</button>
-                    <button type="button" id="lobbyCodexBtn">도감</button>
-                </div>
-            </div>
-            <div id="gameOver" class="hidden">
-                <h2>게임 종료</h2>
-                <p>점수: <span id="finalScore">0</span></p>
-                <button type="button" onclick="restartGame()">다시</button>
-            </div>
+  <main class="app">
+    <h1 class="title">AI 게임 제작 시뮬레이터</h1>
+    <p class="hint">능력을 제작해서 인벤토리에 모으고, 슬롯에 장착해 플레이어를 강화하세요. 이동: WASD/방향키</p>
+    <section class="layout">
+      <section class="left-panel">
+        <section class="controls" aria-label="AI 지시 패널">
+          <button type="button" data-command="enemy">적 추가</button>
+          <button type="button" data-command="wall">벽 생성</button>
+          <button type="button" data-command="boost">플레이어 강화</button>
+          <button type="button" data-command="goal">목표 생성</button>
+          <button type="button" data-command="chaos">혼돈 패치</button>
+        </section>
+        <p id="aiLog" class="ai-log" aria-live="polite">AI: 명령 대기 중...</p>
+        <canvas id="gameCanvas" width="960" height="540" aria-label="새 게임 캔버스"></canvas>
+      </section>
+      <aside class="ability-panel" aria-label="능력 관리 패널">
+        <h2>능력 공방</h2>
+        <div class="craft-box">
+          <label for="abilityName">능력 이름</label>
+          <input id="abilityName" type="text" maxlength="24" placeholder="예: 초고속 코어" />
+          <label for="abilityPrompt">능력 설명(키워드)</label>
+          <textarea id="abilityPrompt" rows="3" maxlength="120" placeholder="예: 매우 빠르고 날카로운 번개 같은 힘, 전설급"></textarea>
+          <button id="craftAbilityBtn" type="button">능력 제작</button>
         </div>
-
-        <div id="devModeBar">
-            <button id="devModeToggle" type="button">개발자모드</button>
-        </div>
-
-        <div id="devPanel" class="hidden" role="dialog" aria-modal="true" aria-label="개발자 모드">
-            <h3>개발자 모드</h3>
-            <div class="devPanelButtons">
-                <button id="devAddEvent" type="button">이벤트 추가</button>
-                <button id="devKill" type="button">죽기</button>
-                <button id="devToggleFreeze" type="button">공 멈추기</button>
-                <button id="devClose" type="button">닫기</button>
-            </div>
-        </div>
-
-        <div id="devAddEventPanel" class="hidden" role="dialog" aria-modal="true" aria-label="이벤트 선택">
-            <h3>이벤트 추가</h3>
-            <div class="devPanelButtons">
-                <button id="devAddFire" type="button">불 공 추가</button>
-                <button id="devAddSlime" type="button">점액 공 추가</button>
-                <button id="devAddTeleport" type="button">텔레포트 공 추가</button>
-                <button id="devAddElastic" type="button">탄성 공 추가</button>
-                <button id="devAddSniper" type="button">저격 공 추가</button>
-                <button id="devAddElectric" type="button">전류 공 추가</button>
-                <button id="devAddGravity" type="button">중력 공 추가</button>
-                <button id="devAddTime" type="button">시간 공 추가</button>
-                <button id="devAddDodge" type="button">회피 공 추가</button>
-                <button id="devAddEventClose" type="button">닫기</button>
-            </div>
-        </div>
-        <div id="fadeOverlay" aria-hidden="true"></div>
-
-        <div id="skillHUD" class="hidden" aria-live="polite">
-            <div class="skillHUDInner">
-                <div class="skillHUDLine">←: <span id="skillHUD_Left">없음</span></div>
-                <div class="skillHUDLine">→: <span id="skillHUD_Right">없음</span></div>
-                <div class="skillHUDLine small" id="skillHUDHint">무엇을 눌러야 하는지 표시됨</div>
-            </div>
-        </div>
-    </div>
-    <script src="game.js"></script>
+        <section class="slot-box">
+          <h3>장착 슬롯</h3>
+          <div id="equipSlots" class="equip-slots"></div>
+        </section>
+        <section class="inventory-box">
+          <h3>인벤토리</h3>
+          <ul id="abilityInventory" class="inventory-list" aria-live="polite"></ul>
+        </section>
+      </aside>
+    </section>
+  </main>
+  <script src="./game.js"></script>
 </body>
 </html>

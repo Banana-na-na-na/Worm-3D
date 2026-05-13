@@ -1,730 +1,200 @@
 * {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
+  box-sizing: border-box;
 }
 
+html,
 body {
-    width: 100vw;
-    height: 100vh;
-    overflow: hidden;
-    background-color: #111111;
-    font-family: 'Arial', sans-serif;
+  margin: 0;
+  min-height: 100%;
+  background: #111827;
+  color: #f9fafb;
+  font-family: "Segoe UI", system-ui, sans-serif;
 }
 
-#gameContainer {
-    position: relative;
-    width: 100%;
-    height: 100%;
+.app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 20px 20px 28px;
 }
 
-#gameContainer canvas {
-    display: block;
-    width: 100%;
-    height: 100%;
-    cursor: crosshair; /* 기본 커서를 십자선(+)으로 설정 */
+.title {
+  margin: 0;
+  font-size: 28px;
 }
 
-/* 마우스 잠금 시 커서 숨김 */
-#gameContainer.pointer-locked canvas {
-    cursor: none;
+.hint {
+  margin: 0 0 8px;
+  color: #d1d5db;
+  text-align: center;
 }
 
-/* 마우스 잠금 시 화면 중앙에 십자선 표시 */
-#gameContainer.pointer-locked::before {
-    content: '';
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: 20px;
-    height: 20px;
-    pointer-events: none;
-    z-index: 1000;
-    background: 
-        linear-gradient(to right, transparent 45%, rgba(255, 255, 255, 0.8) 45%, rgba(255, 255, 255, 0.8) 55%, transparent 55%),
-        linear-gradient(to bottom, transparent 45%, rgba(255, 255, 255, 0.8) 45%, rgba(255, 255, 255, 0.8) 55%, transparent 55%);
-    background-size: 100% 2px, 2px 100%;
-    background-position: center;
-    background-repeat: no-repeat;
+.layout {
+  width: min(1280px, 100%);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 14px;
+  align-items: start;
 }
 
-#ui {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    pointer-events: none;
-    z-index: 10;
+.left-panel {
+  width: 100%;
 }
 
-#fadeOverlay {
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    z-index: 50;
-    opacity: 0;
-    background: radial-gradient(
-        circle at center,
-        rgba(0, 0, 0, 0.9) 0%,
-        rgba(0, 0, 0, 0.96) 55%,
-        rgba(0, 0, 0, 1) 100%
-    );
-    transition: opacity 0.45s ease;
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin-bottom: 2px;
 }
 
-#fadeOverlay.visible {
-    opacity: 1;
+.controls button {
+  border: 1px solid #374151;
+  background: #111827;
+  color: #f9fafb;
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 14px;
+  cursor: pointer;
 }
 
-#score, #items {
-    position: absolute;
-    top: 20px;
-    font-size: 24px;
-    font-weight: bold;
-    color: #fff;
-    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
-    background: rgba(0, 0, 0, 0.5);
-    padding: 10px 20px;
-    border-radius: 10px;
+.controls button:hover {
+  background: #1f2937;
 }
 
-#score {
-    left: 20px;
+.controls button:active {
+  transform: translateY(1px);
 }
 
-#items {
-    left: 20px;
-    top: 70px;
+.ai-log {
+  margin: 4px 0 8px;
+  color: #a7f3d0;
+  min-height: 20px;
 }
 
-#eventLog {
-    position: absolute;
-    left: 20px;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 260px;
-    max-height: 40%;
-    overflow: auto;
-    font-size: 18px;
-    font-weight: bold;
-    color: #fff;
-    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.6);
-    background: rgba(0, 0, 0, 0.45);
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    padding: 12px 14px;
-    border-radius: 10px;
-    pointer-events: none;
-    z-index: 20;
-    line-height: 1.25;
+#gameCanvas {
+  width: min(960px, 100%);
+  height: auto;
+  border: 2px solid #374151;
+  border-radius: 12px;
+  background: #0b1220;
+  display: block;
 }
 
-#gunInfo {
-    position: absolute;
-    right: 20px;
-    bottom: 20px;
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 5px;
-    pointer-events: none;
-    z-index: 100;
+.ability-panel {
+  border: 1px solid #334155;
+  background: #0f172a;
+  border-radius: 12px;
+  padding: 12px;
 }
 
-#gunName {
-    font-size: 18px;
-    font-weight: bold;
-    color: #fff;
-    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
-    background: rgba(0, 0, 0, 0.6);
-    padding: 5px 15px;
-    border-radius: 5px;
-    border: 1px solid rgba(255, 255, 255, 0.3);
+.ability-panel h2 {
+  margin: 0 0 10px;
+  font-size: 20px;
 }
 
-#gunAmmo {
-    font-size: 24px;
-    font-weight: bold;
-    color: #d0d0d0;
-    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
-    background: rgba(0, 0, 0, 0.6);
-    padding: 5px 15px;
-    border-radius: 5px;
-    border: 1px solid rgba(255, 255, 255, 0.25);
+.ability-panel h3 {
+  margin: 0 0 8px;
+  font-size: 16px;
 }
 
-#instructions {
-    position: absolute;
-    bottom: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    font-size: 14px;
-    color: #fff;
-    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
-    background: rgba(0, 0, 0, 0.5);
-    padding: 10px 20px;
-    border-radius: 10px;
-    pointer-events: none;
+.craft-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
 }
 
-#startScreen, #gameOver {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    text-align: center;
-    background: linear-gradient(135deg, rgba(30, 30, 30, 0.95) 0%, rgba(55, 55, 55, 0.95) 100%);
-    padding: 60px 80px;
-    border-radius: 20px;
-    border: 3px solid #666666;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
-    pointer-events: auto;
+.craft-box label {
+  font-size: 13px;
+  color: #cbd5e1;
 }
 
-#startScreen h1, #gameOver h2 {
-    font-size: 48px;
-    color: #fff;
-    margin-bottom: 20px;
-    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+.craft-box input,
+.craft-box textarea,
+.craft-box button {
+  border: 1px solid #334155;
+  background: #020617;
+  color: #f8fafc;
+  border-radius: 8px;
+  padding: 8px 10px;
 }
 
-#startScreen p, #gameOver p {
-    font-size: 18px;
-    color: #ccc;
-    margin-bottom: 15px;
-    line-height: 1.6;
+.craft-box textarea {
+  resize: vertical;
+  min-height: 76px;
+  font-family: inherit;
 }
 
-#gameOver #finalScore {
-    font-size: 32px;
-    font-weight: bold;
-    color: #d0d0d0;
-    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+.craft-box button {
+  cursor: pointer;
+  background: #1d4ed8;
 }
 
-#startScreen button, #gameOver button {
-    padding: 15px 40px;
-    font-size: 24px;
-    font-weight: bold;
-    color: #fff;
-    background: linear-gradient(135deg, #6b6b6b 0%, #2f2f2f 100%);
-    border: 3px solid #fff;
-    border-radius: 10px;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
-    margin-top: 20px;
+.craft-box button:hover {
+  background: #2563eb;
 }
 
-#startScreen button:hover, #gameOver button:hover {
-    transform: translateY(-3px) scale(1.05);
-    box-shadow: 0 6px 20px rgba(255, 255, 255, 0.08);
-    border-color: rgba(255, 255, 255, 0.65);
+.slot-box,
+.inventory-box {
+  margin-top: 10px;
 }
 
-#startScreen button:active, #gameOver button:active {
-    transform: translateY(-1px) scale(1.02);
+.equip-slots {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
 }
 
-.hidden {
-    display: none !important;
+.slot-item,
+.inventory-item {
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 8px;
+  background: #111827;
+  font-size: 13px;
 }
 
-/* 개발자 모드 UI */
-#devModeBar {
-    position: fixed;
-    bottom: 14px;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 5000;
-    pointer-events: auto; /* #ui(pointer-events:none) 영향 해제 */
+.slot-empty {
+  color: #94a3b8;
 }
 
-#devModeToggle {
-    padding: 10px 18px;
-    font-size: 16px;
-    font-weight: bold;
-    color: #fff;
-    background: linear-gradient(135deg, rgba(90, 90, 90, 0.95) 0%, rgba(30, 30, 30, 0.95) 100%);
-    border: 2px solid rgba(255, 255, 255, 0.65);
-    border-radius: 10px;
-    cursor: pointer;
-    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
-    transition: transform 0.15s ease;
-    pointer-events: auto;
+.inventory-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+  max-height: 280px;
+  overflow: auto;
 }
 
-#devModeToggle:hover {
-    transform: translateX(-50%) translateY(-2px);
+.inventory-item button {
+  margin-top: 6px;
+  border: 1px solid #334155;
+  background: #0ea5e9;
+  color: #0f172a;
+  border-radius: 8px;
+  padding: 5px 8px;
+  cursor: pointer;
+  font-size: 12px;
 }
 
-#devPanel {
-    position: fixed;
-    left: 50%;
-    bottom: 74px;
-    transform: translateX(-50%);
-    z-index: 5001;
-    width: min(520px, calc(100vw - 40px));
-    pointer-events: auto;
-    background: linear-gradient(135deg, rgba(30, 30, 30, 0.98) 0%, rgba(60, 60, 60, 0.98) 100%);
-    border: 3px solid #666666;
-    border-radius: 16px;
-    box-shadow: 0 12px 48px rgba(0, 0, 0, 0.65);
-    padding: 18px 18px 14px;
+.inventory-item button:hover {
+  background: #22d3ee;
 }
 
-#devPanel h3 {
-    color: #fff;
-    font-size: 22px;
-    margin-bottom: 12px;
-    text-align: center;
-    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+.ability-badge {
+  font-size: 11px;
+  color: #facc15;
 }
 
-.devPanelButtons {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    justify-content: center;
+@media (max-width: 1080px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
 }
-
-#devPanel button {
-    padding: 12px 18px;
-    font-size: 16px;
-    font-weight: bold;
-    color: #fff;
-    background: linear-gradient(135deg, #6b6b6b 0%, #2f2f2f 100%);
-    border: 2px solid rgba(255, 255, 255, 0.55);
-    border-radius: 12px;
-    cursor: pointer;
-    transition: transform 0.15s ease;
-}
-
-#devPanel button:hover {
-    transform: translateY(-2px);
-}
-
-#devPanel button:active {
-    transform: translateY(-1px) scale(0.98);
-}
-
-/* 개발자 모드: 이벤트 선택 패널 */
-#devAddEventPanel {
-    position: fixed;
-    left: 50%;
-    bottom: 170px;
-    transform: translateX(-50%);
-    z-index: 5002;
-    width: min(520px, calc(100vw - 40px));
-    pointer-events: auto;
-    background: linear-gradient(135deg, rgba(30, 30, 30, 0.98) 0%, rgba(60, 60, 60, 0.98) 100%);
-    border: 3px solid #666666;
-    border-radius: 16px;
-    box-shadow: 0 12px 48px rgba(0, 0, 0, 0.65);
-    padding: 18px 18px 14px;
-}
-
-#devAddEventPanel h3 {
-    color: #fff;
-    font-size: 22px;
-    margin-bottom: 12px;
-    text-align: center;
-    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
-}
-
-#devAddEventPanel .devPanelButtons {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    justify-content: center;
-}
-
-#devAddEventPanel button {
-    padding: 12px 18px;
-    font-size: 16px;
-    font-weight: bold;
-    color: #fff;
-    background: linear-gradient(135deg, #6b6b6b 0%, #2f2f2f 100%);
-    border: 2px solid rgba(255, 255, 255, 0.55);
-    border-radius: 12px;
-    cursor: pointer;
-    transition: transform 0.15s ease;
-}
-
-#devAddEventPanel button:hover {
-    transform: translateY(-2px);
-}
-
-#devAddEventPanel button:active {
-    transform: translateY(-1px) scale(0.98);
-}
-
-/* 로비 상점(아이템/업그레이드 탭) */
-#lobbyShop {
-    position: relative;
-    margin: 18px auto 18px;
-    width: 100%;
-    max-width: 380px;
-    text-align: left;
-    background: rgba(0, 0, 0, 0.35);
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    border-radius: 14px;
-    padding: 14px 14px 14px;
-    overflow: visible;
-}
-
-#lobbyShop, #lobbyShop * {
-    pointer-events: auto; /* #ui(pointer-events:none) 영향 방지용 */
-}
-
-#lobbyShop h3 {
-    color: #fff;
-    font-size: 20px;
-    margin-bottom: 8px;
-    text-align: center;
-    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
-}
-
-#shopCoinsRow {
-    color: #ddd;
-    font-size: 15px;
-    margin-bottom: 12px;
-    text-align: center;
-}
-
-#shopSideTabs {
-    position: absolute;
-    top: 56px;
-    right: -76px; /* 상점 바깥쪽으로 튀어나오게 */
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-}
-
-.shopSideTab {
-    width: 64px;
-    height: 90px;
-    border-radius: 12px;
-    border: 2px solid rgba(255, 255, 255, 0.55);
-    background: linear-gradient(135deg, #6b6b6b 0%, #2f2f2f 100%);
-    color: #fff;
-    font-size: 14px;
-    font-weight: bold;
-    cursor: pointer;
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
-    overflow: hidden; /* 글씨가 버튼 밖으로 나가지 않게 */
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0;
-    transition: none; /* 마우스 올려도 변화 없게 */
-}
-
-.shopSideTab.active {
-    box-shadow: 0 10px 26px rgba(0, 0, 0, 0.45);
-    border-color: rgba(255, 255, 255, 0.85);
-}
-
-.shopTabText {
-    display: inline-block;
-    transform: rotate(90deg);
-    transform-origin: center;
-    white-space: nowrap;
-}
-
-#shopTabUpgrades .shopTabText {
-    transform: rotate(180deg); /* 업그레이드 글씨만 90도 더 회전 */
-}
-
-#shopPanelArea {
-    min-height: 70px;
-}
-
-.shopPanel {
-    background: rgba(0, 0, 0, 0.25);
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    border-radius: 12px;
-    padding: 14px 12px;
-    color: #dcdcdc;
-    font-size: 14px;
-    text-align: center;
-}
-
-/* 스킬: 근력 */
-.skillRow {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    background: rgba(0, 0, 0, 0.18);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 12px;
-    padding: 10px 10px;
-}
-
-.skillLeft {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 4px;
-}
-
-.skillName {
-    color: #fff;
-    font-size: 16px;
-    font-weight: bold;
-}
-
-.skillStatus {
-    color: rgba(220, 220, 220, 0.9);
-    font-size: 13px;
-}
-
-.skillEquipBtn {
-    padding: 10px 12px;
-    font-size: 14px;
-    font-weight: bold;
-    color: #fff;
-    background: linear-gradient(135deg, #6b6b6b 0%, #2f2f2f 100%);
-    border: 2px solid rgba(255, 255, 255, 0.55);
-    border-radius: 10px;
-    cursor: pointer;
-    transition: none; /* 호버해도 변화 없게 */
-    flex: 0 0 auto;
-}
-
-#skillEquipChooserStrength {
-    margin-top: 12px;
-    padding-top: 10px;
-}
-
-.skillChooserTitle {
-    color: rgba(255, 255, 255, 0.9);
-    font-size: 14px;
-    margin-bottom: 10px;
-}
-
-.skillChooserButtons {
-    display: flex;
-    gap: 10px;
-    justify-content: center;
-    flex-wrap: wrap;
-}
-
-.skillChooserButtons button {
-    padding: 10px 14px;
-    font-size: 14px;
-    font-weight: bold;
-    color: #fff;
-    background: linear-gradient(135deg, #6b6b6b 0%, #2f2f2f 100%);
-    border: 2px solid rgba(255, 255, 255, 0.55);
-    border-radius: 10px;
-    cursor: pointer;
-    transition: none; /* 호버해도 변화 없게 */
-}
-
-/* 게임 중 스킬 HUD (맨 아래 왼쪽 대각선) */
-#skillHUD {
-    position: fixed;
-    left: 14px;
-    bottom: 14px;
-    z-index: 6000;
-    transform: none;
-    pointer-events: none;
-    color: #fff;
-    text-shadow: 2px 2px 6px rgba(0, 0, 0, 0.7);
-}
-
-.skillHUDInner {
-    background: rgba(0, 0, 0, 0.45);
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    border-radius: 12px;
-    padding: 10px 12px;
-}
-
-.skillHUDLine {
-    font-size: 14px;
-    font-weight: bold;
-    white-space: nowrap;
-}
-
-.skillHUDLine.small {
-    margin-top: 6px;
-    font-size: 12px;
-    font-weight: normal;
-    color: rgba(220, 220, 220, 0.95);
-}
-
-/* 로비: 시작 / 도감 */
-.lobbyActions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
-    justify-content: center;
-    align-items: center;
-    margin-top: 8px;
-}
-
-/* 로비 도감 */
-#lobbyCodex {
-    position: relative;
-    margin: 18px auto 18px;
-    width: 100%;
-    max-width: min(520px, 92vw);
-    text-align: left;
-    background: rgba(0, 0, 0, 0.35);
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    border-radius: 14px;
-    padding: 14px 14px 16px;
-    max-height: min(52vh, 420px);
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-}
-
-#lobbyCodex, #lobbyCodex * {
-    pointer-events: auto;
-}
-
-#lobbyCodex h3 {
-    color: #fff;
-    font-size: 20px;
-    margin-bottom: 8px;
-    text-align: center;
-    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
-}
-
-.codexHint {
-    color: #aaa;
-    font-size: 13px;
-    line-height: 1.45;
-    margin-bottom: 12px;
-    text-align: center;
-}
-
-.codexGrid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
-    gap: 12px;
-    overflow-y: auto;
-    padding: 4px 2px 8px;
-    flex: 1;
-    min-height: 120px;
-}
-
-.codex-card {
-    background: rgba(0, 0, 0, 0.28);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 12px;
-    padding: 12px 10px;
-    text-align: center;
-}
-
-.codex-unknown {
-    border-color: rgba(80, 80, 80, 0.5);
-}
-
-.codex-art {
-    width: 56px;
-    height: 56px;
-    border-radius: 50%;
-    margin: 0 auto 10px;
-    box-sizing: border-box;
-}
-
-.codex-art-silhouette {
-    background: #0a0a0a;
-    border: 2px solid #1f1f1f;
-    box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.9);
-}
-
-.codex-art--basic {
-    background: radial-gradient(circle at 32% 32%, #fff1a8 0%, #dbeaff 45%, #6a8fcf 100%);
-    border: 2px solid rgba(106, 143, 207, 0.85);
-    box-shadow: 0 0 14px rgba(100, 160, 255, 0.35);
-}
-
-.codex-art--fire {
-    background: radial-gradient(circle at 32% 32%, #ffd36a 0%, #ff6a00 55%, #8a1f00 100%);
-    border: 2px solid rgba(90, 20, 0, 0.9);
-    box-shadow: 0 0 14px rgba(255, 100, 0, 0.4);
-}
-
-.codex-art--slime {
-    background: radial-gradient(circle at 32% 32%, #c7ffea 0%, #39ff7a 50%, #0f6b2a 100%);
-    border: 2px solid rgba(0, 90, 30, 0.85);
-    box-shadow: 0 0 12px rgba(60, 255, 120, 0.25);
-}
-
-.codex-art--teleport {
-    background: radial-gradient(circle at 40% 40%, #2b2b2b 0%, #0b0b0b 100%);
-    border: 2px solid #3a3a3a;
-    box-shadow: 0 0 10px rgba(0, 0, 0, 0.6);
-}
-
-.codex-art--elastic {
-    background: radial-gradient(circle at 32% 32%, #d9fff7 0%, #2dffd0 45%, #006e5a 100%);
-    border: 2px solid rgba(80, 255, 215, 0.75);
-    box-shadow: 0 0 14px rgba(0, 255, 200, 0.35);
-}
-
-.codex-art--sniper {
-    background: radial-gradient(circle at 32% 32%, #ffb0b0 0%, #ff5050 55%, #6a1010 100%);
-    border: 2px solid rgba(255, 120, 120, 0.8);
-    box-shadow: 0 0 12px rgba(255, 60, 60, 0.35);
-}
-
-.codex-art--electric {
-    background: radial-gradient(circle at 32% 32%, #5a5a5a 0%, #2a2a2a 100%);
-    border: 2px solid #1a1a1a;
-    box-shadow: 0 0 8px rgba(120, 255, 220, 0.25);
-}
-
-.codex-art--gravity {
-    background: radial-gradient(circle at 32% 32%, #ffd4a8 0%, #ff8c2a 50%, #b84a00 100%);
-    border: 2px solid rgba(180, 60, 0, 0.95);
-    box-shadow: 0 0 14px rgba(255, 140, 40, 0.4);
-}
-
-.codex-art--time {
-    background: radial-gradient(circle at 32% 32%, #e8d4ff 0%, #8b5cf6 50%, #3b0764 100%);
-    border: 2px solid rgba(200, 180, 255, 0.9);
-    box-shadow: 0 0 14px rgba(160, 100, 255, 0.35);
-}
-
-.codex-art--dodge {
-    background: radial-gradient(circle at 32% 32%, #d4ffcc 0%, #2ee85a 50%, #0a5c22 100%);
-    border: 2px solid rgba(20, 120, 40, 0.95);
-    box-shadow: 0 0 14px rgba(40, 255, 100, 0.4);
-}
-
-.codex-info {
-    text-align: left;
-}
-
-.codex-name {
-    color: #fff;
-    font-size: 15px;
-    font-weight: bold;
-    margin-bottom: 8px;
-    text-align: center;
-}
-
-.codex-lines {
-    margin: 0;
-    padding-left: 1.1em;
-    color: #c8c8c8;
-    font-size: 12px;
-    line-height: 1.45;
-}
-
-.codex-lines li {
-    margin-bottom: 4px;
-}
-
-#lobbyCodex #codexBackBtn {
-    margin-top: 12px;
-    align-self: center;
-}
-
