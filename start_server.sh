@@ -1,7 +1,9 @@
 #!/bin/bash
 echo "로컬 웹 서버를 시작합니다..."
 echo ""
-echo "브라우저에서 http://localhost:8000/src/index.html 을 열어주세요"
+echo "브라우저에서 아래 중 하나를 열어 주세요:"
+echo "  http://localhost:8000/"
+echo "  http://localhost:8000/src/index.html"
 echo ""
 echo "서버를 중지하려면 Ctrl+C를 누르세요"
 echo ""
