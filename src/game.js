@@ -165,7 +165,7 @@
   const floorMatBase = makeStoneMat(202);
   const ceilMatBase = makeStoneMat(303);
 
-  // 미로 — 흙 (웜용)
+  // 미로 ? 흙 (웜용)
   function paintDirt(x, y, seed) {
     const n = fbm(x, y, seed);
     const n2 = fbm((x + 11) % MC, (y + 7) % MC, seed + 44);
@@ -247,6 +247,7 @@
   );
   ceil.rotation.x = Math.PI / 2;
   ceil.position.y = WALL_H;
+  ceil.userData.devCeil = true;
   scene.add(ceil);
 
   const colliders = [];
@@ -270,19 +271,19 @@
   }
 
   const t = 0.35;
-  const DOOR_W = 2.4;
+  const DOOR_W = 4.4; // 복도 칸(CELL)과 맞춰 입구에서 흙이 안 삐치게
 
   // -Z, ±X 벽 (막힘)
   wall(ROOM + t, WALL_H, t, 0, WALL_H * 0.5, -HALF);
   wall(t, WALL_H, ROOM + t, -HALF, WALL_H * 0.5, 0);
   wall(t, WALL_H, ROOM + t, HALF, WALL_H * 0.5, 0);
 
-  // +Z 벽: 중앙 입구 뚫림 (좌/우 조각)
+  // +Z 벽: 좌/우 + 위 인방(방 재질) ? 동굴 높이까지만 입구
   const sideW = (ROOM - DOOR_W) * 0.5;
   wall(sideW, WALL_H, t, -(DOOR_W * 0.5 + sideW * 0.5), WALL_H * 0.5, HALF);
   wall(sideW, WALL_H, t, DOOR_W * 0.5 + sideW * 0.5, WALL_H * 0.5, HALF);
 
-  // 바닥 격자(방) — 재질 위에 아주 약하게
+  // 바닥 격자(방) ? 재질 위에 아주 약하게
   const grid = new THREE.GridHelper(ROOM, 16, 0x5a6a78, 0x2a333c);
   grid.position.y = 0.015;
   const gridMats = Array.isArray(grid.material) ? grid.material : [grid.material];
@@ -297,17 +298,38 @@
   const MW = 57; // 좌우 칸 수 (기존 19의 3배, 홀수)
   const SEG = 21; // 청크 깊이(홀수)
   const CAVE_H = 3.2;
-  const MAZE_START_SEGS = 15; // 예전 3개 대비 길이 5배
+  // 입구 위: 방 벽 재질 인방 (시각만 — 콜라이더 있으면 문 전체가 막힘)
+  {
+    const lintelH = WALL_H - CAVE_H;
+    wall(DOOR_W, lintelH, t, 0, CAVE_H + lintelH * 0.5, HALF, null, false);
+    // 인방을 동굴 쪽으로 조금 더 밀어 천장 틈 가림
+    const ceilExt = wall(
+      DOOR_W,
+      0.16,
+      CELL * 0.55,
+      0,
+      CAVE_H - 0.08,
+      HALF + t * 0.5 + CELL * 0.25,
+      tileMat(caveFloorMatBase, DOOR_W, CELL * 0.55, 0, HALF + t * 0.5),
+      false
+    );
+    ceilExt.userData.devCeil = true;
+  }
+  const MAZE_START_SEGS = 24; // 저장고 200개+간격 수용
   const WALL_S = CELL; // 딱 맞춤 (겹침·틈 없음)
   const mazeW = MW * CELL;
+  // 문 뒷면(+t/2)에 맞춰 미로를 붙여 흙 벽이 로비로 안 삐짐
   const mazeOriginX = -((MW - 1) * CELL) * 0.5;
-  const mazeOriginZ = HALF + CELL * 0.5;
+  const mazeOriginZ = HALF + t * 0.5 + CELL * 0.5;
   const enterX = (MW / 2) | 0;
 
   // 큰 방: 맵에 여러 개, 면당 연결 0~1, 크기 2배, 스폰 근처
-  const HALL_COUNT = 205;
+  const NEST_COUNT = 5;
   const STORAGE_COUNT = 200; // 저장고(막다른 길)
-  const HALL_SPAN = 18; // 기존 9의 2배
+  const HALL_COUNT = STORAGE_COUNT + NEST_COUNT;
+  const HALL_SPAN = 18; // 둥지(큰방) 한 변
+  const STORAGE_SPAN = 8; // 저장고: 200개+간격이 들어가도록 작게
+  const HALL_MIN_GAP = 2; // 로비 제외 방끼리 최소 빈 칸
   const HALL_H = 9.5;
   const halls = [];
   const SMALL_EGG_R = 0.48;
@@ -315,12 +337,15 @@
   const smallEggs = []; // 미니웜 부화용 작은 알 (통과 가능)
   const HIDE_COUNT = 400;
   const HIDE_GAP = 0.34; // 틈새 안쪽 폭 (칸 대비, 양옆 좁힘)
-  const hideMap = []; // cz → cx → { dx, dz } 열린 방향(복도 쪽)
-  const HOLE_COUNT = 50; // 복도 낮은 구멍(구간 수)
+  const HIDE_MIN_GAP = 2; // 틈새·굴 서로 최소 칸 간격
+  const FAKE_HIDE_COUNT = 40; // 가짜 틈새(조개 괴물)
+  const FAKE_HIDE_KILL_SEC = 1;
+  const hideMap = []; // cz → cx → { dx, dz, fake? }
+  const fakeHides = []; // 조개 함정 인스턴스
+  const HOLE_COUNT = 350; // 굴(틈새형 + 낮은 천장, 웅크리기 필수)
   const HOLE_LEN = 2; // 약 2칸
-  const HOLE_R = 0.72; // 원형 통로 반지름 (일반 웜은 못 들어감)
-  const HOLE_PASS_Y = 1.12; // 이보다 눈높이 낮아야 통과
-  const holeMap = []; // cz → cx → { dx, dz }
+  const HOLE_PASS_Y = 1.12; // 이보다 눈높이 낮아야 통과 (웅크리면 CROUCH_EYE_H)
+  const holeMap = []; // cz → cx → { dx, dz } ? 굴
 
   const mazeGroup = new THREE.Group();
   scene.add(mazeGroup);
@@ -357,6 +382,8 @@
 
   function clearMaze() {
     clearSprayMarks();
+    clearShovelOutlines();
+    setShovelMode(false);
     while (mazeGroup.children.length) {
       const m = mazeGroup.children[0];
       mazeGroup.remove(m);
@@ -369,10 +396,16 @@
     smallEggs.length = 0;
     hideMap.length = 0;
     holeMap.length = 0;
+    fakeHides.length = 0;
   }
 
   function isHideCell(cx, cz) {
     return !!(hideMap[cz] && hideMap[cz][cx]);
+  }
+
+  function isFakeHideCell(cx, cz) {
+    const v = hideMap[cz] && hideMap[cz][cx];
+    return !!(v && v.fake);
   }
 
   function hideOpenDir(cx, cz) {
@@ -386,6 +419,12 @@
     if (isInLobby()) return false;
     const c = cellFromWorld(pos.x, pos.z);
     return isHideCell(c.cx, c.cz);
+  }
+
+  function isInFakeHide() {
+    if (isInLobby()) return false;
+    const c = cellFromWorld(pos.x, pos.z);
+    return isFakeHideCell(c.cx, c.cz);
   }
 
   function isHoleCell(cx, cz) {
@@ -408,7 +447,7 @@
     return isCrouching() || isLegless() || pos.y <= HOLE_PASS_Y + 0.02;
   }
 
-  /** 서 있으면 구멍 칸 진입/이동 불가 */
+  /** 서 있으면 굴 칸 진입/이동 불가 */
   function holeBlocksPlayerAt(x, z) {
     const c = cellFromWorld(x, z);
     if (!isHoleCell(c.cx, c.cz)) return false;
@@ -451,19 +490,47 @@
 
     for (let i = candidates.length - 1; i > 0; i -= 1) {
       const j = (Math.random() * (i + 1)) | 0;
-      const t = candidates[i];
+      const t0 = candidates[i];
       candidates[i] = candidates[j];
-      candidates[j] = t;
+      candidates[j] = t0;
+    }
+
+    const placedList = [];
+    function tooCloseHide(cx, cz) {
+      for (let i = 0; i < placedList.length; i += 1) {
+        const p = placedList[i];
+        if (
+          Math.max(Math.abs(p.cx - cx), Math.abs(p.cz - cz)) <= HIDE_MIN_GAP
+        ) {
+          return true;
+        }
+      }
+      return false;
     }
 
     let placed = 0;
     for (let i = 0; i < candidates.length && placed < HIDE_COUNT; i += 1) {
       const { cx, cz, openDx, openDz } = candidates[i];
       if (cells[cz][cx]) continue;
+      if (tooCloseHide(cx, cz)) continue;
       cells[cz][cx] = true;
       if (!hideMap[cz]) hideMap[cz] = [];
-      hideMap[cz][cx] = { dx: openDx, dz: openDz };
+      hideMap[cz][cx] = { dx: openDx, dz: openDz, fake: false };
+      placedList.push({ cx, cz });
       placed += 1;
+    }
+
+    // 배치된 틈새 중 일부를 가짜(조개)로
+    for (let i = placedList.length - 1; i > 0; i -= 1) {
+      const j = (Math.random() * (i + 1)) | 0;
+      const t1 = placedList[i];
+      placedList[i] = placedList[j];
+      placedList[j] = t1;
+    }
+    const fakeN = Math.min(FAKE_HIDE_COUNT, placedList.length);
+    for (let i = 0; i < fakeN; i += 1) {
+      const { cx, cz } = placedList[i];
+      if (hideMap[cz] && hideMap[cz][cx]) hideMap[cz][cx].fake = true;
     }
   }
 
@@ -520,7 +587,7 @@
           const dz = axes[ai][1];
           let ok = true;
           const segs = [];
-          // 구멍 칸 + 앞뒤 1칸까지 전부 직선 복도여야 함 (교차 근처 제외)
+          // 굴 칸 + 앞뒤 1칸까지 전부 직선 복도여야 함 (교차 근처 제외)
           for (let k = -1; k <= HOLE_LEN; k += 1) {
             const x = cx + dx * k;
             const z = cz + dz * k;
@@ -553,8 +620,9 @@
           overlap = true;
           break;
         }
-        for (let oz = -1; oz <= 1 && !overlap; oz += 1) {
-          for (let ox = -1; ox <= 1; ox += 1) {
+        // 틈새와 동일: HIDE_MIN_GAP 칸 이내 다른 굴 금지
+        for (let oz = -HIDE_MIN_GAP; oz <= HIDE_MIN_GAP && !overlap; oz += 1) {
+          for (let ox = -HIDE_MIN_GAP; ox <= HIDE_MIN_GAP; ox += 1) {
             if (ox === 0 && oz === 0) continue;
             if (isHoleCell(s.cx + ox, s.cz + oz)) {
               overlap = true;
@@ -583,9 +651,15 @@
   }
 
   function hallsOverlap(x0, z0, x1, z1) {
+    const g = HALL_MIN_GAP;
     for (let i = 0; i < halls.length; i += 1) {
       const h = halls[i];
-      if (x0 <= h.x1 + 2 && x1 >= h.x0 - 2 && z0 <= h.z1 + 2 && z1 >= h.z0 - 2) {
+      if (
+        x0 <= h.x1 + g &&
+        x1 >= h.x0 - g &&
+        z0 <= h.z1 + g &&
+        z1 >= h.z0 - g
+      ) {
         return true;
       }
     }
@@ -601,7 +675,7 @@
     return n;
   }
 
-  /** 입구에서 BFS — 모든 통로가 연결됐는지 */
+  /** 입구에서 BFS ? 모든 통로가 연결됐는지 */
   function isMazeFullyConnected() {
     const startZ = 1;
     const startX = enterX;
@@ -735,37 +809,114 @@
 
   function placeBigHalls() {
     halls.length = 0;
-    if (mazeRows < HALL_SPAN + 10) return;
+    if (mazeRows < STORAGE_SPAN + 10) return;
     const zMin = 5;
-    const zMax = mazeRows - HALL_SPAN - 2;
-    let tries = 0;
-    const plan = [];
-    for (let i = 0; i < STORAGE_COUNT; i += 1) plan.push("storage");
-    for (let i = STORAGE_COUNT; i < HALL_COUNT; i += 1) plan.push("nest");
-    for (let i = plan.length - 1; i > 0; i -= 1) {
-      const j = (Math.random() * (i + 1)) | 0;
-      const t = plan[i];
-      plan[i] = plan[j];
-      plan[j] = t;
-    }
-    let pi = 0;
-    while (pi < plan.length && tries < 40000) {
-      tries += 1;
-      const x0 = 2 + ((Math.random() * (MW - HALL_SPAN - 3)) | 0);
-      const z0 = zMin + ((Math.random() * Math.max(1, zMax - zMin)) | 0);
-      const x1 = x0 + HALL_SPAN - 1;
-      const z1 = z0 + HALL_SPAN - 1;
-      if (x1 >= MW - 2 || z1 >= mazeRows - 2) continue;
-      if (hallsOverlap(x0, z0, x1, z1)) continue;
-      if (hallOverlapsCorridorTooMuch(x0, z0, x1, z1)) continue;
-      const prevCells = cloneCellsGrid();
-      carveOneHall(x0, z0, x1, z1, { kind: plan[pi] });
-      if (!isMazeFullyConnected()) {
-        restoreCellsGrid(prevCells);
-        halls.pop();
-        continue;
+
+    function hallsOverlapGap(x0, z0, x1, z1, gap) {
+      const g = gap;
+      for (let i = 0; i < halls.length; i += 1) {
+        const h = halls[i];
+        if (
+          x0 <= h.x1 + g &&
+          x1 >= h.x0 - g &&
+          z0 <= h.z1 + g &&
+          z1 >= h.z0 - g
+        ) {
+          return true;
+        }
       }
-      pi += 1;
+      return false;
+    }
+
+    function attemptPlace(kind) {
+      const span = kind === "storage" ? STORAGE_SPAN : HALL_SPAN;
+      const gap = kind === "storage" ? 1 : HALL_MIN_GAP;
+      const zMax = mazeRows - span - 2;
+      if (zMax <= zMin) return false;
+      const x0 = 2 + ((Math.random() * (MW - span - 3)) | 0);
+      const z0 = zMin + ((Math.random() * Math.max(1, zMax - zMin)) | 0);
+      const x1 = x0 + span - 1;
+      const z1 = z0 + span - 1;
+      if (x1 >= MW - 2 || z1 >= mazeRows - 2) return false;
+      if (hallsOverlapGap(x0, z0, x1, z1, gap)) return false;
+      // 저장고는 복도 위에 조금 더 올려도 됨 (문만 잘 이어지면 OK)
+      const prevOpenLimit = kind === "storage" ? 0.22 : 0.12;
+      let open = 0;
+      let total = 0;
+      for (let z = z0; z <= z1; z += 1) {
+        if (!cells[z]) continue;
+        for (let x = x0; x <= x1; x += 1) {
+          total += 1;
+          if (cells[z][x]) open += 1;
+        }
+      }
+      if (total <= 0 || open / total > prevOpenLimit) return false;
+
+      const prevCells = cloneCellsGrid();
+      for (let z = z0; z <= z1; z += 1) {
+        if (!cells[z]) continue;
+        for (let x = x0; x <= x1; x += 1) {
+          const edge = x === x0 || x === x1 || z === z0 || z === z1;
+          cells[z][x] = !edge;
+        }
+      }
+      const shellCells = cloneCellsGrid();
+      const sides = shuffleDirs(["n", "s", "e", "w"]);
+      let doors = [];
+      let ok = false;
+
+      if (kind === "storage") {
+        for (let si = 0; si < sides.length; si += 1) {
+          restoreCellsGrid(shellCells);
+          doors = [openHallDoor(x0, z0, x1, z1, sides[si])];
+          if (isMazeFullyConnected()) {
+            ok = true;
+            break;
+          }
+        }
+      } else {
+        for (let i = 0; i < sides.length; i += 1) {
+          if (Math.random() < 0.7) {
+            doors.push(openHallDoor(x0, z0, x1, z1, sides[i]));
+          }
+        }
+        if (!doors.length) {
+          doors.push(openHallDoor(x0, z0, x1, z1, sides[0]));
+        }
+        ok = isMazeFullyConnected();
+      }
+
+      if (!ok) {
+        restoreCellsGrid(prevCells);
+        return false;
+      }
+      halls.push({
+        x0,
+        z0,
+        x1,
+        z1,
+        doors,
+        kind,
+        storageLooted: false,
+      });
+      return true;
+    }
+
+    // 둥지 먼저, 저장고는 가능한 만큼 (실패해도 다음으로 — 예전엔 한 칸에 막혀 전부 실패)
+    for (let i = 0; i < NEST_COUNT; i += 1) {
+      for (let t = 0; t < 2500; t += 1) {
+        if (attemptPlace("nest")) break;
+      }
+    }
+    for (let i = 0; i < STORAGE_COUNT; i += 1) {
+      let placed = false;
+      for (let t = 0; t < 500; t += 1) {
+        if (attemptPlace("storage")) {
+          placed = true;
+          break;
+        }
+      }
+      if (!placed) break; // 더 이상 자리 없으면 조기 종료
     }
   }
 
@@ -778,17 +929,44 @@
 
   function pickDragHallNear(fromX, fromZ) {
     if (!halls.length) return null;
-    let best = halls[0];
-    let bestD = Infinity;
-    for (let i = 0; i < halls.length; i += 1) {
-      const c = hallCenterWorld(halls[i]);
+    const MIN_DRAG = CELL * 8;
+    let best = null;
+    let bestScore = Infinity;
+    // 둥지(큰방) 우선 — 저장고보다 끌기 연출이 안정적
+    const order = halls.slice().sort((a, b) => {
+      const an = a.kind === "nest" ? 0 : 1;
+      const bn = b.kind === "nest" ? 0 : 1;
+      return an - bn;
+    });
+    for (let i = 0; i < order.length; i += 1) {
+      const h = order[i];
+      const c = hallCenterWorld(h);
       const d = Math.hypot(c.x - fromX, c.z - fromZ);
-      if (d < bestD) {
-        bestD = d;
-        best = halls[i];
+      if (d < CELL * 3) continue;
+      const path = findMazePathWorld(fromX, fromZ, c.x, c.z);
+      if (!path || path.length < 2) continue;
+      // 거리·경로 길이 균형, 너무 가까우면 패널티
+      const score =
+        path.length + d / CELL + (d < MIN_DRAG ? 40 : 0) + (h.kind === "storage" ? 8 : 0);
+      if (score < bestScore) {
+        bestScore = score;
+        best = { hall: h, path };
       }
     }
-    return best;
+    if (best) return best;
+    // 최후: 아무 방이든 경로 있는 곳
+    for (let i = 0; i < halls.length; i += 1) {
+      const h = halls[i];
+      const c = hallCenterWorld(h);
+      const path = findMazePathWorld(fromX, fromZ, c.x, c.z);
+      if (path && path.length >= 2) return { hall: h, path };
+    }
+    const h = halls[0];
+    const goal = hallCenterWorld(h);
+    return {
+      hall: h,
+      path: findMazePathWorld(fromX, fromZ, goal.x, goal.z) || [goal],
+    };
   }
 
   function shuffleDirs(dirs) {
@@ -894,6 +1072,333 @@
     return { z0, z1 };
   }
 
+  function buildFakeHideAt(cx, cz) {
+    const wx = mazeOriginX + cx * CELL;
+    const wz = mazeOriginZ + cz * CELL;
+    const open = hideOpenDir(cx, cz) || { dx: 0, dz: 1 };
+    const ox = open.dx;
+    const oz = open.dz;
+    const px = -oz;
+    const pz = ox;
+    const gap = CELL * HIDE_GAP;
+    const side = (CELL - gap) * 0.5;
+    const off = (gap + side) * 0.5;
+    const alongX = Math.abs(px) > Math.abs(pz);
+
+    // 충돌은 고정(평소 틈새와 동일), 시각만 맥박/입 다물기
+    if (alongX) {
+      addCollider(wx + px * off, wz, side, CELL * 0.98);
+      addCollider(wx - px * off, wz, side, CELL * 0.98);
+    } else {
+      addCollider(wx, wz + pz * off, CELL * 0.98, side);
+      addCollider(wx, wz - pz * off, CELL * 0.98, side);
+    }
+
+    const shellMat = tileMat(caveMatBase, Math.max(side, CELL), CAVE_H, wx, wz);
+    const darkMat = new THREE.MeshLambertMaterial({ color: 0x141018 });
+    shellMat.userData.fakeHideShell = true;
+    darkMat.userData.fakeHideDark = true;
+    const group = new THREE.Group();
+    group.position.set(wx, 0, wz);
+
+    let left;
+    let right;
+    if (alongX) {
+      left = new THREE.Mesh(
+        new THREE.BoxGeometry(side, CAVE_H, CELL * 0.98),
+        shellMat
+      );
+      right = new THREE.Mesh(
+        new THREE.BoxGeometry(side, CAVE_H, CELL * 0.98),
+        shellMat
+      );
+      left.position.set(px * off, CAVE_H * 0.5, 0);
+      right.position.set(-px * off, CAVE_H * 0.5, 0);
+    } else {
+      left = new THREE.Mesh(
+        new THREE.BoxGeometry(CELL * 0.98, CAVE_H, side),
+        shellMat
+      );
+      right = new THREE.Mesh(
+        new THREE.BoxGeometry(CELL * 0.98, CAVE_H, side),
+        shellMat
+      );
+      left.position.set(0, CAVE_H * 0.5, pz * off);
+      right.position.set(0, CAVE_H * 0.5, -pz * off);
+    }
+    left.userData.sprayWall = true;
+    right.userData.sprayWall = true;
+
+    const lip = new THREE.Mesh(
+      new THREE.BoxGeometry(
+        Math.abs(ox) > 0 ? gap : CELL * 0.92,
+        0.28,
+        Math.abs(oz) > 0 ? gap : CELL * 0.92
+      ),
+      darkMat
+    );
+    lip.position.set(0, CAVE_H - 0.35, 0);
+
+    // 조개 속 어두운 바닥감
+    const gullet = new THREE.Mesh(
+      new THREE.BoxGeometry(
+        alongX ? gap * 0.92 : CELL * 0.7,
+        0.08,
+        alongX ? CELL * 0.7 : gap * 0.92
+      ),
+      darkMat
+    );
+    gullet.position.set(0, 0.04, 0);
+
+    group.add(left, right, lip, gullet);
+    mazeGroup.add(group);
+
+    fakeHides.push({
+      cx,
+      cz,
+      group,
+      left,
+      right,
+      lip,
+      shellMat,
+      darkMat,
+      alongX,
+      px,
+      pz,
+      baseOff: off,
+      side,
+      gap,
+      phase: Math.random() * Math.PI * 2,
+      state: "idle", // idle | snap | crushing
+      stateT: 0,
+      insideT: 0,
+      wasInside: false,
+    });
+  }
+
+  function heartbeatPulse(t) {
+    // 약 66bpm, 작게 두 번 뛰는 심장 리듬
+    const cycle = ((t % 0.9) + 0.9) % 0.9;
+    let beat = 0;
+    if (cycle < 0.1) beat = Math.sin((cycle / 0.1) * Math.PI);
+    else if (cycle > 0.18 && cycle < 0.3) {
+      beat = 0.55 * Math.sin(((cycle - 0.18) / 0.12) * Math.PI);
+    }
+    return 1 + beat * 0.038;
+  }
+
+  function setFakeHideJaw(fh, close01) {
+    // 0=열림(틈새), 1=완전히 다물림
+    const t = Math.max(0, Math.min(1, close01));
+    const off = fh.baseOff * (1 - t * 0.82);
+    if (fh.alongX) {
+      fh.left.position.x = fh.px * off;
+      fh.right.position.x = -fh.px * off;
+    } else {
+      fh.left.position.z = fh.pz * off;
+      fh.right.position.z = -fh.pz * off;
+    }
+    if (fh.lip) {
+      const g = Math.max(0.08, fh.gap * (1 - t * 0.9));
+      fh.lip.scale.set(
+        fh.alongX ? g / fh.gap : 1,
+        1,
+        fh.alongX ? 1 : g / fh.gap
+      );
+    }
+  }
+
+  let clamCrushT = 0;
+  const CLAM_CRUSH_SEC = 1.15;
+  let clamCrushFh = null;
+
+  function playThumpSound() {
+    if (!audioCtx || !masterGain) return;
+    const t0 = audioCtx.currentTime;
+    const osc = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    const filter = audioCtx.createBiquadFilter();
+    filter.type = "lowpass";
+    filter.frequency.value = 180;
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(70, t0);
+    osc.frequency.exponentialRampToValueAtTime(28, t0 + 0.35);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(0.45 * soundVol, t0 + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.55);
+    osc.connect(filter);
+    filter.connect(g);
+    g.connect(masterGain);
+    osc.start(t0);
+    osc.stop(t0 + 0.6);
+    // 짧은 저역 노이즈 쿵
+    const len = Math.floor(audioCtx.sampleRate * 0.18);
+    const buf = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < len; i += 1) {
+      const env = Math.exp(-i / (audioCtx.sampleRate * 0.05));
+      data[i] = (Math.random() * 2 - 1) * env * 0.7;
+    }
+    const src = audioCtx.createBufferSource();
+    src.buffer = buf;
+    const bp = audioCtx.createBiquadFilter();
+    bp.type = "lowpass";
+    bp.frequency.value = 140;
+    const ng = audioCtx.createGain();
+    ng.gain.value = 0.28 * soundVol;
+    src.connect(bp);
+    bp.connect(ng);
+    ng.connect(masterGain);
+    src.start(t0);
+  }
+
+  function beginClamCrush(fh) {
+    if (devMode || clamCrushT > 0 || bitten || isRagdoll()) return;
+    endBite({ toss: false });
+    cancelBandage();
+    breakPaint();
+    clamCrushT = CLAM_CRUSH_SEC;
+    clamCrushFh = fh;
+    fh.state = "crushing";
+    fh.stateT = 0;
+    playThumpSound();
+    playerMesh.visible = true;
+    playerMesh.position.set(pos.x, Math.max(0.1, pos.y - EYE_H * 0.7), pos.z);
+    playerMesh.rotation.set(1.2, yaw + Math.PI, 0.2);
+    playerMesh.scale.set(1, 1, 1);
+  }
+
+  function cancelClamCrushSafe() {
+    if (clamCrushT <= 0) return;
+    clamCrushT = 0;
+    if (clamCrushFh) {
+      clamCrushFh.state = "idle";
+      clamCrushFh.stateT = 0;
+      clamCrushFh.insideT = 0;
+      setFakeHideJaw(clamCrushFh, 0);
+      clamCrushFh = null;
+    }
+    playerMesh.visible = false;
+    playerMesh.scale.set(1, 1, 1);
+    playerMesh.rotation.set(0, yaw + Math.PI, 0);
+  }
+
+  function updateClamCrush(dt) {
+    if (clamCrushT <= 0) return;
+    clamCrushT -= dt;
+    const u = 1 - Math.max(0, clamCrushT) / CLAM_CRUSH_SEC;
+    if (clamCrushFh) setFakeHideJaw(clamCrushFh, Math.min(1, u * 1.4));
+    // 찌부짜부
+    const squash = Math.max(0.06, 1 - u * 0.94);
+    const bulge = 1 + u * 0.85;
+    playerMesh.visible = true;
+    playerMesh.scale.set(bulge, squash, bulge);
+    playerMesh.position.set(
+      pos.x,
+      Math.max(0.05, pos.y - EYE_H * (0.55 + u * 0.4)),
+      pos.z
+    );
+    if (clamCrushT <= 0) {
+      clamCrushT = 0;
+      if (clamCrushFh) {
+        clamCrushFh.state = "idle";
+        clamCrushFh.stateT = 0;
+        clamCrushFh.insideT = 0;
+        setFakeHideJaw(clamCrushFh, 0);
+        clamCrushFh = null;
+      }
+      playerMesh.visible = false;
+      playerMesh.scale.set(1, 1, 1);
+      playerMesh.rotation.set(0, yaw + Math.PI, 0);
+      respawnPlayerOnDeath();
+    }
+  }
+
+  function updateFakeHides(dt) {
+    if (clamCrushT > 0) {
+      // 죽는 중엔 해당 조개만 다물고 맥박 정지
+      for (let i = 0; i < fakeHides.length; i += 1) {
+        const fh = fakeHides[i];
+        if (fh === clamCrushFh) continue;
+        fh.phase += dt;
+        const pulse = heartbeatPulse(fh.phase);
+        fh.group.scale.set(pulse, pulse, pulse);
+        if (fh.state === "snap") {
+          fh.stateT += dt;
+          const close = fh.stateT < 0.22 ? fh.stateT / 0.22 : Math.max(0, 1 - (fh.stateT - 0.22) / 0.45);
+          setFakeHideJaw(fh, close);
+          if (fh.stateT > 0.7) {
+            fh.state = "idle";
+            fh.stateT = 0;
+            setFakeHideJaw(fh, 0);
+          }
+        }
+      }
+      updateClamCrush(dt);
+      return;
+    }
+
+    const pc = cellFromWorld(pos.x, pos.z);
+    for (let i = 0; i < fakeHides.length; i += 1) {
+      const fh = fakeHides[i];
+      fh.phase += dt;
+      const inside =
+        !isInLobby() &&
+        !bitten &&
+        !isRagdoll() &&
+        pc.cx === fh.cx &&
+        pc.cz === fh.cz;
+
+      if (fh.state === "snap") {
+        fh.stateT += dt;
+        const close =
+          fh.stateT < 0.22
+            ? fh.stateT / 0.22
+            : Math.max(0, 1 - (fh.stateT - 0.22) / 0.45);
+        setFakeHideJaw(fh, close);
+        const pulse = heartbeatPulse(fh.phase);
+        fh.group.scale.set(pulse, pulse, pulse);
+        if (fh.stateT > 0.7) {
+          fh.state = "idle";
+          fh.stateT = 0;
+          setFakeHideJaw(fh, 0);
+        }
+        fh.wasInside = inside;
+        if (inside) fh.insideT += dt;
+        else fh.insideT = 0;
+        continue;
+      }
+
+      // idle: 심장박동
+      const pulse = heartbeatPulse(fh.phase);
+      fh.group.scale.set(pulse, pulse, pulse);
+      setFakeHideJaw(fh, 0);
+
+      if (inside) {
+        fh.insideT += dt;
+        if (fh.insideT >= FAKE_HIDE_KILL_SEC) {
+          if (devMode) {
+            // 개발: 죽지 않고 입 다무는 연출만
+            fh.state = "snap";
+            fh.stateT = 0;
+            fh.insideT = 0;
+          } else {
+            beginClamCrush(fh);
+          }
+          continue;
+        }
+      } else if (fh.wasInside && fh.insideT > 0.05 && fh.insideT < FAKE_HIDE_KILL_SEC) {
+        // 1초 전에 탈출 → 입 딱 다무는 연출
+        fh.state = "snap";
+        fh.stateT = 0;
+        fh.insideT = 0;
+      } else {
+        fh.insideT = 0;
+      }
+      fh.wasInside = inside;
+    }
+  }
+
   function buildMazeMeshesRange(z0, z1) {
     const segDepth = (z1 - z0) * CELL;
     const segCenterZ = mazeOriginZ + (z0 + (z1 - z0) * 0.5 - 0.5) * CELL;
@@ -907,11 +1412,11 @@
     caveFloor.userData.sprayFloor = true;
     mazeGroup.add(caveFloor);
 
-    // 복도 천장: 큰 방 영역은 비움
+    // 복도 천장: 큰 방·굴 영역은 비움 (굴은 낮은 천장 따로)
     for (let cz = z0; cz < z1; cz += 1) {
       for (let cx = 0; cx < MW; cx += 1) {
         if (!cells[cz] || !cells[cz][cx]) continue;
-        if (hallAt(cx, cz)) continue;
+        if (hallAt(cx, cz) || isHoleCell(cx, cz)) continue;
         const wx = mazeOriginX + cx * CELL;
         const wz = mazeOriginZ + cz * CELL;
         const ceilTile = new THREE.Mesh(
@@ -920,6 +1425,7 @@
         );
         ceilTile.rotation.x = Math.PI / 2;
         ceilTile.position.set(wx, CAVE_H, wz);
+        markDevCeil(ceilTile);
         mazeGroup.add(ceilTile);
       }
     }
@@ -934,10 +1440,14 @@
       }
     }
 
-    // 틈새: 보라/바닥 표시 없음. 양옆 벽으로 폭만 좁힘
+    // 틈새: 보라/바닥 표시 없음. 양옆 벽으로 폭만 좁힘 / 가짜는 조개 그룹
     for (let cz = z0; cz < z1; cz += 1) {
       for (let cx = 0; cx < MW; cx += 1) {
         if (!isHideCell(cx, cz)) continue;
+        if (isFakeHideCell(cx, cz)) {
+          buildFakeHideAt(cx, cz);
+          continue;
+        }
         const wx = mazeOriginX + cx * CELL;
         const wz = mazeOriginZ + cz * CELL;
         const open = hideOpenDir(cx, cz) || { dx: 0, dz: 1 };
@@ -948,7 +1458,6 @@
         const gap = CELL * HIDE_GAP;
         const side = (CELL - gap) * 0.5;
         const off = (gap + side) * 0.5;
-        // 열린 방향 기준 좌·우 채움 → 양옆 공간 축소
         if (Math.abs(px) > Math.abs(pz)) {
           mazeWall(side, CAVE_H, CELL * 0.98, wx + px * off, CAVE_H * 0.5, wz);
           mazeWall(side, CAVE_H, CELL * 0.98, wx - px * off, CAVE_H * 0.5, wz);
@@ -969,61 +1478,51 @@
       }
     }
 
-    // 복도 구멍: 아랫쪽 원형 통로 (약 2칸), 서서 통과 불가
-    const holeMat = new THREE.MeshLambertMaterial({
-      color: 0x1c1612,
-      side: THREE.DoubleSide,
-    });
+    // 굴: 틈새처럼 양옆 좁힘 + 천장이 많이 내려와 웅크리기 필수
     const holeCeilMat = tileMat(caveMatBase, CELL, CAVE_H, 0, 0);
+    const holeLipMat = new THREE.MeshLambertMaterial({ color: 0x121018 });
     for (let cz = z0; cz < z1; cz += 1) {
       for (let cx = 0; cx < MW; cx += 1) {
         if (!isHoleCell(cx, cz)) continue;
         const dir = holeDir(cx, cz) || { dx: 0, dz: 1 };
         const wx = mazeOriginX + cx * CELL;
         const wz = mazeOriginZ + cz * CELL;
-        const alongX = Math.abs(dir.dx) >= Math.abs(dir.dz);
-        const open = HOLE_R * 2;
-        const side = Math.max(0.2, (CELL - open) * 0.5);
-        const off = (open + side) * 0.5;
-        if (alongX) {
-          mazeWall(CELL * 0.98, CAVE_H, side, wx, CAVE_H * 0.5, wz + off);
-          mazeWall(CELL * 0.98, CAVE_H, side, wx, CAVE_H * 0.5, wz - off);
+        const ox = dir.dx;
+        const oz = dir.dz;
+        const px = -oz;
+        const pz = ox;
+        const gap = CELL * HIDE_GAP;
+        const side = (CELL - gap) * 0.5;
+        const off = (gap + side) * 0.5;
+        // 양옆 좁힘 (틈새와 동일)
+        if (Math.abs(px) > Math.abs(pz)) {
+          mazeWall(side, CAVE_H, CELL * 0.98, wx + px * off, CAVE_H * 0.5, wz);
+          mazeWall(side, CAVE_H, CELL * 0.98, wx - px * off, CAVE_H * 0.5, wz);
         } else {
-          mazeWall(side, CAVE_H, CELL * 0.98, wx + off, CAVE_H * 0.5, wz);
-          mazeWall(side, CAVE_H, CELL * 0.98, wx - off, CAVE_H * 0.5, wz);
+          mazeWall(CELL * 0.98, CAVE_H, side, wx, CAVE_H * 0.5, wz + pz * off);
+          mazeWall(CELL * 0.98, CAVE_H, side, wx, CAVE_H * 0.5, wz - pz * off);
         }
-        // 위쪽 막힘 (시각) — 충돌은 자세 체크로 처리 (미니웜 통과용)
-        const ceilH = Math.max(0.4, CAVE_H - HOLE_PASS_Y);
-        const ceil = new THREE.Mesh(
-          new THREE.BoxGeometry(
-            alongX ? CELL * 0.96 : open + side * 0.35,
-            ceilH,
-            alongX ? open + side * 0.35 : CELL * 0.96
-          ),
+        // 낮은 천장 (서서 못 지나감 — 충돌은 holeBlocksPlayerAt)
+        const ceilH = Math.max(0.35, CAVE_H - HOLE_PASS_Y);
+        const lowCeil = new THREE.Mesh(
+          new THREE.BoxGeometry(CELL * 0.98, ceilH, CELL * 0.98),
           holeCeilMat
         );
-        ceil.position.set(wx, HOLE_PASS_Y + ceilH * 0.5, wz);
-        ceil.userData.sprayWall = true;
-        mazeGroup.add(ceil);
-
-        const tube = new THREE.Mesh(
-          new THREE.CylinderGeometry(HOLE_R, HOLE_R, CELL * 0.96, 18, 1, true),
-          holeMat
+        lowCeil.position.set(wx, HOLE_PASS_Y + ceilH * 0.5, wz);
+        lowCeil.userData.sprayWall = true;
+        markDevCeil(lowCeil);
+        mazeGroup.add(lowCeil);
+        // 입구 쪽 어두운 턱 (천장 내려온 느낌)
+        const lip = new THREE.Mesh(
+          new THREE.BoxGeometry(
+            Math.abs(ox) > 0 ? gap : CELL * 0.92,
+            0.22,
+            Math.abs(oz) > 0 ? gap : CELL * 0.92
+          ),
+          holeLipMat
         );
-        tube.position.set(wx, HOLE_R * 0.92, wz);
-        if (alongX) tube.rotation.z = Math.PI / 2;
-        else tube.rotation.x = Math.PI / 2;
-        mazeGroup.add(tube);
-
-        const rim = new THREE.Mesh(
-          new THREE.TorusGeometry(HOLE_R * 0.98, 0.08, 8, 20),
-          holeMat
-        );
-        rim.position.set(wx, HOLE_R * 0.92, wz);
-        if (alongX) {
-          rim.rotation.y = Math.PI / 2;
-        }
-        mazeGroup.add(rim);
+        lip.position.set(wx, HOLE_PASS_Y - 0.05, wz);
+        mazeGroup.add(lip);
       }
     }
 
@@ -1115,9 +1614,13 @@
   function placeEggsInHall(h, count, opts) {
     const used = [];
     let placed = 0;
+    const spanX = h.x1 - h.x0 + 1;
+    const spanZ = h.z1 - h.z0 + 1;
+    const innerX = Math.max(1, spanX - 4);
+    const innerZ = Math.max(1, spanZ - 4);
     for (let t = 0; t < count * 40 && placed < count; t += 1) {
-      const ix = h.x0 + 2 + ((Math.random() * (HALL_SPAN - 4)) | 0);
-      const iz = h.z0 + 2 + ((Math.random() * (HALL_SPAN - 4)) | 0);
+      const ix = h.x0 + 2 + ((Math.random() * innerX) | 0);
+      const iz = h.z0 + 2 + ((Math.random() * innerZ) | 0);
       if (!cells[iz] || !cells[iz][ix]) continue;
       const p = worldFromCell(ix, iz);
       let clash = false;
@@ -1159,6 +1662,7 @@
       );
       ceil.rotation.x = Math.PI / 2;
       ceil.position.set(cx, HALL_H, cz);
+      markDevCeil(ceil);
       mazeGroup.add(ceil);
 
       const lampCol = h.kind === "storage" ? 0xb088ff : 0xfff0dd;
@@ -1172,46 +1676,36 @@
         continue;
       }
 
-      // 일반 큰방: 작은 알 3개짜리 클러스터 (통과 가능)
+      // 일반 큰방: 가운데에 알 클러스터
+      const center = hallCenterWorld(h);
       const clusterN = 2 + ((Math.random() * 2) | 0);
-      const used = [];
-      for (let c = 0; c < clusterN; c += 1) {
-        let bx = 0;
-        let bz = 0;
-        let ok = false;
-        for (let t = 0; t < 40; t += 1) {
-          const ix = h.x0 + 2 + ((Math.random() * (HALL_SPAN - 4)) | 0);
-          const iz = h.z0 + 2 + ((Math.random() * (HALL_SPAN - 4)) | 0);
-          if (!cells[iz] || !cells[iz][ix]) continue;
-          const p = worldFromCell(ix, iz);
-          let clash = false;
-          for (let u = 0; u < used.length; u += 1) {
-            if (Math.hypot(used[u].x - p.x, used[u].z - p.z) < 2.4) {
-              clash = true;
-              break;
-            }
-          }
-          if (clash) continue;
-          bx = p.x;
-          bz = p.z;
-          ok = true;
-          break;
-        }
-        if (!ok) continue;
-        used.push({ x: bx, z: bz });
-        const tri = [
-          [0, 0],
-          [0.72, 0.12],
-          [0.28, 0.78],
-        ];
-        for (let e = 0; e < 3; e += 1) {
-          addSmallEgg(h, bx + tri[e][0], bz + tri[e][1]);
-        }
+      const offsets = [
+        [0, 0],
+        [0.75, 0.15],
+        [0.25, 0.85],
+        [-0.55, 0.45],
+        [0.5, -0.55],
+        [-0.35, -0.7],
+        [0.9, 0.55],
+        [-0.8, 0.1],
+        [0.1, 1.0],
+      ];
+      let placed = 0;
+      const need = clusterN * 3;
+      for (let e = 0; e < offsets.length && placed < need; e += 1) {
+        const jitter = (Math.random() - 0.5) * 0.2;
+        addSmallEgg(
+          h,
+          center.x + offsets[e][0] + jitter,
+          center.z + offsets[e][1] + jitter
+        );
+        placed += 1;
       }
     }
   }
 
   function remeshEntireMaze() {
+    fakeHides.length = 0;
     while (mazeGroup.children.length) {
       const m = mazeGroup.children[0];
       mazeGroup.remove(m);
@@ -1225,6 +1719,7 @@
       buildMazeMeshesRange(z0, z1);
     }
     buildHallMeshes();
+    syncHideDetectorVisual();
   }
 
   function appendMazeSegment() {
@@ -1232,17 +1727,7 @@
     buildMazeMeshesRange(range.z0, range.z1);
   }
 
-  // 입구 프레임 (시각용, 방 소속)
-  wall(
-    DOOR_W + 0.8,
-    0.4,
-    t * 1.4,
-    0,
-    CAVE_H - 0.05,
-    HALF,
-    tileMat(caveMatBase, DOOR_W + 0.8, 0.4, 0, HALF),
-    false
-  );
+  // 입구는 위에서 방 재질 인방으로 처리 (흙 프레임 없음)
 
   function rebuildMaze() {
     clearMaze();
@@ -1258,7 +1743,7 @@
   function ensureMazeAhead(playerZ) {
     while (playerZ > HALF + (mazeRows - 10) * CELL) {
       appendMazeSegment();
-      if (mazeRows > 500) break;
+      if (mazeRows > 900) break;
     }
   }
 
@@ -1333,10 +1818,29 @@
   let mazeTimer = MAZE_RESET_SEC;
   let wormBalance = 1; // 초보자 자금
   let restrictionBalance = 0;
+  let devMode = false;
+  const DEV_MONEY = 999999;
+
+  function markDevCeil(mesh) {
+    if (!mesh) return;
+    mesh.userData.devCeil = true;
+    // 개발 모드에서만 숨김 — 평소엔 항상 보임
+    mesh.visible = devMode ? false : true;
+  }
+
+  function syncDevCeilings() {
+    const show = !devMode;
+    scene.traverse((obj) => {
+      if (obj && obj.userData && obj.userData.devCeil) {
+        obj.visible = show;
+      }
+    });
+  }
+
   let restrictionCoinUnlocked = false;
   const ownedGame = Object.create(null);
   const itemStock = Object.create(null);
-  const CONSUMABLE_ITEMS = { bait: true, bandage: true };
+  const CONSUMABLE_ITEMS = { bait: true, bandage: true, shovel: true };
   const MAX_EQUIP = 3;
   const equippedList = [];
   const SKILL_KEYCODES = ["Digit1", "Digit2", "Digit3"];
@@ -1345,10 +1849,10 @@
   let bootsOn = false;
   let compassOn = false;
   let magnetOn = false;
-  let cloakOn = false;
+  let paintOn = false;
   let bandageHold = 0;
   const BANDAGE_SEC = 5;
-  const cloakTintEl = document.getElementById("cloak-tint");
+  const paintTintEl = document.getElementById("paint-tint");
   const activeBaits = [];
   const BAIT_HEAR = 16;
   const BAIT_LISTEN_NEED = 5;
@@ -1358,10 +1862,27 @@
   let sprayDir = 0;
   let sprayFreehandOn = false;
   let lastSprayStroke = null;
-  const SPRAY_FREE_GAP = 0.07;
-  const SPRAY_BRUSH_R = 0.075;
+  const SPRAY_FREE_GAP = 0.045;
+  const SPRAY_BRUSH_R = 0.042;
   const sprayTexCache = Object.create(null);
   let sprayStrokeMat = null;
+  let shovelMode = false;
+  let shovelClickTimer = null;
+  const shovelOutlineGroup = new THREE.Group();
+  scene.add(shovelOutlineGroup);
+  const digDust = [];
+  const shovelOutlineMat = new THREE.LineBasicMaterial({
+    color: 0xffe14a,
+    depthTest: true,
+    transparent: true,
+    opacity: 0.95,
+  });
+  const shovelOutlineFocusMat = new THREE.LineBasicMaterial({
+    color: 0xfff59a,
+    depthTest: true,
+    transparent: true,
+    opacity: 1,
+  });
   const _strokeDir = new THREE.Vector3();
   const _strokeY = new THREE.Vector3(0, 1, 0);
   const _strokeMid = new THREE.Vector3();
@@ -1442,7 +1963,7 @@
   }
 
   function isCrouching() {
-    if (bitten || isRagdoll() || cloakOn) {
+    if (bitten || isRagdoll() || paintOn || clamCrushT > 0) {
       crouchToggled = false;
       return false;
     }
@@ -1537,6 +2058,17 @@
   }
 
   function updatePlayerCamera() {
+    if (clamCrushT > 0) {
+      playerMesh.visible = true;
+      const bodyY = Math.max(0.15, pos.y - EYE_H * 0.35);
+      camera.position.set(
+        pos.x + Math.sin(yaw) * 3.2,
+        bodyY + 1.4,
+        pos.z + Math.cos(yaw) * 3.2
+      );
+      camera.lookAt(pos.x, bodyY, pos.z);
+      return;
+    }
     if (isRagdoll() || bitten) {
       // 3인칭: 물림/래그돌
       playerMesh.visible = true;
@@ -1599,14 +2131,16 @@
       setCompassGauge(false, 0);
     } else if (id === "magnet") {
       magnetOn = false;
-    } else if (id === "cloak") {
-      cloakOn = false;
-      syncCloakTint();
+    } else if (id === "paint") {
+      paintOn = false;
+      syncPaintTint();
     } else if (id === "bandage") {
       cancelBandage();
     } else if (id === "spray") {
       sprayFreehandOn = false;
       lastSprayStroke = null;
+    } else if (id === "shovel") {
+      setShovelMode(false);
     }
   }
 
@@ -1616,9 +2150,10 @@
     clearEffectOf("boots");
     clearEffectOf("compass");
     clearEffectOf("magnet");
-    clearEffectOf("cloak");
+    clearEffectOf("paint");
     clearEffectOf("bandage");
     clearEffectOf("spray");
+    clearEffectOf("shovel");
     detectorBeepAcc = 0;
     setDetectorRadar(false, 900);
     syncBootsTint();
@@ -1639,10 +2174,10 @@
     bootsTintEl.setAttribute("aria-hidden", bootsOn ? "false" : "true");
   }
 
-  function syncCloakTint() {
-    if (!cloakTintEl) return;
-    cloakTintEl.classList.toggle("on", cloakOn);
-    cloakTintEl.setAttribute("aria-hidden", cloakOn ? "false" : "true");
+  function syncPaintTint() {
+    if (!paintTintEl) return;
+    paintTintEl.classList.toggle("on", paintOn);
+    paintTintEl.setAttribute("aria-hidden", paintOn ? "false" : "true");
   }
 
   function hasHealableLimb() {
@@ -1698,20 +2233,20 @@
     }
   }
 
-  function toggleCloak() {
+  function togglePaint() {
     if (bitten || isRagdoll()) return;
-    cloakOn = !cloakOn;
-    if (cloakOn) {
+    paintOn = !paintOn;
+    if (paintOn) {
       bootsOn = false;
       syncBootsTint();
     }
-    syncCloakTint();
+    syncPaintTint();
   }
 
-  function breakCloak() {
-    if (!cloakOn) return;
-    cloakOn = false;
-    syncCloakTint();
+  function breakPaint() {
+    if (!paintOn) return;
+    paintOn = false;
+    syncPaintTint();
   }
 
   function makeBaitMesh() {
@@ -1849,7 +2384,7 @@
       bootsSlot >= 0 &&
       canUseSkillSlot(bootsSlot) &&
       !!keys[SKILL_KEYCODES[bootsSlot]];
-    const want = holding && isInMaze() && !cloakOn;
+    const want = holding && isInMaze() && !paintOn;
     if (bootsOn !== want) {
       bootsOn = want;
       syncBootsTint();
@@ -1999,8 +2534,10 @@
   window.__tryBuyItem = (id, price) => {
     const consumable = !!CONSUMABLE_ITEMS[id];
     if (!consumable && ownedGame[id]) return true;
-    if (wormBalance < price) return false;
-    wormBalance -= price;
+    if (!devMode) {
+      if (wormBalance < price) return false;
+      wormBalance -= price;
+    }
     if (consumable) {
       itemStock[id] = (itemStock[id] || 0) + 1;
       ownedGame[id] = true;
@@ -2190,6 +2727,15 @@
     return sprayStrokeMat;
   }
 
+  function sprayDirFromLook() {
+    // 플레이어가 보는 수평 방향을 5° 단위로
+    const lx = -Math.sin(yaw);
+    const lz = -Math.cos(yaw);
+    let deg = (Math.atan2(lx, lz) * 180) / Math.PI;
+    deg = Math.round(deg / 5) * 5;
+    return ((deg % 360) + 360) % 360;
+  }
+
   function placeSprayMarkAt(hit, onFloor, kind, sizeMul) {
     if (!hit) return false;
     if (kind === "circle") return false; // 자유형은 선으로만
@@ -2205,7 +2751,8 @@
     }
 
     const isX = kind === "x";
-    const tex = makeSprayTexture(kind, kind === "arrow" ? sprayDir : 0);
+    const arrowDir = kind === "arrow" ? sprayDirFromLook() : 0;
+    const tex = makeSprayTexture(kind, arrowDir);
     const mat = new THREE.MeshBasicMaterial({
       map: tex,
       transparent: true,
@@ -2223,7 +2770,6 @@
     mesh.position.copy(hit.point).addScaledVector(sprayHitNormal, pull);
     sprayLookTarget.copy(hit.point).add(sprayHitNormal);
     mesh.lookAt(sprayLookTarget);
-    if (onFloor && kind === "arrow") mesh.rotateZ((-sprayDir * Math.PI) / 180);
     mesh.renderOrder = isX ? 1000 : 10;
     mesh.userData.sprayKind = kind;
     sprayGroup.add(mesh);
@@ -2322,6 +2868,309 @@
     }
   }
 
+  function clearShovelOutlines() {
+    while (shovelOutlineGroup.children.length) {
+      const m = shovelOutlineGroup.children[0];
+      shovelOutlineGroup.remove(m);
+      if (m.geometry) m.geometry.dispose();
+    }
+  }
+
+  function setShovelMode(on) {
+    shovelMode = !!on && isEquipped("shovel") && (itemStock.shovel || 0) > 0;
+    if (!shovelMode) {
+      clearShovelOutlines();
+      if (shovelClickTimer) {
+        clearTimeout(shovelClickTimer);
+        shovelClickTimer = null;
+      }
+    }
+  }
+
+  function addShovelOutlineAt(cx, cz, focus) {
+    const p = worldFromCell(cx, cz);
+    const h = hallAt(cx, cz) ? HALL_H : CAVE_H;
+    const box = new THREE.BoxGeometry(CELL * 0.98, h * 0.98, CELL * 0.98);
+    const edges = new THREE.EdgesGeometry(box);
+    const line = new THREE.LineSegments(
+      edges,
+      focus ? shovelOutlineFocusMat : shovelOutlineMat
+    );
+    line.position.set(p.x, h * 0.5, p.z);
+    line.renderOrder = 20;
+    shovelOutlineGroup.add(line);
+    box.dispose();
+  }
+
+  function shovelOpenFromNormal(nx, nz) {
+    if (Math.abs(nx) > Math.abs(nz)) {
+      return { dx: nx > 0 ? 1 : -1, dz: 0 };
+    }
+    return { dx: 0, dz: nz > 0 ? 1 : -1 };
+  }
+
+  function canDigHideAt(cx, cz, openDx, openDz) {
+    if (cz < 2 || cz >= mazeRows - 2 || cx < 1 || cx >= MW - 1) return false;
+    if (!cells[cz] || cells[cz][cx]) return false;
+    if (hallAt(cx, cz) || isHideCell(cx, cz) || isHoleCell(cx, cz)) return false;
+    const nx = cx + openDx;
+    const nz = cz + openDz;
+    if (!isWalkableCell(nx, nz) || hallAt(nx, nz)) return false;
+    return true;
+  }
+
+  function removeWallMeshesNear(wx, wz) {
+    const lim = CELL * 0.42;
+    for (let i = mazeGroup.children.length - 1; i >= 0; i -= 1) {
+      const m = mazeGroup.children[i];
+      if (!m || !m.position) continue;
+      if (Math.hypot(m.position.x - wx, m.position.z - wz) > lim) continue;
+      if (!m.userData.sprayWall && !m.userData.shovelHidePart) continue;
+      mazeGroup.remove(m);
+      if (m.geometry) m.geometry.dispose();
+    }
+  }
+
+  function removeCollidersNear(wx, wz) {
+    const lim = CELL * 0.42;
+    for (let i = colliders.length - 1; i >= roomColliderCount; i -= 1) {
+      const c = colliders[i];
+      const cx = (c.minX + c.maxX) * 0.5;
+      const cz = (c.minZ + c.maxZ) * 0.5;
+      if (Math.hypot(cx - wx, cz - wz) <= lim) colliders.splice(i, 1);
+    }
+  }
+
+  function buildHideMeshesAt(cx, cz) {
+    const wx = mazeOriginX + cx * CELL;
+    const wz = mazeOriginZ + cz * CELL;
+    const open = hideOpenDir(cx, cz) || { dx: 0, dz: 1 };
+    const ox = open.dx;
+    const oz = open.dz;
+    const px = -oz;
+    const pz = ox;
+    const gap = CELL * HIDE_GAP;
+    const side = (CELL - gap) * 0.5;
+    const off = (gap + side) * 0.5;
+    let a;
+    let b;
+    if (Math.abs(px) > Math.abs(pz)) {
+      a = mazeWall(side, CAVE_H, CELL * 0.98, wx + px * off, CAVE_H * 0.5, wz);
+      b = mazeWall(side, CAVE_H, CELL * 0.98, wx - px * off, CAVE_H * 0.5, wz);
+    } else {
+      a = mazeWall(CELL * 0.98, CAVE_H, side, wx, CAVE_H * 0.5, wz + pz * off);
+      b = mazeWall(CELL * 0.98, CAVE_H, side, wx, CAVE_H * 0.5, wz - pz * off);
+    }
+    if (a) a.userData.shovelHidePart = true;
+    if (b) b.userData.shovelHidePart = true;
+    const lip = new THREE.Mesh(
+      new THREE.BoxGeometry(
+        Math.abs(ox) > 0 ? gap : CELL * 0.92,
+        0.28,
+        Math.abs(oz) > 0 ? gap : CELL * 0.92
+      ),
+      new THREE.MeshLambertMaterial({ color: 0x121018 })
+    );
+    lip.position.set(wx, CAVE_H - 0.35, wz);
+    lip.userData.shovelHidePart = true;
+    mazeGroup.add(lip);
+  }
+
+  /** 삽 먼지 ? 설정(효과) 꺼도 항상 표시 */
+  function spawnDigDust(x, y, z) {
+    for (let i = 0; i < 34; i += 1) {
+      const s = 0.04 + Math.random() * 0.09;
+      const mesh = new THREE.Mesh(
+        new THREE.BoxGeometry(s, s, s),
+        new THREE.MeshBasicMaterial({
+          color: Math.random() > 0.45 ? 0x8b6840 : 0x6a4e32,
+          transparent: true,
+          opacity: 0.95,
+          depthWrite: false,
+        })
+      );
+      mesh.position.set(
+        x + (Math.random() - 0.5) * 0.35,
+        y + Math.random() * 0.4,
+        z + (Math.random() - 0.5) * 0.35
+      );
+      mesh.renderOrder = 30;
+      scene.add(mesh);
+      digDust.push({
+        mesh,
+        vx: (Math.random() - 0.5) * 3.2,
+        vy: 1.1 + Math.random() * 2.6,
+        vz: (Math.random() - 0.5) * 3.2,
+        life: 0.55 + Math.random() * 0.65,
+        maxLife: 1,
+      });
+      digDust[digDust.length - 1].maxLife = digDust[digDust.length - 1].life;
+    }
+  }
+
+  function updateDigDust(dt) {
+    for (let i = digDust.length - 1; i >= 0; i -= 1) {
+      const p = digDust[i];
+      p.life -= dt;
+      p.vy -= 11 * dt;
+      p.mesh.position.x += p.vx * dt;
+      p.mesh.position.y += p.vy * dt;
+      p.mesh.position.z += p.vz * dt;
+      p.mesh.rotation.x += dt * 4;
+      p.mesh.rotation.z += dt * 3;
+      if (p.mesh.material) {
+        p.mesh.material.opacity = Math.max(0, p.life / p.maxLife);
+      }
+      if (p.life <= 0 || p.mesh.position.y < -0.2) {
+        scene.remove(p.mesh);
+        if (p.mesh.geometry) p.mesh.geometry.dispose();
+        if (p.mesh.material) p.mesh.material.dispose();
+        digDust.splice(i, 1);
+      }
+    }
+  }
+
+  function resolveShovelTarget() {
+    const cast = raycastSpraySurface();
+    if (!cast || cast.onFloor || !cast.hit) return null;
+    let nx = 0;
+    let ny = 1;
+    let nz = 0;
+    if (cast.hit.face) {
+      sprayHitNormal
+        .copy(cast.hit.face.normal)
+        .transformDirection(cast.hit.object.matrixWorld)
+        .normalize();
+      nx = sprayHitNormal.x;
+      ny = sprayHitNormal.y;
+      nz = sprayHitNormal.z;
+    }
+    if (Math.abs(ny) > 0.7) return null;
+    sprayHitNormal.set(nx, ny, nz).normalize();
+    const inward = cast.hit.point
+      .clone()
+      .addScaledVector(sprayHitNormal, -0.12);
+    const cell = cellFromWorld(inward.x, inward.z);
+    let open = shovelOpenFromNormal(nx, nz);
+    if (!canDigHideAt(cell.cx, cell.cz, open.dx, open.dz)) {
+      const dirs = [
+        [1, 0],
+        [-1, 0],
+        [0, 1],
+        [0, -1],
+      ];
+      let found = null;
+      for (let di = 0; di < 4; di += 1) {
+        if (canDigHideAt(cell.cx, cell.cz, dirs[di][0], dirs[di][1])) {
+          found = { dx: dirs[di][0], dz: dirs[di][1] };
+          break;
+        }
+      }
+      if (!found) return null;
+      open = found;
+    }
+    return {
+      cx: cell.cx,
+      cz: cell.cz,
+      openDx: open.dx,
+      openDz: open.dz,
+      point: cast.hit.point,
+    };
+  }
+
+  function updateShovelOutlines() {
+    clearShovelOutlines();
+    if (!shovelMode || !isEquipped("shovel") || !isInMaze()) {
+      if (shovelMode) setShovelMode(false);
+      return;
+    }
+    const focus = resolveShovelTarget();
+    const pc = cellFromWorld(pos.x, pos.z);
+    const lookX = -Math.sin(yaw);
+    const lookZ = -Math.cos(yaw);
+    const seen = Object.create(null);
+    if (focus) {
+      const k = `${focus.cx},${focus.cz}`;
+      seen[k] = true;
+      addShovelOutlineAt(focus.cx, focus.cz, true);
+    }
+    const range = 7;
+    for (let dz = -range; dz <= range; dz += 1) {
+      for (let dx = -range; dx <= range; dx += 1) {
+        const cx = pc.cx + dx;
+        const cz = pc.cz + dz;
+        const key = `${cx},${cz}`;
+        if (seen[key]) continue;
+        if (cz < 1 || cz >= mazeRows || cx < 1 || cx >= MW - 1) continue;
+        if (!cells[cz] || cells[cz][cx]) continue;
+        if (hallAt(cx, cz) || isHideCell(cx, cz)) continue;
+        const p = worldFromCell(cx, cz);
+        const toX = p.x - pos.x;
+        const toZ = p.z - pos.z;
+        const dist = Math.hypot(toX, toZ);
+        if (dist < 0.4 || dist > 11) continue;
+        const dot = (toX * lookX + toZ * lookZ) / dist;
+        if (dot < 0.35) continue;
+        // 복도와 맞닿은 벽만
+        let openOk = false;
+        const dirs = [
+          [1, 0],
+          [-1, 0],
+          [0, 1],
+          [0, -1],
+        ];
+        for (let di = 0; di < 4; di += 1) {
+          if (
+            canDigHideAt(cx, cz, dirs[di][0], dirs[di][1])
+          ) {
+            openOk = true;
+            break;
+          }
+        }
+        if (!openOk) continue;
+        addShovelOutlineAt(cx, cz, false);
+      }
+    }
+  }
+
+  function tryDigWithShovel() {
+    if (!shovelMode || !isEquipped("shovel") || !isInMaze()) return;
+    if ((itemStock.shovel || 0) < 1) return;
+    if (bitten || isRagdoll()) return;
+    const target = resolveShovelTarget();
+    if (!target) return;
+    const { cx, cz, openDx, openDz, point } = target;
+    cells[cz][cx] = true;
+    if (!hideMap[cz]) hideMap[cz] = [];
+    hideMap[cz][cx] = { dx: openDx, dz: openDz };
+    const wx = mazeOriginX + cx * CELL;
+    const wz = mazeOriginZ + cz * CELL;
+    removeWallMeshesNear(wx, wz);
+    removeCollidersNear(wx, wz);
+    buildHideMeshesAt(cx, cz);
+    spawnDigDust(point.x, point.y, point.z);
+    consumeItem("shovel");
+    setShovelMode(false);
+  }
+
+  function onShovelLeftClick() {
+    if (!isEquipped("shovel") || (itemStock.shovel || 0) < 1) return;
+    if (!isInMaze() || bitten || isRagdoll()) return;
+    if (typeof window.__isUiBlocking === "function" && window.__isUiBlocking()) {
+      return;
+    }
+    if (!shovelMode) {
+      setShovelMode(true);
+      return;
+    }
+    // 모드 중: 조준한 벽이 있으면 바로 파기, 없으면 모드 해제
+    if (resolveShovelTarget()) {
+      tryDigWithShovel();
+    } else {
+      setShovelMode(false);
+    }
+  }
+
   function useSkill(id) {
     if (!id || !isEquipped(id)) return;
     if (CONSUMABLE_ITEMS[id]) {
@@ -2356,13 +3205,15 @@
     } else if (id === "magnet") {
       magnetOn = !magnetOn;
     } else if (id === "boots") {
-      // 홀드형 — updateBoots에서 키 누르는 동안만 발동
+      // 홀드형 ? updateBoots에서 키 누르는 동안만 발동
     } else if (id === "bandage") {
-      // 홀드형 — updateBandage에서 키를 5초 누르는 동안만
-    } else if (id === "cloak") {
-      toggleCloak();
+      // 홀드형 ? updateBandage에서 키를 5초 누르는 동안만
+    } else if (id === "paint") {
+      togglePaint();
     } else if (id === "bait") {
       throwBait();
+    } else if (id === "shovel") {
+      setShovelMode(!shovelMode);
     }
   }
 
@@ -2399,10 +3250,12 @@
     resetWorms();
   }
 
-  /** 예전 사망 리스폰 — 물림 시스템에선 사용 안 함(로비용 유지) */
+  /** 예전 사망 리스폰 ? 물림 시스템에선 사용 안 함(로비용 유지) */
   function respawnPlayerOnDeath() {
-    wormBalance = Math.floor(wormBalance * 0.5);
-    syncWormBalanceUi();
+    if (!devMode) {
+      wormBalance = Math.floor(wormBalance * 0.5);
+      syncWormBalanceUi();
+    }
     pos.x = SPAWN.x;
     pos.y = SPAWN.y;
     pos.z = SPAWN.z;
@@ -2434,7 +3287,7 @@
   const biteScoreEl = document.getElementById("bite-score");
   const hideUiEl = document.getElementById("hide-ui");
 
-  // 탈출 QTE: 도넛 — 빨간 침 회전, Space로 멈춰 점수 채우기
+  // 탈출 QTE: 도넛 ? 빨간 침 회전, Space로 멈춰 점수 채우기
   const BITE_WHITE_DEG = 42;
   const BITE_PERFECT_DEG = 12; // 하얀 앞쪽 민트(작음)
   const BITE_NEEDLE_SPEED = 220; // deg/sec
@@ -2442,11 +3295,13 @@
   const BITE_WHITE_PTS = 1;
   const BITE_PERFECT_PTS = 2;
   const BITE_MISS_LOCK = 2; // 빗나감 후 대기(초)
+  const BITE_HIT_PAUSE = 1; // 성공(퍼펙트/일반) 후 다음 판 전 대기
   let biteNeedleAngle = 0;
   let biteWhiteStart = 0;
   let biteSpinning = true;
   let biteStopLock = false;
   let biteMissT = 0;
+  let biteHitPauseT = 0;
   let biteScore = 0;
 
   function syncHideUi() {
@@ -2522,6 +3377,7 @@
     biteSpinning = true;
     biteStopLock = false;
     biteMissT = 0;
+    biteHitPauseT = 0;
     if (biteUiEl) biteUiEl.classList.remove("miss");
     biteNeedleAngle = Math.random() * 360;
     layoutBiteZones();
@@ -2544,10 +3400,19 @@
   }
 
   function startBite(w) {
-    if (bitten || isRagdoll() || isInLobby() || playerInvulnT > 0) return;
+    if (
+      devMode ||
+      bitten ||
+      isRagdoll() ||
+      isInLobby() ||
+      playerInvulnT > 0 ||
+      clamCrushT > 0
+    ) {
+      return;
+    }
     if (w && (w.keepGoingT || 0) > 0) return;
     cancelBandage();
-    breakCloak();
+    breakPaint();
     bitten = true;
     biteWorm = w;
     biteScore = 0;
@@ -2555,12 +3420,29 @@
     biteSpinning = true;
     biteStopLock = false;
     biteMissT = 0;
+    biteHitPauseT = 0;
     if (biteUiEl) biteUiEl.classList.remove("miss");
     layoutBiteZones();
     w.dragging = true;
-    w.dragHall = pickDragHallNear(w.hx, w.hz);
-    w.pathT = 0;
+    const pick = pickDragHallNear(w.hx, w.hz);
+    w.dragHall = pick ? pick.hall : null;
+    if (pick && pick.path && pick.path.length) {
+      w.path = pick.path;
+      w.pathI = 0;
+      w.pathT = 2.5;
+    } else if (w.dragHall) {
+      // 경로 실패 시에도 방 쪽으로 직진할 웨이포인트 확보
+      const goal = hallCenterWorld(w.dragHall);
+      w.path = findMazePathWorld(w.hx, w.hz, goal.x, goal.z);
+      if (!w.path || w.path.length < 2) w.path = [goal];
+      w.pathI = 0;
+      w.pathT = 2.5;
+    } else {
+      w.pathT = 0;
+    }
+    w.stuckT = 0;
     w.aggro = true;
+    w.speed = Math.max(w.speed, WORM_SPEED * 1.35);
     syncBiteUi();
   }
 
@@ -2585,13 +3467,16 @@
     biteSpinning = false;
     biteStopLock = false;
     biteMissT = 0;
+    biteHitPauseT = 0;
     biteScore = 0;
     syncBiteUi();
     if (doToss) startTossRagdoll(hall);
   }
 
   function tryEscapeStop() {
-    if (!bitten || biteStopLock || !biteSpinning || biteMissT > 0) return;
+    if (!bitten || biteStopLock || !biteSpinning || biteMissT > 0 || biteHitPauseT > 0) {
+      return;
+    }
     biteStopLock = true;
     biteSpinning = false;
     const ang = normDeg(biteNeedleAngle);
@@ -2610,27 +3495,33 @@
       biteMissT = BITE_MISS_LOCK;
       if (biteUiEl) {
         biteUiEl.classList.remove("miss");
-        // 애니 재시작
         void biteUiEl.offsetWidth;
         biteUiEl.classList.add("miss");
       }
       return;
     }
+    // 점수 다 채우면 바로 탈출 / 아니면 1초 멈춘 뒤 다음 판
     if (biteScore >= BITE_SCORE_NEED) {
       endBite({ toss: false, escaped: true });
       return;
     }
-    resumeBiteSpin();
+    biteHitPauseT = BITE_HIT_PAUSE;
   }
 
   function updateBiteQte(dt) {
     if (!bitten) {
       biteMissT = 0;
+      biteHitPauseT = 0;
       return;
     }
     if (biteMissT > 0) {
       biteMissT -= dt;
       if (biteMissT <= 0) resumeBiteSpin();
+      return;
+    }
+    if (biteHitPauseT > 0) {
+      biteHitPauseT -= dt;
+      if (biteHitPauseT <= 0) resumeBiteSpin();
       return;
     }
     if (biteSpinning) {
@@ -2645,21 +3536,24 @@
       return;
     }
     const w = biteWorm;
-    // 웜 머리 바로 뒤(입 근처)에 붙임
-    const back = 0.85;
-    pos.x = w.hx - Math.sin(w.yaw) * back;
-    pos.z = w.hz - Math.cos(w.yaw) * back;
+    // 웜이 가는 방향 기준 머리 뒤에 붙임 (끌려가는 느낌)
+    const back = 1.15;
+    const fx = Math.sin(w.yaw);
+    const fz = Math.cos(w.yaw);
+    pos.x = w.hx - fx * back;
+    pos.z = w.hz - fz * back;
     pos.y = EYE_H;
 
-    // 큰 방 안에 도착하면 중앙으로 던지듯 놓음 + 1초 래그돌
+    // 목표 큰방 안쪽이면 던지듯 놓음
     if (w.dragHall) {
       const cell = cellFromWorld(w.hx, w.hz);
       const h = w.dragHall;
+      const margin = 2;
       if (
-        cell.cx > h.x0 &&
-        cell.cx < h.x1 &&
-        cell.cz > h.z0 &&
-        cell.cz < h.z1
+        cell.cx >= h.x0 + margin &&
+        cell.cx <= h.x1 - margin &&
+        cell.cz >= h.z0 + margin &&
+        cell.cz <= h.z1 - margin
       ) {
         endBite({ toss: true });
       }
@@ -2675,13 +3569,14 @@
   const WORM_R = 0.34 * WORM_SCALE;
   const WORM_SPEED = MOVE_SPEED * 1.2;
   const WORM_ACCEL = 14;
-  const WORM_TURN = 3.2; // rad/s 부드러운 회전
+  const WORM_TURN = 2.4; // rad/s ? 너무 급하면 몸이 일자로 스윙함
   const WORM_SEG_GAP = 0.3 * WORM_SCALE; // 마디 간격(경로 거리)
-  const WORM_WRIGGLE = 0.55; // S자 좌우 꿈틀 (요 각도)
+  const WORM_WRIGGLE = 0.35; // S자 좌우 꿈틀 (요 각도)
   const WORM_WRIGGLE_HZ = 2.1;
   const WORM_CATCH = 1.7; // 잡기 범위(히트박스와 분리)
   const WORM_COLOR = 0xb8e85a;
-  const WORM_TRAIL_MAX = 220;
+  const MINI_WORM_COLOR = 0xe3f6b5; // 미니웜: 더 연한 연두
+  const WORM_TRAIL_MAX = 360;
   const WORM_VISION = 11; // 어몽어스식 시야 거리
   const WORM_FOV = 1.35; // 약 77° 반각 → 전방 원뿔
   const WORM_SEP = 3.1 * WORM_SCALE; // 웜끼리 최소 간격
@@ -2717,9 +3612,13 @@
     );
   }
 
-  /** 일반 웜용 — 낮은 구멍은 통과 불가 (미니웜은 isWalkableCell 사용) */
+  /** 일반 웜용 — 굴·틈새는 몸집이 안 들어가 통과 불가 */
   function isWormWalkableCell(cx, cz) {
-    return isWalkableCell(cx, cz) && !isHoleCell(cx, cz);
+    return (
+      isWalkableCell(cx, cz) &&
+      !isHoleCell(cx, cz) &&
+      !isHideCell(cx, cz)
+    );
   }
 
   function nearestWalkableCell(cx, cz, opts) {
@@ -2859,18 +3758,23 @@
       w.aggro = true;
       const goal = hallCenterWorld(w.dragHall);
       w.path = findMazePathWorld(w.hx, w.hz, goal.x, goal.z);
+      if (!w.path || w.path.length < 2) {
+        // 경로 실패 시에도 방 중심으로 직진
+        w.path = [goal];
+      }
     } else if (heardBait) {
       w.aggro = true;
       w.path = findMazePathWorld(w.hx, w.hz, heardBait.x, heardBait.z);
     } else if (
+      devMode ||
       (w.keepGoingT || 0) > 0 ||
       isInLobby() ||
       isPlayerInAnyHall() ||
-      cloakOn ||
+      paintOn ||
       isInHideSpot() ||
       (isCrouching() && !wormCanSeePlayer(w))
     ) {
-      // 탈출 직후 / 로비 / 큰방 / 은신 / 틈새 / 웅크려 미시야 → 배회
+      // 개발 / 탈출 직후 / 로비 / 큰방 / 은신 / 틈새 / 웅크려 미시야 → 배회
       w.aggro = false;
       const reached =
         !w.wanderGoal ||
@@ -2971,11 +3875,11 @@
     return hasLineOfSight(w.hx, w.hz, pos.x, pos.z);
   }
 
-  function makeWormMesh(scaleMul) {
+  function makeWormMesh(scaleMul, colorHex) {
     const s = scaleMul == null ? 1 : scaleMul;
     const group = new THREE.Group();
     const mat = new THREE.MeshLambertMaterial({
-      color: WORM_COLOR,
+      color: colorHex != null ? colorHex : WORM_COLOR,
       emissive: 0x000000,
     });
     const segs = [];
@@ -3013,7 +3917,7 @@
     return current + d;
   }
 
-  /** 경로에서 head로부터 distBack 만큼 뒤 지점 (시간차 ≈ 거리/속도) */
+  /** 경로에서 head로부터 distBack 만큼 뒤 지점 (시간차 ? 거리/속도) */
   function sampleTrail(trail, distBack) {
     if (!trail.length) return { x: 0, z: 0, yaw: 0 };
     if (distBack <= 0) return trail[0];
@@ -3025,10 +3929,12 @@
       if (d < 1e-6) continue;
       if (left <= d) {
         const t = left / d;
+        // 위치 보간 + 구간 방향 yaw (꺾일 때 허리가 따라가게)
+        const yawAlong = Math.atan2(a.x - b.x, a.z - b.z);
         return {
           x: a.x + (b.x - a.x) * t,
           z: a.z + (b.z - a.z) * t,
-          yaw: lerpAngle(a.yaw, b.yaw, t),
+          yaw: yawAlong,
         };
       }
       left -= d;
@@ -3037,17 +3943,78 @@
   }
 
   function pushTrail(w, x, z, yaw) {
+    const minStep = 0.07;
+    if (!w.trail) w.trail = [];
     const head = w.trail[0];
-    if (head) {
-      const d = Math.hypot(x - head.x, z - head.z);
-      if (d < 0.04) {
-        head.x = x;
-        head.z = z;
-        head.yaw = yaw;
-        return;
-      }
+    if (!head) {
+      w.trail.unshift({ x, z, yaw });
+      return;
     }
-    w.trail.unshift({ x, z, yaw });
+
+    const dx = x - head.x;
+    const dz = z - head.z;
+    const d = Math.hypot(dx, dz);
+    let dyaw = yaw - head.yaw;
+    while (dyaw > Math.PI) dyaw -= Math.PI * 2;
+    while (dyaw < -Math.PI) dyaw += Math.PI * 2;
+    const adyaw = Math.abs(dyaw);
+
+    // 거의 안 움직임 + 각도도 같음 → 헤드만 갱신
+    if (d < minStep * 0.35 && adyaw < 0.035) {
+      head.x = x;
+      head.z = z;
+      head.yaw = yaw;
+      return;
+    }
+
+    const pts = [];
+    // 급회전/장거리면 중간 점을 넣어 몸이 직선으로 스윙하지 않게
+    let steps = 1;
+    if (adyaw > 0.1) {
+      steps = Math.max(steps, Math.min(12, Math.ceil(adyaw / 0.09)));
+    }
+    if (d > minStep * 1.5) {
+      steps = Math.max(steps, Math.min(10, Math.ceil(d / minStep)));
+    }
+
+    if (steps <= 1) {
+      if (d < minStep && adyaw >= 0.035) {
+        // 제자리 회전에 가까움: 이전 진행 반대 흔적을 남겨 허리 꺾임 생성
+        const back = minStep * 0.9;
+        pts.push({
+          x: head.x - Math.sin(head.yaw) * back * 0.35,
+          z: head.z - Math.cos(head.yaw) * back * 0.35,
+          yaw: head.yaw,
+        });
+      }
+      pts.push({ x, z, yaw });
+    } else {
+      for (let s = 1; s <= steps; s += 1) {
+        const t = s / steps;
+        const iy = lerpAngle(head.yaw, yaw, t);
+        let px;
+        let pz;
+        if (d >= minStep * 0.5) {
+          px = head.x + dx * t;
+          pz = head.z + dz * t;
+        } else {
+          // 짧은 이동+큰 회전: 진행방향 블렌드로 작은 호
+          const ox = Math.sin(head.yaw);
+          const oz = Math.cos(head.yaw);
+          const nx = Math.sin(iy);
+          const nz = Math.cos(iy);
+          const arc = minStep * (0.55 + adyaw * 0.25);
+          px = head.x + (ox * (1 - t) + nx * t) * arc * t;
+          pz = head.z + (oz * (1 - t) + nz * t) * arc * t;
+        }
+        pts.push({ x: px, z: pz, yaw: iy });
+      }
+      pts[pts.length - 1] = { x, z, yaw };
+    }
+
+    for (let i = 0; i < pts.length; i += 1) {
+      w.trail.unshift(pts[i]);
+    }
     if (w.trail.length > WORM_TRAIL_MAX) w.trail.length = WORM_TRAIL_MAX;
   }
 
@@ -3057,7 +4024,16 @@
       const p = sampleTrail(w.trail, i * gap);
       const seg = w.segs[i];
       seg.mesh.position.set(p.x, seg.baseR * 0.9, p.z);
-      seg.mesh.rotation.y = p.yaw;
+      let yaw = p.yaw;
+      // 머리 쪽을 바라보게 해 꺾인 허리가 보이게
+      if (i > 0) {
+        const toward = sampleTrail(w.trail, Math.max(0, (i - 0.5) * gap));
+        const dd = Math.hypot(toward.x - p.x, toward.z - p.z);
+        if (dd > 1e-4) {
+          yaw = Math.atan2(toward.x - p.x, toward.z - p.z);
+        }
+      }
+      seg.mesh.rotation.y = yaw;
       seg.mesh.scale.set(1, 1, 1.05);
     }
   }
@@ -3266,6 +4242,7 @@
   syncPlayerMeshLimbs();
 
   function takeLimb(id) {
+    if (devMode) return false;
     if (!id || !playerLimbs[id]) return false;
     playerLimbs[id] = false;
     syncLimbUi();
@@ -3295,9 +4272,13 @@
   }
 
   function hallInteriorSpot(h) {
+    const spanX = h.x1 - h.x0 + 1;
+    const spanZ = h.z1 - h.z0 + 1;
+    const innerX = Math.max(1, spanX - 4);
+    const innerZ = Math.max(1, spanZ - 4);
     for (let t = 0; t < 40; t += 1) {
-      const cx = h.x0 + 2 + ((Math.random() * (HALL_SPAN - 4)) | 0);
-      const cz = h.z0 + 2 + ((Math.random() * (HALL_SPAN - 4)) | 0);
+      const cx = h.x0 + 2 + ((Math.random() * innerX) | 0);
+      const cz = h.z0 + 2 + ((Math.random() * innerZ) | 0);
       if (!isWalkableCell(cx, cz)) continue;
       return worldFromCell(cx, cz);
     }
@@ -3352,7 +4333,7 @@
   }
 
   function spawnMiniWorm(hall, x, z) {
-    const built = makeWormMesh(MINI_SCALE);
+    const built = makeWormMesh(MINI_SCALE, MINI_WORM_COLOR);
     const px = x != null ? x : hallInteriorSpot(hall).x;
     const pz = z != null ? z : hallInteriorSpot(hall).z;
     const fromStorage = !!(hall && hall.kind === "storage");
@@ -3482,7 +4463,7 @@
           m.state = "eat";
           m.stateT = MINI_EAT_SEC;
         }
-      } else if (inHall && !bitten) {
+      } else if (inHall && !bitten && !devMode) {
         wantX = pos.x;
         wantZ = pos.z;
         const dist = Math.hypot(pos.x - m.hx, pos.z - m.hz);
@@ -3669,7 +4650,7 @@
     return tex;
   }
 
-  /** 어떤 해상도 이미지든 면(텍스처)으로 로드 — 너무 크면 축소 */
+  /** 어떤 해상도 이미지든 면(텍스처)으로 로드 ? 너무 크면 축소 */
   function imageToTexture(image, opts) {
     const punchBlack = !(opts && opts.punchBlack === false);
     let w = image.naturalWidth || image.width || 0;
@@ -3771,7 +4752,30 @@
   }
 
   function syncHideDetectorVisual() {
-    // 틈새 바닥 색 표시 제거됨 (보라/파랑 패드 없음)
+    // 감지기 ON: 가짜 틈새만 조금 어둡게 (일반 틈새와 구분)
+    for (let i = 0; i < fakeHides.length; i += 1) {
+      const fh = fakeHides[i];
+      if (fh.shellMat) {
+        if (detectorOn) {
+          fh.shellMat.color.setHex(0x8f8274);
+          fh.shellMat.fog = false;
+        } else {
+          fh.shellMat.color.setHex(0xffffff);
+          fh.shellMat.fog = true;
+        }
+        fh.shellMat.needsUpdate = true;
+      }
+      if (fh.darkMat) {
+        if (detectorOn) {
+          fh.darkMat.color.setHex(0x07050a);
+          fh.darkMat.fog = false;
+        } else {
+          fh.darkMat.color.setHex(0x141018);
+          fh.darkMat.fog = true;
+        }
+        fh.darkMat.needsUpdate = true;
+      }
+    }
   }
 
   function syncCoinFogVisual() {
@@ -4178,16 +5182,18 @@
         w.baitTarget = null;
       }
       const noChase =
+        devMode ||
         lobby ||
         playerHall ||
         keepGoing ||
         crouchHidden ||
         inHide ||
         inHole ||
-        (cloakOn && !hearingBait) ||
+        (paintOn && !hearingBait) ||
         hearingBait;
 
       if (
+        !devMode &&
         !lobby &&
         !playerHall &&
         !inHole &&
@@ -4197,16 +5203,16 @@
         dist < WORM_CATCH &&
         fogBlend > 0.55
       ) {
-        if (cloakOn) {
+        if (paintOn) {
           // 닿으면 은신 발각
-          breakCloak();
+          breakPaint();
         }
         // 틈새에 있어도 닿으면 물림
-        if (!cloakOn) startBite(w);
+        if (!paintOn) startBite(w);
       }
 
-      // 로비/큰방/은신/틈새/구멍/웅크리기/미끼 전환 시 경로 갱신
-      const hideKey = crouchHidden || cloakOn || inHide || inHole || hearingBait;
+      // 로비/큰방/은신/틈새/굴/웅크리기/미끼 전환 시 경로 갱신
+      const hideKey = crouchHidden || paintOn || inHide || inHole || hearingBait;
       if (
         w.wasLobby !== lobby ||
         w.wasPlayerHall !== playerHall ||
@@ -4255,10 +5261,14 @@
       } else if (!noChase && !bitten && dist > 0.15) {
         wantYaw = Math.atan2(toPlayerX, toPlayerZ);
       }
-      const targetSpd = WORM_SPEED;
+      const targetSpd = w.dragging ? WORM_SPEED * 1.45 : WORM_SPEED;
 
-      wantYaw += Math.sin(w.phase) * WORM_WRIGGLE * 0.45;
-      w.yaw = approachAngle(w.yaw, wantYaw, WORM_TURN * dt);
+      wantYaw += Math.sin(w.phase) * WORM_WRIGGLE * (w.dragging ? 0.05 : 0.45);
+      w.yaw = approachAngle(
+        w.yaw,
+        wantYaw,
+        WORM_TURN * (w.dragging ? 1.6 : 1) * dt
+      );
 
       if (w.speed < targetSpd) {
         w.speed = Math.min(targetSpd, w.speed + WORM_ACCEL * dt);
@@ -4269,15 +5279,19 @@
 
       const fx = Math.sin(w.yaw);
       const fz = Math.cos(w.yaw);
+      // 끌기 중엔 충돌 반지름을 줄여 코너에서 덜 끼임
+      const colR = w.dragging ? Math.min(WORM_COL_R, CELL * 0.3) : WORM_COL_R;
 
       const look = 1.1;
-      const probe = collideMoveSoft(w.hx + fx * look, w.hz + fz * look, WORM_COL_R);
+      const probe = collideMoveSoft(w.hx + fx * look, w.hz + fz * look, colR);
       const blocked =
         Math.hypot(probe.x - (w.hx + fx * look), probe.z - (w.hz + fz * look)) > 0.08;
       if (blocked) {
         w.pathT = 0; // 막히면 바로 경로 재계산
-        const side = Math.sin(w.phase * 0.7 + wi) > 0 ? 1 : -1;
-        w.yaw += side * 2.4 * dt;
+        if (!w.dragging) {
+          const side = Math.sin(w.phase * 0.7 + wi) > 0 ? 1 : -1;
+          w.yaw += side * 0.9 * dt;
+        }
       }
 
       let nx = w.hx + Math.sin(w.yaw) * w.speed * dt;
@@ -4285,21 +5299,25 @@
       const prevX = w.hx;
       const prevZ = w.hz;
       // 축 분리 충돌 — 코너/벽 뚫림 방지
-      const hitX = collideMoveSoft(nx, w.hz, WORM_COL_R);
+      const hitX = collideMoveSoft(nx, w.hz, colR);
       w.hx = hitX.x;
-      const hitZ = collideMoveSoft(w.hx, nz, WORM_COL_R);
+      const hitZ = collideMoveSoft(w.hx, nz, colR);
       w.hz = hitZ.z;
 
-      // 통로 밖·구멍이면 거부하고 가까운 통로로
+      // 통로 밖·굴·틈새면 거부하고 가까운 통로로
       const cell = cellFromWorld(w.hx, w.hz);
       if (!isWormWalkableCell(cell.cx, cell.cz)) {
         w.hx = prevX;
         w.hz = prevZ;
         w.pathT = 0;
-        w.yaw += (Math.sin(w.phase * 0.7 + wi) > 0 ? 1 : -1) * 2.6 * dt;
+        if (!w.dragging) {
+          w.yaw += (Math.sin(w.phase * 0.7 + wi) > 0 ? 1 : -1) * 1.1 * dt;
+        }
       } else if (Math.hypot(w.hx - nx, w.hz - nz) > 0.001) {
         w.pathT = Math.min(w.pathT, 0.05);
-        w.yaw += (Math.sin(w.phase * 0.7 + wi) > 0 ? 1 : -1) * 2.2 * dt;
+        if (!w.dragging) {
+          w.yaw += (Math.sin(w.phase * 0.7 + wi) > 0 ? 1 : -1) * 0.9 * dt;
+        }
       }
 
       const moved = Math.hypot(w.hx - prevX, w.hz - prevZ);
@@ -4310,8 +5328,31 @@
         w.stuckT = Math.max(0, (w.stuckT || 0) - dt * 1.5);
       }
       if ((w.stuckT || 0) >= WORM_STUCK_SEC) {
-        snapWormToWalkable(w);
-        continue;
+        if (w.dragging && w.dragHall) {
+          // 끌기 중 끼면 다음 웨이포인트로 살짝 점프해 앞으로 진행
+          if (w.path && w.path.length && w.pathI < w.path.length) {
+            const skip = Math.min(w.path.length - 1, w.pathI + 2);
+            const wp = w.path[skip];
+            const cleared = collideMoveSoft(wp.x, wp.z, colR);
+            w.hx = cleared.x;
+            w.hz = Math.max(cleared.z, HALF + CELL * 1.5);
+            w.pathI = skip;
+          } else {
+            const nc = nearestWalkableCell(
+              cellFromWorld(w.hx, w.hz).cx,
+              cellFromWorld(w.hx, w.hz).cz
+            );
+            const p = worldFromCell(nc.cx, nc.cz);
+            const cleared = collideMoveSoft(p.x, p.z, colR);
+            w.hx = cleared.x;
+            w.hz = Math.max(cleared.z, HALF + CELL * 1.5);
+          }
+          w.stuckT = 0;
+          refreshWormPath(w);
+        } else {
+          snapWormToWalkable(w);
+          continue;
+        }
       }
 
       if (w.hz < HALF + CELL * 0.85) {
@@ -4380,34 +5421,50 @@
   }
 
   function applyCaveFog(t) {
-    fogCol.copy(roomFogColor).lerp(caveFogColor, t);
+    // 개발 모드: 안개 없음 (비네팅·채도 설정과 별개)
+    const fogT = devMode ? 0 : t;
+    fogCol.copy(roomFogColor).lerp(caveFogColor, fogT);
     scene.background.copy(fogCol);
+
+    if (devMode) {
+      scene.fog.near = 800;
+      scene.fog.far = 2000;
+      if (caveFogEl) caveFogEl.style.opacity = "0";
+      hemi.intensity = 0.95;
+      sun.intensity = 0.5;
+      roomFill.intensity = 0.5;
+      hemi.color.copy(hemiColA);
+      hemi.groundColor.copy(hemiColB);
+      sun.color.copy(sunColRoom);
+      roomFill.color.copy(fillColRoom);
+      return;
+    }
 
     // 손전등 켜면 안개가 살짝 옅어짐 (더 멀리 보임)
     const clear = flashlightOn ? 0.45 : 0;
-    let fogNear = 28 + (1.2 - 28) * t;
-    let fogFar = 90 + (8 - 90) * t;
-    fogNear = fogNear + (12 - fogNear) * clear * t;
-    fogFar = fogFar + (28 - fogFar) * clear * t;
+    let fogNear = 28 + (1.2 - 28) * fogT;
+    let fogFar = 90 + (8 - 90) * fogT;
+    fogNear = fogNear + (12 - fogNear) * clear * fogT;
+    fogFar = fogFar + (28 - fogFar) * clear * fogT;
 
     // 플레이어(카메라) 기준 안개
     scene.fog.near = fogNear;
     scene.fog.far = fogFar;
 
     if (caveFogEl) {
-      // 화면 비네팅은 약하게만 (거리는 플레이어 기준 WebGL 안개가 담당)
-      const base = t * 0.2;
+      // 미로에선 가장자리 깊이감 조금 더
+      const base = fogT * 0.34;
       caveFogEl.style.opacity = String(base * (1 - clear * 0.55));
     }
 
     const dark = 0.39;
-    hemi.intensity = 0.85 * (1 - t * dark);
-    sun.intensity = 0.4 * (1 - t * dark);
-    roomFill.intensity = 0.4 * (1 - t * dark);
-    hemi.color.copy(hemiColA).lerp(hemiCaveA, t * 0.5);
-    hemi.groundColor.copy(hemiColB).lerp(hemiCaveB, t * 0.5);
-    sun.color.copy(sunColRoom).lerp(sunColCave, t * 0.5);
-    roomFill.color.copy(fillColRoom).lerp(fillColCave, t * 0.5);
+    hemi.intensity = 0.85 * (1 - fogT * dark);
+    sun.intensity = 0.4 * (1 - fogT * dark);
+    roomFill.intensity = 0.4 * (1 - fogT * dark);
+    hemi.color.copy(hemiColA).lerp(hemiCaveA, fogT * 0.5);
+    hemi.groundColor.copy(hemiColB).lerp(hemiCaveB, fogT * 0.5);
+    sun.color.copy(sunColRoom).lerp(sunColCave, fogT * 0.5);
+    roomFill.color.copy(fillColRoom).lerp(fillColCave, fogT * 0.5);
   }
 
   const ctrlPicEls = Array.from(document.querySelectorAll("[data-code]"));
@@ -4442,7 +5499,7 @@
       (e.code === "ShiftLeft" || e.code === "ShiftRight") &&
       !bitten &&
       !isRagdoll() &&
-      !cloakOn
+      !paintOn
     ) {
       crouchToggled = !crouchToggled;
     }
@@ -4460,6 +5517,9 @@
   window.__useSkillAt = (slot) => useSkillAt(slot);
 
   window.addEventListener("mousedown", (e) => {
+    if (e.button === 0) {
+      onShovelLeftClick();
+    }
     if (e.button === 2) {
       rmbDown = true;
       lastMX = e.clientX;
@@ -4478,7 +5538,10 @@
     for (const k of Object.keys(keys)) keys[k] = false;
     syncCtrlPics();
   });
-  window.addEventListener("contextmenu", (e) => e.preventDefault());
+  window.addEventListener("contextmenu", (e) => {
+    if (e.target && e.target.closest && e.target.closest("#shop-panel")) return;
+    e.preventDefault();
+  });
 
   window.addEventListener("mousemove", (e) => {
     if (!rmbDown || bitten || isRagdoll()) return;
@@ -4660,9 +5723,13 @@
     const base = MOVE_SPEED * crouchMul * legsMul;
     const speed = base * bootsMul * dt;
     const inputRight =
-      bitten || isRagdoll() ? 0 : (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0);
+      bitten || isRagdoll() || clamCrushT > 0
+        ? 0
+        : (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0);
     const inputFwd =
-      bitten || isRagdoll() ? 0 : (keys.KeyW ? 1 : 0) - (keys.KeyS ? 1 : 0);
+      bitten || isRagdoll() || clamCrushT > 0
+        ? 0
+        : (keys.KeyW ? 1 : 0) - (keys.KeyS ? 1 : 0);
 
     const fx = -Math.sin(yaw);
     const fz = -Math.cos(yaw);
@@ -4671,20 +5738,24 @@
 
     if (playerInvulnT > 0) playerInvulnT = Math.max(0, playerInvulnT - dt);
 
-    // 시야 높이: 다리 없음 → 쓰러짐 / Shift 웅크리기 / 구멍 안에서는 낮게
+    // 시야 높이: 다리 없음 → 쓰러짐 / Shift 웅크리기 / 굴 안에서는 낮게
+    // 개발 모드 비행 중에는 눈높이 고정 안 함
     const inHole = isInHole();
-    if (!bitten && !isRagdoll()) {
+    if (!devMode && !bitten && !isRagdoll() && clamCrushT <= 0) {
       let eyeTarget = EYE_H;
       if (isLegless()) eyeTarget = LEGLESS_EYE_H;
       else if (crouch || inHole) eyeTarget = CROUCH_EYE_H;
       pos.y += (eyeTarget - pos.y) * Math.min(1, 14 * dt);
     }
 
-    if (!bitten && !isRagdoll()) {
+    if (!bitten && !isRagdoll() && clamCrushT <= 0) {
       let mx = rx * inputRight + fx * inputFwd;
       let mz = rz * inputRight + fz * inputFwd;
-      // 구멍은 웅크리기(또는 다리 없음)로만 이동
-      if (inHole && !canPassHoleStance()) {
+      const inputUp = devMode
+        ? (keys.KeyE ? 1 : 0) - (keys.KeyQ ? 1 : 0)
+        : 0;
+      // 굴은 웅크리기(또는 다리 없음)로만 이동 (개발 비행은 예외)
+      if (!devMode && inHole && !canPassHoleStance()) {
         mx = 0;
         mz = 0;
       }
@@ -4695,16 +5766,22 @@
       }
       let nx = pos.x + mx * speed;
       let nz = pos.z + mz * speed;
-      if (holeBlocksPlayerAt(nx, pos.z)) nx = pos.x;
-      if (holeBlocksPlayerAt(pos.x, nz)) nz = pos.z;
-      if (holeBlocksPlayerAt(nx, nz)) {
-        nx = pos.x;
-        nz = pos.z;
+      if (devMode) {
+        pos.x = nx;
+        pos.z = nz;
+        if (inputUp) pos.y += inputUp * speed;
+      } else {
+        if (holeBlocksPlayerAt(nx, pos.z)) nx = pos.x;
+        if (holeBlocksPlayerAt(pos.x, nz)) nz = pos.z;
+        if (holeBlocksPlayerAt(nx, nz)) {
+          nx = pos.x;
+          nz = pos.z;
+        }
+        const hitX = collideMove(nx, pos.z);
+        pos.x = hitX.x;
+        const hitZ = collideMove(pos.x, nz);
+        pos.z = hitZ.z;
       }
-      const hitX = collideMove(nx, pos.z);
-      pos.x = hitX.x;
-      const hitZ = collideMove(pos.x, nz);
-      pos.z = hitZ.z;
     }
 
     mazeTimer -= dt;
@@ -4721,6 +5798,9 @@
     updateBandage(dt);
     updateBait(dt);
     updateSprayFreehand();
+    updateShovelOutlines();
+    updateDigDust(dt);
+    updateFakeHides(dt);
     syncHideUi();
     updateWorms(dt);
     updateSmallEggs(dt);
@@ -4762,7 +5842,13 @@
       }
     }
 
-    if (fogBlend < 0.2) {
+    if (devMode) {
+      const needFar = Math.max(800, pos.z + 200);
+      if (camera.far < needFar) {
+        camera.far = needFar;
+        camera.updateProjectionMatrix();
+      }
+    } else if (fogBlend < 0.2) {
       const needFar = pos.z + 80;
       if (camera.far < needFar) {
         camera.far = needFar;
@@ -4802,6 +5888,15 @@
     if (fxEl) fxEl.checked = fxOn;
   }
 
+  function applyDevMoney() {
+    if (!devMode) return;
+    wormBalance = DEV_MONEY;
+    restrictionBalance = DEV_MONEY;
+    restrictionCoinUnlocked = true;
+    syncWormBalanceUi();
+    syncRestrictionBalanceUi();
+  }
+
   function saveSettings() {
     try {
       localStorage.setItem(
@@ -4826,6 +5921,7 @@
     const volEl = document.getElementById("set-vol");
     const shakeEl = document.getElementById("set-shake");
     const shiftToggleEl = document.getElementById("set-shift-toggle");
+    const devEl = document.getElementById("set-dev");
     const sensVal = document.getElementById("set-sens-val");
     const volVal = document.getElementById("set-vol-val");
     if (sensEl) {
@@ -4851,6 +5947,24 @@
       if (!next) crouchToggled = false;
       shiftToggleEnabled = next;
     }
+    if (devEl) {
+      const next = !!devEl.checked;
+      const turnedOn = next && !devMode;
+      const turnedOff = !next && devMode;
+      devMode = next;
+      if (turnedOn) {
+        applyDevMoney();
+        if (bitten) endBite({ toss: false });
+        cancelClamCrushSafe();
+        for (let i = 0; i < worms.length; i += 1) {
+          worms[i].aggro = false;
+          worms[i].pathT = 0;
+        }
+      }
+      if (turnedOff && pos.y < EYE_H * 0.5) pos.y = EYE_H;
+      syncDevCeilings();
+      applyCaveFog(fogBlend);
+    }
 
     const helpEl = document.getElementById("ui-show-help");
     const radarToggle = document.getElementById("ui-show-radar");
@@ -4875,10 +5989,12 @@
     const volEl = document.getElementById("set-vol");
     const shakeEl = document.getElementById("set-shake");
     const shiftToggleEl = document.getElementById("set-shift-toggle");
+    const devEl = document.getElementById("set-dev");
     if (sensEl) sensEl.value = "100";
     if (volEl) volEl.value = "100";
     if (shakeEl) shakeEl.checked = true;
     if (shiftToggleEl) shiftToggleEl.checked = false;
+    if (devEl) devEl.checked = false;
 
     applySettingsFromUi();
   }
@@ -4888,6 +6004,7 @@
     const volEl = document.getElementById("set-vol");
     const shakeEl = document.getElementById("set-shake");
     const shiftToggleEl = document.getElementById("set-shift-toggle");
+    const devEl = document.getElementById("set-dev");
     let data = null;
     try {
       data = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "null");
@@ -4908,6 +6025,7 @@
       if (shiftToggleEl) {
         shiftToggleEl.checked = !!data.shiftToggle;
       }
+      if (devEl) devEl.checked = false;
       if (data.ui && typeof data.ui === "object") {
         uiSettings = {
           showHelp:
@@ -4929,6 +6047,7 @@
     if (shiftToggleEl) {
       shiftToggleEl.addEventListener("change", applySettingsFromUi);
     }
+    if (devEl) devEl.addEventListener("change", applySettingsFromUi);
 
     ["ui-show-help", "ui-show-radar", "ui-show-fx"].forEach((id) => {
       const el = document.getElementById(id);
@@ -4986,6 +6105,7 @@
     if (mazeBooted) return;
     mazeBooted = true;
     rebuildMaze();
+    syncDevCeilings();
   }
 
   requestAnimationFrame(() => {

@@ -451,7 +451,7 @@ canvas {
   opacity: 1;
 }
 
-#cloak-tint {
+#paint-tint {
   position: fixed;
   inset: 0;
   z-index: 1;
@@ -466,7 +466,7 @@ canvas {
   transition: opacity 1s ease;
 }
 
-#cloak-tint.on {
+#paint-tint.on {
   opacity: 1;
 }
 
@@ -637,9 +637,8 @@ canvas {
   flex-direction: column;
   align-items: flex-start;
   gap: 0;
-  pointer-events: auto;
+  pointer-events: none;
   user-select: none;
-  cursor: pointer;
   opacity: var(--ui-opacity);
   transform: scale(var(--ui-money));
   transform-origin: left top;
@@ -903,11 +902,18 @@ canvas {
   background: #fff;
 }
 
+.settings-dev {
+  flex: 0 0 auto;
+  margin: 10px 0 0;
+  padding: 8px 4px;
+  border-top: 1px solid rgba(0, 0, 0, 0.15);
+}
+
 .settings-reset {
   flex: 0 0 auto;
   display: block;
   width: 100%;
-  margin: 12px 0 0;
+  margin: 8px 0 0;
   padding: 10px 12px;
   border: 2px solid #000;
   background: rgba(198, 40, 40, 0.12);
@@ -1005,11 +1011,13 @@ body.ui-radar-off #detector-radar {
   display: none !important;
 }
 
-body.ui-fx-off #cloak-tint,
+body.ui-fx-off #paint-tint,
 body.ui-fx-off #boots-tint {
   display: none !important;
   opacity: 0 !important;
 }
+
+/* 효과 OFF여도 콘트라스트는 유지 */
 
 /* ---- 로비 상점 ---- */
 .lobby-only.hidden {
