@@ -1,4 +1,4 @@
-﻿(() => {
+(() => {
   "use strict";
 
   if (typeof THREE === "undefined") {
