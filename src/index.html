@@ -1,41 +1,248 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>자동차</title>
+  <title>로켓</title>
   <style>
     html, body {
       margin: 0;
       height: 100%;
-      background: #2a2c30;
+      background: #111418;
       overflow: hidden;
+    }
+    body {
       display: flex;
       align-items: center;
       justify-content: center;
     }
+    #screen {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #87b4dc;
+    }
     canvas {
       display: block;
+      width: 100%;
+      height: 100%;
       image-rendering: pixelated;
       image-rendering: crisp-edges;
     }
-    #speed {
+    #pick {
       position: fixed;
-      left: 18px;
-      bottom: 16px;
+      inset: 0;
+      z-index: 30;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 28px;
+      background: #12141a;
+      color: #f4f4f6;
+      font: 700 28px/1.2 "Segoe UI", sans-serif;
+    }
+    #pick[hidden] {
+      display: none;
+    }
+    #pick-row {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 18px;
+    }
+    #pick button {
+      min-width: 168px;
+      margin: 0;
+      padding: 28px 22px;
+      border: 4px solid #111;
+      background: #1c1e26;
+      color: #f4f4f6;
+      font: 700 32px/1 "Segoe UI", sans-serif;
+      cursor: pointer;
+    }
+    #pick button:hover {
+      background: rgb(220, 36, 36);
+    }
+    #cross {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 12px;
+      height: 12px;
+      margin: -6px 0 0 -6px;
+      pointer-events: none;
+    }
+    #cross::before,
+    #cross::after {
+      content: "";
+      position: absolute;
+      background: #fff;
+    }
+    #cross::before {
+      left: 5px;
+      top: 0;
+      width: 2px;
+      height: 12px;
+    }
+    #cross::after {
+      left: 0;
+      top: 5px;
+      width: 12px;
+      height: 2px;
+    }
+    #hud {
+      position: absolute;
+      left: 16px;
+      bottom: 14px;
       margin: 0;
       color: #f4f4f6;
-      font: 700 28px/1 "Segoe UI", sans-serif;
-      letter-spacing: 0.02em;
+      font: 700 18px/1.4 "Segoe UI", sans-serif;
       text-shadow: 0 2px 0 #111;
       pointer-events: none;
+    }
+    #ver {
+      position: absolute;
+      right: 16px;
+      bottom: 14px;
+      margin: 0;
+      color: rgba(255, 255, 255, 0.55);
+      font: 600 32px/1 "Segoe UI", sans-serif;
+      pointer-events: none;
+    }
+    #fire {
+      position: absolute;
+      right: 28px;
+      bottom: 28px;
+      z-index: 6;
+      width: 96px;
+      height: 96px;
+      margin: 0;
+      padding: 0;
+      border: 4px solid #111;
+      border-radius: 50%;
+      background: rgba(220, 36, 36, 0.94);
+      color: #fff;
+      font: 700 20px/1 "Segoe UI", sans-serif;
+      cursor: pointer;
+      touch-action: none;
+      user-select: none;
+    }
+    #fire[hidden] {
+      display: none;
+    }
+    #screen:has(#fire:not([hidden])) #ver {
+      right: 28px;
+      bottom: 140px;
+    }
+    #fuel-dock {
+      position: absolute;
+      right: 18px;
+      top: 50%;
       z-index: 2;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      pointer-events: none;
+      transform: translateY(-50%);
+    }
+    #fuel {
+      position: relative;
+      width: 28px;
+      height: 220px;
+      background: #000;
+    }
+    #fuel-fill {
+      position: absolute;
+      left: 4px;
+      right: 4px;
+      bottom: 4px;
+      top: 4px;
+      background: rgb(220, 36, 36);
+      transform-origin: bottom center;
+      transform: scaleY(1);
+    }
+    #preview {
+      display: block;
+      width: 110px;
+      height: 130px;
+      margin-top: 10px;
+      background: transparent;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+    }
+    #cats {
+      position: absolute;
+      left: 18px;
+      top: 18px;
+      z-index: 4;
+      width: max-content;
+      margin: 0;
+      padding: 12px;
+      box-sizing: border-box;
+      background: rgba(8, 8, 10, 0.88);
+    }
+    #cats[hidden] {
+      display: none;
+    }
+    #cat-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    #cat-list button {
+      margin: 0;
+      padding: 6px;
+      border: 3px solid #111;
+      background: #1a1a1c;
+      line-height: 0;
+      cursor: pointer;
+    }
+    #cat-list button.on {
+      border-color: rgb(220, 36, 36);
+    }
+    #cat-list canvas {
+      display: block;
+      width: 120px;
+      height: 90px;
+      pointer-events: none;
+      background: transparent;
+    }
+    #cat-list .sub {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-left: 16px;
+    }
+    #cat-list .sub[hidden] {
+      display: none;
     }
   </style>
 </head>
 <body>
-  <canvas id="view"></canvas>
-  <p id="speed">0 km/h</p>
-  <script src="./game.js"></script>
+  <div id="pick">
+    <p>화면을 고르세요</p>
+    <div id="pick-row">
+      <button type="button" data-screen="pad">패드</button>
+      <button type="button" data-screen="phone">폰</button>
+      <button type="button" data-screen="pc">PC</button>
+    </div>
+  </div>
+  <div id="screen">
+    <canvas id="view"></canvas>
+    <div id="cross"></div>
+    <p id="hud">클릭해서 조종</p>
+    <div id="cats" hidden>
+      <div id="cat-list"></div>
+    </div>
+    <div id="fuel-dock">
+      <div id="fuel"><div id="fuel-fill"></div></div>
+      <canvas id="preview"></canvas>
+    </div>
+    <p id="ver">v1.1.0</p>
+    <button type="button" id="fire" hidden>발사</button>
+  </div>
+  <script src="./game.js?v=117"></script>
 </body>
 </html>
