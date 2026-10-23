@@ -7,6 +7,10 @@
   const preview = document.getElementById("preview");
   const cats = document.getElementById("cats");
   const catList = document.getElementById("cat-list");
+  const shopEl = document.getElementById("shop");
+  const shopMoney = document.getElementById("shop-money");
+  const shopRockets = document.getElementById("shop-rockets");
+  const shopUps = document.getElementById("shop-ups");
   const previewCtx = preview.getContext("2d", { alpha: true });
   const ctx = canvas.getContext("2d", { alpha: false });
   let aimYaw = 0;
@@ -38,6 +42,7 @@
   let vz = 0;
   let rightHeld = false;
   function pressRight(e) {
+    if (e && e.target && e.target.closest && e.target.closest("#shop")) return;
     unlockAudio();
     rightHeld = true;
     if (e && e.preventDefault) e.preventDefault();
@@ -91,6 +96,36 @@
     flame: 1,
     speed: 1,
     fuel: 1,
+    mass: 1,
+  };
+  const violetShip = {
+    id: "violet",
+    name: "보라",
+    body: [68, 26, 112],
+    nose: [16, 14, 18],
+    fin: [16, 14, 18],
+    fat: 1,
+    len: 1,
+    wing: 1,
+    flame: 1,
+    speed: 1,
+    fuel: 0.85,
+    mass: 1,
+    noseMul: 1.85,
+    noseSharp: 0.3,
+  };
+  const bandShip = {
+    id: "band",
+    name: "파랑",
+    body: [42, 108, 230],
+    nose: [42, 108, 230],
+    fin: [42, 108, 230],
+    fat: 1,
+    len: 1,
+    wing: 1,
+    flame: 1,
+    speed: 1,
+    fuel: 1.2,
     mass: 1,
   };
   const rocketCats = [
@@ -487,6 +522,107 @@
     [-0.06, 0.4, -1.45, 0.06, 1.05, -0.25],
     [-0.06, -1.05, -1.45, 0.06, -0.4, -0.25],
   ];
+  let finTris = [];
+  let wingBits = [];
+  let wingSkill = 0;
+  let wingDone = false;
+  let noBoost = false;
+  let violetOn = false;
+  let violetMix = 0;
+  let viewTan = 2.2;
+  let flameScaleNow = 1;
+  let basicFov = 0;
+  let dashMul = 0;
+  let dashBase = 0;
+  let dashKick = 0;
+  let dashDX = 0;
+  let dashDY = 1;
+  let dashDZ = 0;
+  let violetEnergy = 1;
+  const violetEnergySec = 10;
+  let basicCool = 0;
+  const basicCoolSec = 2;
+
+  function dashEnv(u) {
+    const open = 1.7 / 2.7;
+    const t = u < open ? u / open : Math.max(0, (1 - u) / (1 - open));
+    return t * t * (3 - 2 * t);
+  }
+  let speedMix = 1;
+
+  function triFinT(lx, ly, lz, ldx, ldy, ldz, tri, far) {
+    const limit = far || 40;
+    let tEnter = 0.05;
+    let tExit = limit;
+    const thick = tri[1];
+    let oFlat;
+    let dFlat;
+    let oA;
+    let dA;
+    let oB;
+    let dB;
+    if (tri[0] === 0) {
+      oFlat = lx;
+      dFlat = ldx;
+      oA = ly;
+      dA = ldy;
+      oB = lz;
+      dB = ldz;
+    } else {
+      oFlat = ly;
+      dFlat = ldy;
+      oA = lx;
+      dA = ldx;
+      oB = lz;
+      dB = ldz;
+    }
+    if (Math.abs(dFlat) < 1e-8) {
+      if (oFlat < -thick || oFlat > thick) return -1;
+    } else {
+      let a = (-thick - oFlat) / dFlat;
+      let b = (thick - oFlat) / dFlat;
+      if (a > b) {
+        const swap = a;
+        a = b;
+        b = swap;
+      }
+      if (a > tEnter) tEnter = a;
+      if (b < tExit) tExit = b;
+      if (tEnter > tExit) return -1;
+    }
+    const poly = [
+      [tri[2], tri[3]],
+      [tri[4], tri[5]],
+      [tri[6], tri[7]],
+    ];
+    for (let i = 0; i < 3; i += 1) {
+      const x0 = poly[i][0];
+      const z0 = poly[i][1];
+      const x1 = poly[(i + 1) % 3][0];
+      const z1 = poly[(i + 1) % 3][1];
+      const x2 = poly[(i + 2) % 3][0];
+      const z2 = poly[(i + 2) % 3][1];
+      let nx = z0 - z1;
+      let nz = x1 - x0;
+      if (nx * (x2 - x0) + nz * (z2 - z0) < 0) {
+        nx = -nx;
+        nz = -nz;
+      }
+      const s0 = nx * (oA - x0) + nz * (oB - z0);
+      const sd = nx * dA + nz * dB;
+      if (Math.abs(sd) < 1e-8) {
+        if (s0 < -1e-5) return -1;
+        continue;
+      }
+      const t = -s0 / sd;
+      if (sd > 0) {
+        if (t > tEnter) tEnter = t;
+      } else if (t < tExit) tExit = t;
+      if (tEnter > tExit) return -1;
+    }
+    if (tEnter <= tExit && tEnter >= 0.05 && tEnter < limit) return tEnter;
+    return -1;
+  }
 
   function rocketHit(ox, oy, oz, dx, dy, dz, ax) {
     const lx = (ox - meshX) * ax.rx + (oy - meshY) * ax.ry + (oz - meshZ) * ax.rz;
@@ -514,10 +650,13 @@
       lx * lx + ly * ly - noseK2 * (lz - noseTip) * (lz - noseTip)
     );
     if (cone > 0.05 && cone < best) {
-      const hz = lz + ldz * cone;
-      if (hz >= bodyFront && hz <= noseTip) {
+      const cz = lz + ldz * cone;
+      if (cz >= bodyFront && cz <= noseTip) {
         best = cone;
         kind = 2;
+        hx = lx + ldx * cone;
+        hy = ly + ldy * cone;
+        hz = cz;
       }
     }
     if (flaming) {
@@ -534,12 +673,21 @@
         }
       }
     }
-    for (let i = 0; i < 4; i += 1) {
-      const f = fins[i];
-      const hit = boxT(lx, ly, lz, ldx, ldy, ldz, f[0], f[1], f[2], f[3], f[4], f[5]);
-      if (hit > 0.05 && hit < best) {
-        best = hit;
-        kind = 4;
+    if (!(rocketId === "band" && (wingSkill > 0 || wingDone))) {
+      for (let i = 0; i < fins.length; i += 1) {
+        const f = fins[i];
+        const hit = boxT(lx, ly, lz, ldx, ldy, ldz, f[0], f[1], f[2], f[3], f[4], f[5]);
+        if (hit > 0.05 && hit < best) {
+          best = hit;
+          kind = 4;
+        }
+      }
+      for (let i = 0; i < finTris.length; i += 1) {
+        const hit = triFinT(lx, ly, lz, ldx, ldy, ldz, finTris[i], 40);
+        if (hit > 0.05 && hit < best) {
+          best = hit;
+          kind = 4;
+        }
       }
     }
     if (Math.abs(ldz) > 1e-8) {
@@ -578,9 +726,10 @@
       return;
     }
     if (hit.kind === 3) {
-      cR = 255;
-      cG = 148;
-      cB = 42;
+      const m = rocketId === "violet" ? violetMix : 0;
+      cR = 255 + (140 - 255) * m;
+      cG = 148 + (245 - 148) * m;
+      cB = 42 + (206 - 42) * m;
       return;
     }
     if (hit.kind === 1) {
@@ -597,12 +746,31 @@
           return;
         }
       }
+      if (rocketId === "band") {
+        const span = bodyFront - bodyBack || 1;
+        const band = span * 0.2;
+        if (hit.hz >= bodyFront - band || hit.hz <= bodyBack + band) {
+          cR = 18;
+          cG = 18;
+          cB = 20;
+          return;
+        }
+      }
       cR = bodyColor[0];
       cG = bodyColor[1];
       cB = bodyColor[2];
       return;
     }
     if (hit.kind === 2) {
+      if (rocketId === "violet") {
+        const span = noseTip - bodyFront || 1;
+        if ((hit.hz - bodyFront) / span < 0.38) {
+          cR = 78;
+          cG = 36;
+          cB = 120;
+          return;
+        }
+      }
       cR = noseColor[0];
       cG = noseColor[1];
       cB = noseColor[2];
@@ -626,14 +794,14 @@
     if (gameOver) {
       hud.textContent = "스폰 파괴  ·  패배  ·  부활 불가  ·  " + cash;
       fuelFill.style.transform = "scaleY(" + Math.max(0, fuel) + ")";
-      cats.hidden = true;
+      syncShopPanel();
       return;
     }
     if (won) {
       hud.textContent = "승리  ·  연료 무한  ·  " + cash;
       fuelFill.style.transform = "scaleY(1)";
       fuelFill.style.background = rainbowCss((winClock * 140) % 360);
-      cats.hidden = !(onRail && !railLocked);
+      syncShopPanel();
       return;
     }
     const speed = Math.hypot(vx, vy, vz);
@@ -644,7 +812,14 @@
     hud.textContent = room + place + "속도 " + Math.round(speed) + "  ·  " + cash + "  ·  나와 적은 다른 팀" + lock;
     fuelFill.style.transform = "scaleY(" + Math.max(0, fuel) + ")";
     fuelFill.style.background = "rgb(" + bodyColor[0] + "," + bodyColor[1] + "," + bodyColor[2] + ")";
-    cats.hidden = !(onRail && !railLocked);
+    syncShopPanel();
+  }
+
+  function syncShopPanel() {
+    const open = onRail && !railLocked && !gameOver;
+    cats.hidden = true;
+    shopEl.hidden = !open;
+    if (open) refreshShopState();
   }
 
   function checkWin() {
@@ -659,11 +834,13 @@
   function shipById(id) {
     if (id === "heavy") return heavyShip;
     if (id === "firework") return fireworkShip;
+    if (id === "band") return bandShip;
+    if (id === "violet") return violetShip;
     return basicShip;
   }
 
   function randomShip() {
-    const kinds = [basicShip, heavyShip, fireworkShip];
+    const kinds = [basicShip, heavyShip, fireworkShip, bandShip, violetShip];
     return kinds[(Math.random() * kinds.length) | 0];
   }
 
@@ -724,6 +901,21 @@
   let winClock = 0;
   let money = 0;
   let moneyTick = 0;
+  let flyMoney = 0;
+  let speedLv = 0;
+  let fuelLv = 0;
+  const ownedRockets = { basic: true };
+  const shopPrice = { basic: 0, heavy: 0, firework: 0, band: 0, violet: 0 };
+  const upMax = 5;
+
+  function upPrice() {
+    return 0;
+  }
+
+  function randomOwnedShip() {
+    const kinds = [basicShip, heavyShip, fireworkShip, bandShip, violetShip].filter((spec) => ownedRockets[spec.id]);
+    return kinds[(Math.random() * kinds.length) | 0] || basicShip;
+  }
 
   function addMoney(n) {
     if (n <= 0) return;
@@ -756,6 +948,21 @@
     laserX = x + aim[0] * 18;
     laserY = y + aim[1] * 18;
     laserZ = z + aim[2] * 18;
+    wingBits = [];
+    wingSkill = 0;
+    wingDone = false;
+    noBoost = false;
+    violetOn = false;
+    violetMix = 0;
+    flameScaleNow = 1;
+    viewTan = 2.2;
+    basicFov = 0;
+    dashMul = 0;
+    dashBase = 0;
+    dashKick = 0;
+    violetEnergy = 1;
+    basicCool = 0;
+    speedMix = 1;
     onRail = true;
     railLocked = false;
     railDist = 0;
@@ -764,7 +971,7 @@
     boomWait = 0;
     downTime = 0;
     gameOver = false;
-    pickRocket(randomShip());
+    pickRocket(randomOwnedShip());
     if (typeof paintCats === "function") paintCats();
   }
 
@@ -786,9 +993,25 @@
     engineOff();
   }
 
+  function bandLockDeath() {
+    if (rocketId !== "band" || (wingSkill <= 0 && !wingDone)) return;
+    if (downTime > 0 || gameOver) return;
+    downPlayer();
+  }
+
   const sparks = [];
   const pops = [];
   const sparkYellow = [245, 208, 40];
+  const fireworkColors = [
+    [255, 70, 70],
+    [255, 168, 42],
+    [255, 236, 74],
+    [86, 255, 96],
+    [72, 220, 255],
+    [96, 128, 255],
+    [214, 96, 255],
+    [255, 255, 255],
+  ];
   let dying = false;
   let boomWait = 0;
   let boomClock = 0;
@@ -797,11 +1020,89 @@
   let engineGain = null;
   let crack = 0;
 
+  let music = null;
+
+  function musicLayer(freq, type, detune, master) {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = type;
+    osc.frequency.value = freq;
+    osc.detune.value = detune;
+    gain.gain.value = 0;
+    osc.connect(gain);
+    gain.connect(master);
+    osc.start();
+    return gain;
+  }
+
+  function musicStart() {
+    if (!audioCtx || music) return;
+    const master = audioCtx.createGain();
+    master.gain.value = 0.62;
+    const filter = audioCtx.createBiquadFilter();
+    filter.type = "lowpass";
+    filter.frequency.value = 880;
+    filter.Q.value = 0.35;
+    master.connect(filter);
+    filter.connect(audioCtx.destination);
+    music = {
+      filter: filter,
+      bed: [
+        musicLayer(110, "sine", -7, master),
+        musicLayer(110, "sine", 8, master),
+        musicLayer(164.81, "sine", 0, master),
+      ],
+      fly: [
+        musicLayer(220, "triangle", -5, master),
+        musicLayer(329.63, "sine", 4, master),
+      ],
+      drive: [
+        musicLayer(55, "sine", 0, master),
+        musicLayer(82.41, "triangle", -3, master),
+      ],
+      lift: [
+        musicLayer(440, "sine", 3, master),
+        musicLayer(523.25, "sine", -4, master),
+      ],
+      bedG: 0,
+      flyG: 0,
+      driveG: 0,
+      liftG: 0,
+    };
+  }
+
+  function musicToward(cur, target, dt) {
+    return cur + (target - cur) * (1 - Math.exp(-dt * 1.15));
+  }
+
+  function musicStep(dt, state) {
+    if (!music || !audioCtx) return;
+    const bedT = state.dead ? 0 : state.calm ? 0.028 : 0.046;
+    const flyT = state.dead ? 0 : state.flying ? 0.04 : 0.01;
+    const driveT = state.dead || state.glide ? 0 : state.thrusting ? 0.055 : 0;
+    const liftT = state.dead ? 0 : state.won ? 0.05 : state.lift ? 0.038 : 0;
+    music.bedG = musicToward(music.bedG, bedT, dt);
+    music.flyG = musicToward(music.flyG, flyT, dt);
+    music.driveG = musicToward(music.driveG, driveT, dt);
+    music.liftG = musicToward(music.liftG, liftT, dt);
+    const now = audioCtx.currentTime;
+    const setG = (nodes, value) => {
+      for (let i = 0; i < nodes.length; i += 1) nodes[i].gain.setTargetAtTime(value, now, 0.12);
+    };
+    setG(music.bed, music.bedG);
+    setG(music.fly, music.flyG);
+    setG(music.drive, music.driveG);
+    setG(music.lift, music.liftG);
+    const open = state.dead ? 360 : state.thrusting ? 1680 : state.lift ? 1320 : state.flying ? 980 : 640;
+    music.filter.frequency.setTargetAtTime(open, now, 0.28);
+  }
+
   function unlockAudio() {
     const Ctx = window.AudioContext || window.webkitAudioContext;
     if (!Ctx) return;
     if (!audioCtx) audioCtx = new Ctx();
     if (audioCtx.state === "suspended") audioCtx.resume();
+    musicStart();
   }
 
   function playTone(freq, dur, type, vol, slide) {
@@ -889,13 +1190,6 @@
     engineGain = null;
   }
 
-  function armBoom() {
-    if (rocketId !== "firework" || boomWait > 0 || dying) return;
-    boomWait = 2;
-    boomClock = 0;
-    playFuse();
-  }
-
   function boomRed() {
     return boomWait > 0 && Math.floor(boomClock / 0.5) % 2 === 0;
   }
@@ -933,8 +1227,37 @@
       life: 0.45 + Math.random() * 0.4,
       max: 0.85,
       color: sparkYellow,
+      grav: 9,
     });
-    if (sparks.length > 420) sparks.splice(0, sparks.length - 420);
+    if (sparks.length > 1100) sparks.splice(0, sparks.length - 1100);
+  }
+
+  function fireworkBurst(ox, oy, oz) {
+    const n = 480;
+    for (let i = 0; i < n; i += 1) {
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.acos(2 * Math.random() - 1);
+      const dx = Math.sin(phi) * Math.cos(theta);
+      const dy = Math.cos(phi);
+      const dz = Math.sin(phi) * Math.sin(theta);
+      const speed = 13 + Math.random() * 9;
+      const life = 1.15 + Math.random() * 0.45;
+      const color = fireworkColors[(Math.random() * fireworkColors.length) | 0];
+      sparks.push({
+        x: ox,
+        y: oy,
+        z: oz,
+        vx: dx * speed,
+        vy: dy * speed,
+        vz: dz * speed,
+        life: life,
+        max: life,
+        color: color,
+        grav: 1.4,
+        px: 2,
+      });
+    }
+    if (sparks.length > 1100) sparks.splice(0, sparks.length - 1100);
   }
 
   function burstAt(ox, oy, oz, n) {
@@ -949,8 +1272,41 @@
     if (dying) return;
     dying = true;
     playBoom();
-    burstAt(x, y, z, 40);
+    fireworkBurst(x, y, z);
     downPlayer(true);
+  }
+
+  function buildFins(spec) {
+    const fat = spec.fat;
+    const len = spec.len;
+    const inner = 0.4 * fat;
+    const outer = inner + 0.65 * spec.wing;
+    const thick = 0.06 * fat;
+    const z0 = -1.45 * len;
+    const z1 = -0.25 * len;
+    const fins = [
+      [inner, -thick, z0, outer, thick, z1],
+      [-outer, -thick, z0, -inner, thick, z1],
+      [-thick, inner, z0, thick, outer, z1],
+      [-thick, -outer, z0, thick, -inner, z1],
+    ];
+    let wingOut = outer;
+    const tris = [];
+    if (spec.id === "violet") {
+      wingOut = inner + 1.25;
+      return {
+        fins: [],
+        tris: [
+          [1, 0.07, inner, -1.5, wingOut, -1.15, inner + 0.08, 0.55],
+          [1, 0.07, -inner, -1.5, -wingOut, -1.15, -(inner + 0.08), 0.55],
+          [0, 0.06, inner, -1.45, inner + 0.7, -1.1, inner + 0.06, -0.15],
+          [0, 0.06, -inner, -1.45, -(inner + 0.85), -1.05, -(inner + 0.06), 0.2],
+        ],
+        wingOut: wingOut,
+        wingZ: -1.15,
+      };
+    }
+    return { fins: fins, tris: tris, wingOut: wingOut, wingZ: (z0 + z1) * 0.5 };
   }
 
   function makeLook(spec) {
@@ -959,19 +1315,15 @@
     const bodyR2 = 0.46 * fat * (0.46 * fat);
     const bodyBack = -1.55 * len;
     const bodyFront = 1.25 * len;
-    const noseTip = bodyFront + 1.2 * len;
-    const noseK = 0.48 * fat / len;
+    const noseTip = bodyFront + 1.2 * len * (spec.noseMul || 1);
+    const noseK = (spec.noseSharp == null ? 0.48 : spec.noseSharp) * fat / len;
     const noseK2 = noseK * noseK;
     const frontR2 = 0.58 * fat * (0.58 * fat);
     const flameLen = 1.15 * 1.5 * spec.flame;
     const flameRoot = 0.253 * spec.flame;
     const flameK = flameRoot / flameLen;
     const hole = 0.26 * spec.flame;
-    const inner = 0.4 * fat;
-    const outer = inner + 0.65 * spec.wing;
-    const thick = 0.06 * fat;
-    const z0 = -1.45 * len;
-    const z1 = -0.25 * len;
+    const built = buildFins(spec);
     return {
       spec: spec,
       bodyR2: bodyR2,
@@ -985,12 +1337,8 @@
       flameHole2: hole * hole,
       spiral: spec.id === "firework",
       showFlame: spec.id !== "firework",
-      fins: [
-        [inner, -thick, z0, outer, thick, z1],
-        [-outer, -thick, z0, -inner, thick, z1],
-        [-thick, inner, z0, thick, outer, z1],
-        [-thick, -outer, z0, thick, -inner, z1],
-      ],
+      fins: built.fins,
+      tris: built.tris,
     };
   }
 
@@ -1045,10 +1393,7 @@
     fuel = Math.max(0, fuel - amount / 100);
     hurt = 0.55;
     playHit();
-    if (fuel <= 0 && boomWait <= 0) {
-      if (rocketId === "firework") armBoom();
-      else downPlayer();
-    }
+    if (fuel <= 0 && boomWait <= 0) downPlayer();
     return true;
   }
 
@@ -1200,7 +1545,6 @@
           popText(foe.x, foe.y + 2, foe.z, "때림 " + dealt, "#ffe14a");
         }
       }
-      if (rocketId === "firework" && pSpeed > 20) armBoom();
       harm(ramDamage(fSpeed));
       if (!foesOn || dying) return;
       if (foe.fuel <= 0 && foe.boom <= 0 && !armFoeBoom(foe)) {
@@ -1264,6 +1608,9 @@
       if (cz >= g.bodyFront && cz <= g.noseTip) {
         best = cone;
         kind = 2;
+        hx = lx + ldx * cone;
+        hy = ly + ldy * cone;
+        hz = cz;
       }
     }
     if (g.showFlame) {
@@ -1281,9 +1628,17 @@
       }
     }
     const fins = g.fins;
-    for (let i = 0; i < 4; i += 1) {
+    for (let i = 0; i < fins.length; i += 1) {
       const f = fins[i];
       const hit = boxT(lx, ly, lz, ldx, ldy, ldz, f[0], f[1], f[2], f[3], f[4], f[5], 160);
+      if (hit > 0.05 && hit < best) {
+        best = hit;
+        kind = 4;
+      }
+    }
+    const tris = g.tris || [];
+    for (let i = 0; i < tris.length; i += 1) {
+      const hit = triFinT(lx, ly, lz, ldx, ldy, ldz, tris[i], 160);
       if (hit > 0.05 && hit < best) {
         best = hit;
         kind = 4;
@@ -1305,9 +1660,20 @@
         if (w > Math.PI) w -= Math.PI * 2;
         if (Math.abs(w) < 0.42) return [16, 96, 42];
       }
+      if (look.spec.id === "band") {
+        const span = look.bodyFront - look.bodyBack || 1;
+        const band = span * 0.2;
+        if (hit.hz >= look.bodyFront - band || hit.hz <= look.bodyBack + band) return [18, 18, 20];
+      }
       return look.spec.body;
     }
-    if (hit.kind === 2) return look.spec.nose;
+    if (hit.kind === 2) {
+      if (look.spec.id === "violet") {
+        const span = look.noseTip - look.bodyFront || 1;
+        if ((hit.hz - look.bodyFront) / span < 0.38) return [78, 36, 120];
+      }
+      return look.spec.nose;
+    }
     return look.spec.fin;
   }
 
@@ -1558,7 +1924,6 @@
         const dy = y - pad.y;
         const dz = z - pad.z;
         if (dx * dx + dy * dy + dz * dz >= reach2) continue;
-        if (rocketId === "firework" && speed > 20) armBoom();
         hurtPad(pad, ramDamage(speed));
       }
     }
@@ -1637,9 +2002,130 @@
       const a = Math.max(0, s.life / s.max);
       const c = s.color;
       ctx.fillStyle = "rgba(" + c[0] + "," + c[1] + "," + c[2] + "," + a + ")";
-      const sz = a > 0.45 ? 2 : 1;
+      const sz = s.px || (a > 0.45 ? 2 : 1);
       ctx.fillRect(Math.floor(p[0]), Math.floor(p[1]), sz, sz);
     }
+  }
+
+  function spinPoint(p, axis, ang) {
+    const c = Math.cos(ang);
+    const s = Math.sin(ang);
+    const oc = 1 - c;
+    const x = p[0];
+    const y = p[1];
+    const z = p[2];
+    const ax = axis[0];
+    const ay = axis[1];
+    const az = axis[2];
+    return [
+      (c + ax * ax * oc) * x + (ax * ay * oc - az * s) * y + (ax * az * oc + ay * s) * z,
+      (ay * ax * oc + az * s) * x + (c + ay * ay * oc) * y + (ay * az * oc - ax * s) * z,
+      (az * ax * oc - ay * s) * x + (az * ay * oc + ax * s) * y + (c + az * az * oc) * z,
+    ];
+  }
+
+  function startBandSkill() {
+    if (wingSkill > 0 || wingDone) return;
+    unlockAudio();
+    noBoost = true;
+    boost = 0;
+    const b = axes(yaw, pitch);
+    wingBits = [];
+    for (let i = 0; i < fins.length; i += 1) {
+      const f = fins[i];
+      const lx = (f[0] + f[3]) * 0.5;
+      const ly = (f[1] + f[4]) * 0.5;
+      const lz = (f[2] + f[5]) * 0.5;
+      const hx = Math.abs(f[3] - f[0]) * 0.5;
+      const hy = Math.abs(f[4] - f[1]) * 0.5;
+      const hz = Math.abs(f[5] - f[2]) * 0.5;
+      let corners;
+      if (hy <= hx && hy <= hz) corners = [[-hx, 0, -hz], [hx, 0, -hz], [hx, 0, hz], [-hx, 0, hz]];
+      else if (hx <= hy && hx <= hz) corners = [[0, -hy, -hz], [0, hy, -hz], [0, hy, hz], [0, -hy, hz]];
+      else corners = [[-hx, -hy, 0], [hx, -hy, 0], [hx, hy, 0], [-hx, hy, 0]];
+      let ox = b.rx * lx + b.ux * ly + b.fx * lz;
+      let oy = b.ry * lx + b.uy * ly + b.fy * lz;
+      let oz = b.rz * lx + b.uz * ly + b.fz * lz;
+      const ol = Math.hypot(ox, oy, oz) || 1;
+      ox /= ol;
+      oy /= ol;
+      oz /= ol;
+      wingBits.push({
+        x: x + b.rx * lx + b.ux * ly + b.fx * lz,
+        y: y + b.ry * lx + b.uy * ly + b.fy * lz,
+        z: z + b.rz * lx + b.uz * ly + b.fz * lz,
+        vx: ox * 8 + vx * 0.2,
+        vy: oy * 8 - 3 + vy * 0.2,
+        vz: oz * 8 + vz * 0.2,
+        axis: [ox, oy, oz],
+        ang: 0,
+        spin: (i % 2 === 0 ? 2.4 : -2.4),
+        age: 0,
+        corners: corners,
+      });
+    }
+    wingSkill = 0.001;
+    syncSkill();
+  }
+
+  function stepWingSkill(dt) {
+    if (wingSkill <= 0) return;
+    wingSkill += dt;
+    for (let i = wingBits.length - 1; i >= 0; i -= 1) {
+      const bit = wingBits[i];
+      bit.age += dt;
+      bit.vy -= 16 * dt;
+      bit.x += bit.vx * dt;
+      bit.y += bit.vy * dt;
+      bit.z += bit.vz * dt;
+      bit.ang += bit.spin * dt;
+      if (bit.age >= 3) wingBits.splice(i, 1);
+    }
+    if (wingSkill >= 3 && !wingDone) {
+      wingDone = true;
+      noBoost = true;
+      if (downTime <= 0 && !gameOver) {
+        vx *= 2;
+        vy *= 2;
+        vz *= 2;
+      }
+      wingBits = [];
+      syncSkill();
+    }
+  }
+
+  function drawWingBits() {
+    ctx.globalAlpha = 1;
+    for (let i = 0; i < wingBits.length; i += 1) {
+      const bit = wingBits[i];
+      let alpha = 1;
+      if (bit.age > 2) alpha = Math.max(0, 1 - (bit.age - 2));
+      if (alpha <= 0) continue;
+      const spread = 1 + Math.min(1, bit.age / 2) * 0.85;
+      const pts = [];
+      let visible = true;
+      for (let k = 0; k < bit.corners.length; k += 1) {
+        const c = bit.corners[k];
+        const spun = spinPoint([c[0] * spread, c[1] * spread, c[2] * spread], bit.axis, bit.ang);
+        const p = projectShot(bit.x + spun[0], bit.y + spun[1], bit.z + spun[2]);
+        if (!p) {
+          visible = false;
+          break;
+        }
+        pts.push(p);
+      }
+      if (!visible) continue;
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = "rgb(42,108,230)";
+      ctx.beginPath();
+      ctx.moveTo(pts[0][0], pts[0][1]);
+      ctx.lineTo(pts[1][0], pts[1][1]);
+      ctx.lineTo(pts[2][0], pts[2][1]);
+      ctx.lineTo(pts[3][0], pts[3][1]);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
   }
 
   function applyShip(spec) {
@@ -1651,42 +2137,78 @@
     bodyR2 = 0.46 * fat * (0.46 * fat);
     bodyBack = -1.55 * len;
     bodyFront = 1.25 * len;
-    noseTip = bodyFront + 1.2 * len;
-    const noseK = 0.48 * fat / len;
+    noseTip = bodyFront + 1.2 * len * (spec.noseMul || 1);
+    const noseK = (spec.noseSharp == null ? 0.48 : spec.noseSharp) * fat / len;
     noseK2 = noseK * noseK;
     frontR2 = 0.58 * fat * (0.58 * fat);
     flameMul = spec.flame;
     flameRoot = 0.253 * flameMul;
     const hole = 0.26 * flameMul;
     flameHole2 = hole * hole;
-    const inner = 0.4 * fat;
-    const outer = inner + 0.65 * spec.wing;
-    const thick = 0.06 * fat;
-    const z0 = -1.45 * len;
-    const z1 = -0.25 * len;
-    fins = [
-      [inner, -thick, z0, outer, thick, z1],
-      [-outer, -thick, z0, -inner, thick, z1],
-      [-thick, inner, z0, thick, outer, z1],
-      [-thick, -outer, z0, thick, -inner, z1],
-    ];
-    wingOut = outer;
-    wingZ = (z0 + z1) * 0.5;
-    speedMul = spec.speed;
-    fuelSec = 30 * spec.fuel;
+    const built = buildFins(spec);
+    fins = built.fins;
+    finTris = built.tris;
+    wingOut = built.wingOut;
+    wingZ = built.wingZ;
+    speedMul = spec.speed * (1 + speedLv * 0.12);
+    fuelSec = 30 * spec.fuel * (1 + fuelLv * 0.2);
+    if (fuelFill.parentElement) fuelFill.parentElement.style.height = Math.round(220 * spec.fuel) + "px";
     mass = spec.mass;
     shipFat = fat;
     shipWing = spec.wing;
     fuelFill.style.background = "rgb(" + bodyColor[0] + "," + bodyColor[1] + "," + bodyColor[2] + ")";
   }
 
+  const skillEl = document.getElementById("skill");
+  const skillCoolEl = document.getElementById("skill-cool");
+  const skillCoolFill = document.getElementById("skill-cool-fill");
+  function drawSkillMark() {
+    const mark = document.getElementById("skill-mark");
+    if (!mark) return;
+    const g = mark.getContext("2d");
+    g.imageSmoothingEnabled = false;
+    g.clearRect(0, 0, 16, 20);
+    g.fillStyle = "#f2f2f4";
+    const rows = ["11111", "10000", "10000", "11110", "10000", "10000", "11111"];
+    for (let y = 0; y < rows.length; y += 1) {
+      for (let x = 0; x < 5; x += 1) {
+        if (rows[y][x] === "1") g.fillRect(3 + x * 2, 3 + y * 2, 2, 2);
+      }
+    }
+  }
+  function paintSkillCool() {
+    if (!skillCoolFill || skillCoolFill.tagName !== "CANVAS") return;
+    const g = skillCoolFill.getContext("2d");
+    g.imageSmoothingEnabled = false;
+    g.fillStyle = "#3c3c42";
+    g.fillRect(0, 0, 34, 4);
+    let ratio = 0;
+    if (rocketId === "violet") ratio = violetEnergy;
+    else if (rocketId === "basic") ratio = 1 - basicCool / basicCoolSec;
+    const n = Math.round(34 * Math.max(0, Math.min(1, ratio)));
+    if (n > 0) {
+      g.fillStyle = "#ffffff";
+      g.fillRect(0, 0, n, 4);
+    }
+  }
+  function syncSkill() {
+    if (!skillEl) return;
+    const bandReady = rocketId === "band" && wingSkill <= 0 && !wingDone;
+    const violetReady = rocketId === "violet";
+    const basicReady = rocketId === "basic";
+    skillEl.hidden = rocketId !== "firework" && !bandReady && !violetReady && !basicReady;
+    if (skillCoolEl) skillCoolEl.hidden = rocketId !== "violet" && rocketId !== "basic";
+    paintSkillCool();
+  }
+
   function pickRocket(spec) {
     rocketId = spec.id;
     applyShip(spec);
     if (onRail && !railLocked) fuel = 1;
+    syncSkill();
   }
 
-  function paintRocketCanvas(pctx, gw, gh) {
+  function paintRocketCanvas(pctx, gw, gh, view) {
     if (pctx.canvas.width !== gw) {
       pctx.canvas.width = gw;
       pctx.canvas.height = gh;
@@ -1706,7 +2228,7 @@
     const cx = -look.fx * dist;
     const cy = -look.fy * dist;
     const cz = -look.fz * dist;
-    const tan = 0.72;
+    const tan = 0.72 * (view || 1);
     const aspect = gw / gh;
     for (let sy = 0; sy < gh; sy += 1) {
       const ndcY = 1 - ((sy + 0.5) / gh) * 2;
@@ -1788,14 +2310,141 @@
     });
   }
 
+  function refreshShopState() {
+    shopMoney.textContent = money + "원";
+    shopRockets.querySelectorAll(".shop-row").forEach((btn) => {
+      const id = btn.dataset.id;
+      const priceEl = btn.querySelector(".price");
+      const owned = !!ownedRockets[id];
+      const price = shopPrice[id];
+      if (owned) {
+        priceEl.textContent = "보유";
+        btn.classList.remove("poor");
+      } else {
+        priceEl.textContent = price + "원";
+        btn.classList.toggle("poor", money < price);
+      }
+      btn.classList.toggle("on", rocketId === id);
+    });
+    shopUps.querySelectorAll(".shop-row").forEach((btn) => {
+      const id = btn.dataset.id;
+      const lv = id === "speed" ? speedLv : fuelLv;
+      const priceEl = btn.querySelector(".price");
+      const lvEl = btn.querySelector(".lv");
+      lvEl.textContent = lv + "/" + upMax;
+      if (lv >= upMax) {
+        priceEl.textContent = "최대";
+        btn.classList.add("poor");
+      } else {
+        const price = upPrice(lv);
+        priceEl.textContent = price + "원";
+        btn.classList.toggle("poor", money < price);
+      }
+    });
+  }
+
+  function buyRocket(spec) {
+    if (!onRail || railLocked || gameOver) return;
+    if (ownedRockets[spec.id]) {
+      unlockAudio();
+      playClick();
+      pickRocket(spec);
+      refreshShopState();
+      return;
+    }
+    const price = shopPrice[spec.id];
+    if (money < price) return;
+    money -= price;
+    ownedRockets[spec.id] = true;
+    unlockAudio();
+    playClick();
+    pickRocket(spec);
+    refreshShopState();
+  }
+
+  function buyUpgrade(id) {
+    if (!onRail || railLocked || gameOver) return;
+    const lv = id === "speed" ? speedLv : fuelLv;
+    if (lv >= upMax) return;
+    const price = upPrice(lv);
+    if (money < price) return;
+    money -= price;
+    if (id === "speed") speedLv += 1;
+    else fuelLv += 1;
+    unlockAudio();
+    playClick();
+    applyShip(shipById(rocketId));
+    refreshShopState();
+  }
+
+  function paintShop() {
+    shopRockets.textContent = "";
+    shopUps.textContent = "";
+    [basicShip, heavyShip, fireworkShip, bandShip, violetShip].forEach((spec) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "shop-row";
+      btn.dataset.id = spec.id;
+      const pic = document.createElement("canvas");
+      const meta = document.createElement("span");
+      meta.className = "meta";
+      const name = document.createElement("span");
+      name.textContent = spec.name;
+      const price = document.createElement("span");
+      price.className = "price";
+      meta.appendChild(name);
+      meta.appendChild(price);
+      btn.appendChild(pic);
+      btn.appendChild(meta);
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        buyRocket(spec);
+      });
+      shopRockets.appendChild(btn);
+      shotRocket(pic, spec);
+    });
+    [
+      { id: "speed", name: "속도" },
+      { id: "fuel", name: "연료" },
+    ].forEach((up) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "shop-row";
+      btn.dataset.id = up.id;
+      const meta = document.createElement("span");
+      meta.className = "meta";
+      const name = document.createElement("span");
+      name.textContent = up.name;
+      const lv = document.createElement("span");
+      lv.className = "lv";
+      const price = document.createElement("span");
+      price.className = "price";
+      meta.appendChild(name);
+      meta.appendChild(lv);
+      meta.appendChild(price);
+      btn.appendChild(meta);
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        buyUpgrade(up.id);
+      });
+      shopUps.appendChild(btn);
+    });
+    refreshShopState();
+  }
+
   applyShip(basicShip);
+  drawSkillMark();
+  syncSkill();
   paintCats();
+  paintShop();
 
   let previewTick = 0;
   function drawPreview() {
     previewTick += 1;
     if (previewTick % 3 !== 0) return;
-    paintRocketCanvas(previewCtx, 140, 160);
+    paintRocketCanvas(previewCtx, 378, 432, 2.7);
   }
 
   if (fireBtn) {
@@ -1825,7 +2474,7 @@
   }, true);
   window.addEventListener("mousedown", (e) => {
     if (e.button !== 0) return;
-    if (e.target.closest && (e.target.closest("#cats") || e.target.closest("#fire"))) return;
+    if (e.target.closest && (e.target.closest("#cats") || e.target.closest("#fire") || e.target.closest("#shop"))) return;
     if (document.pointerLockElement !== canvas) {
       canvas.requestPointerLock();
       return;
@@ -1834,6 +2483,7 @@
   });
   window.addEventListener("blur", () => {
     rightHeld = false;
+    skillHeld = false;
   });
   if (fireBtn) {
     fireBtn.addEventListener("pointerdown", (e) => {
@@ -1851,6 +2501,18 @@
     });
     fireBtn.addEventListener("contextmenu", (e) => e.preventDefault());
   }
+  let skillEdge = false;
+  let skillHeld = false;
+  document.addEventListener("keydown", (e) => {
+    if (e.code !== "KeyE") return;
+    skillHeld = true;
+    if (e.repeat) return;
+    skillEdge = true;
+  });
+  document.addEventListener("keyup", (e) => {
+    if (e.code !== "KeyE") return;
+    skillHeld = false;
+  });
   document.addEventListener("pointerlockchange", showHud);
   window.addEventListener("mousemove", (e) => {
     const locked = document.pointerLockElement === canvas;
@@ -1892,23 +2554,65 @@
         addMoney(25);
       }
     }
-    checkWin();
-    const infinite = (boomWait > 0 || won) && !dead;
-    const thrusting = !dead && rightHeld && (fuel > 0 || infinite);
-    flaming = thrusting && rocketId !== "firework";
-    if (!dead && thrusting && !onRail && !infinite) fuel = Math.max(0, fuel - dt / fuelSec);
-    if (!dead && !onRail && !infinite && fuel <= 0) {
-      if (rocketId === "firework") armBoom();
-      else downPlayer();
+    if (!dead && Math.hypot(vx, vy, vz) >= 1) {
+      flyMoney += dt * 2.5;
+      const gain = Math.floor(flyMoney);
+      if (gain > 0) {
+        flyMoney -= gain;
+        addMoney(gain);
+      }
     }
+    checkWin();
+    violetOn = skillHeld && rocketId === "violet" && violetEnergy > 0 && downTime <= 0 && !gameOver;
+    if (violetOn) violetEnergy = Math.max(0, violetEnergy - dt / violetEnergySec);
+    if (skillEdge && downTime <= 0 && !gameOver && rocketId === "band") startBandSkill();
+    if (basicCool > 0) basicCool = Math.max(0, basicCool - dt);
+    if (skillEdge && downTime <= 0 && !gameOver && rocketId === "basic" && basicFov <= 0 && basicCool <= 0) {
+      const sp = Math.hypot(vx, vy, vz);
+      const cap = Math.max(0.01, (20 + boost * 20) * speedMul);
+      dashBase = sp;
+      dashKick = Math.min(1, sp / cap);
+      if (sp > 0.001) {
+        dashDX = vx / sp;
+        dashDY = vy / sp;
+        dashDZ = vz / sp;
+      }
+      basicFov = 0.0001;
+      basicCool = basicCoolSec;
+    }
+    if (basicFov > 0) {
+      basicFov += dt;
+      if (basicFov >= 0.5) {
+        basicFov = 0;
+        dashMul = 0;
+      }
+    }
+    const infinite = (boomWait > 0 || won) && !dead;
+    const thrusting = !dead && !noBoost && (rightHeld || violetOn) && (fuel > 0 || infinite);
+    flaming = thrusting && rocketId !== "firework" && !(rocketId === "band" && (wingSkill > 0 || wingDone));
+    if (!dead && thrusting && !onRail && !infinite) {
+      const burn = violetOn && rocketId === "violet" ? 1.75 : 1;
+      fuel = Math.max(0, fuel - dt / fuelSec * burn);
+    }
+    if (!dead && !onRail && !infinite && fuel <= 0) downPlayer();
     if (thrusting) {
       engineOn();
       if (engine) engine.frequency.setTargetAtTime(58 + boost * 46, audioCtx.currentTime, 0.05);
     } else engineOff();
     boost += ((thrusting ? 1 : 0) - boost) * Math.min(1, dt * 7);
-    const flameLen = 1.15 * (1 + boost * 0.5) * flameMul;
+    if (rocketId === "band" && (wingSkill > 0 || wingDone)) boost = 0;
+    if (violetOn && !rightHeld) violetMix = 1;
+    else if (violetOn) violetMix = Math.min(1, violetMix + dt / 0.1);
+    else violetMix = Math.max(0, violetMix - dt / 0.1);
+    const speedTarget = violetOn ? 2 : 1;
+    if (speedMix < speedTarget) speedMix = Math.min(speedTarget, speedMix + dt / 0.1);
+    else if (speedMix > speedTarget) speedMix = Math.max(speedTarget, speedMix - dt / 0.1);
+    const flameTarget = violetOn && rocketId === "violet" ? 2 : 1;
+    flameScaleNow += (flameTarget - flameScaleNow) * (1 - Math.exp(-dt / 0.55));
+    const flameScale = flameScaleNow;
+    const flameLen = 1.15 * (1 + boost * 0.5) * flameMul * flameScale;
     flameTip = bodyBack - flameLen;
-    const flameK = flameRoot / flameLen;
+    const flameK = flameRoot * flameScale / flameLen;
     flameK2 = flameK * flameK;
     if (rocketId === "firework" && thrusting) {
       crack -= dt;
@@ -1932,7 +2636,7 @@
         sparks.splice(i, 1);
         continue;
       }
-      s.vy -= 9 * dt;
+      s.vy -= (s.grav == null ? 9 : s.grav) * dt;
       s.x += s.vx * dt;
       s.y += s.vy * dt;
       s.z += s.vz * dt;
@@ -1988,6 +2692,7 @@
             yaw = aimYaw;
             pitch = aimPitch;
             grounded = true;
+            bandLockDeath();
           }
         }
         if (railLocked) {
@@ -2008,10 +2713,10 @@
           yaw += angDiff(railYaw, yaw) * Math.min(1, dt * 14);
           pitch += (railPitch - pitch) * Math.min(1, dt * 14);
           grounded = false;
-          if (rocketId === "firework" && along > 20 && bumped()) armBoom();
         }
       } else {
-      const accel = 20 * (1 + boost * 2) * speedMul / mass;
+      const flyMul = speedMul * speedMix;
+      const accel = 20 * (1 + boost * 2) * flyMul / mass;
       const lift = boost * (10 * Math.PI / 180);
       const onMap = mapGroundY() != null;
       const falling = boost < 0.04 && !onMap && Math.hypot(vx, vy, vz) > 0.35;
@@ -2021,9 +2726,10 @@
         vz = 0;
         grounded = onMap;
         if (grounded) collideMap();
+        bandLockDeath();
       } else if (falling) {
         grounded = false;
-        vy -= 32 * dt;
+        vy -= 32 * (rocketId === "band" ? 0.75 : 1) * dt;
         const nose = forward(aimYaw, aimPitch);
         const along = vx * nose[0] + vy * nose[1] + vz * nose[2];
         const steer = 1 - Math.exp(-18 * dt);
@@ -2040,12 +2746,12 @@
         y += vy * dt;
         z += vz * dt;
         if (mapGroundY() != null) {
-          if (rocketId === "firework" && Math.hypot(vx, vy, vz) > 20) armBoom();
           vx = 0;
           vy = 0;
           vz = 0;
           grounded = true;
           collideMap();
+          bandLockDeath();
         }
       } else {
         const fly = forward(aimYaw, aimPitch + lift);
@@ -2054,13 +2760,15 @@
         vz += fly[2] * accel * dt;
         yaw += angDiff(aimYaw, yaw) * Math.min(1, dt * 16);
         pitch += (aimPitch + lift - pitch) * Math.min(1, dt * 16);
-        const drag = Math.exp(-0.42 * dt);
-        vx *= drag;
-        vy *= drag;
-        vz *= drag;
+        if (dashMul <= 0) {
+          const drag = Math.exp(-0.42 * dt);
+          vx *= drag;
+          vy *= drag;
+          vz *= drag;
+        }
         const speed = Math.hypot(vx, vy, vz);
-        const cap = (20 + boost * 20) * speedMul;
-        if (speed > cap) {
+        const cap = (20 + boost * 20) * flyMul;
+        if (dashMul <= 0 && speed > cap) {
           const cut = cap / speed;
           vx *= cut;
           vy *= cut;
@@ -2071,7 +2779,6 @@
         z += vz * dt;
         grounded = mapGroundY() != null;
         if (grounded) {
-          if (rocketId === "firework" && Math.hypot(vx, vy, vz) > 20) armBoom();
           if (vy < 0) vy = 0;
           collideMap();
         }
@@ -2087,7 +2794,6 @@
           const inner = c[5] > 0 && dist < (c[4] + c[5]) * 0.5;
           const hit = inner ? dist + pad > c[5] && dist < c[4] : dist - pad < c[4] && dist + pad > c[5];
           if (!hit) continue;
-          if (rocketId === "firework" && Math.hypot(vx, vy, vz) > 20) armBoom();
           const nx = dx / dist;
           const ny = dy / dist;
           const target = inner ? c[5] - pad : c[4] + pad;
@@ -2103,7 +2809,6 @@
           const dz = z - c[3];
           const dist = Math.hypot(dx, dz) || 0.001;
           if (dist - pad >= c[4] || dist + pad <= c[5]) continue;
-          if (rocketId === "firework" && Math.hypot(vx, vy, vz) > 20) armBoom();
           const nx = dx / dist;
           const nz = dz / dist;
           const target = c[5] > 0 && dist < (c[4] + c[5]) * 0.5 ? c[5] - pad : c[4] + pad;
@@ -2118,16 +2823,29 @@
       }
       }
     }
+    if (basicFov > 0 && dashBase > 0) {
+      const env = dashEnv(Math.min(1, basicFov / 0.5));
+      const want = dashBase * (1 + 2 * env);
+      const sp = Math.hypot(vx, vy, vz);
+      const dx = sp > 0.2 ? vx / sp : dashDX;
+      const dy = sp > 0.2 ? vy / sp : dashDY;
+      const dz = sp > 0.2 ? vz / sp : dashDZ;
+      vx = dx * want;
+      vy = dy * want;
+      vz = dz * want;
+    }
     collideMap();
     updateChunks();
     stepFoes(dt);
     hitSpawns(dt);
     stepCorpses(dt);
-    if (boomWait > 0) {
-      boomClock += dt;
-      boomWait -= dt;
-      if (boomWait <= 0) blast();
+    if (skillEdge && downTime <= 0 && !gameOver) {
+      if (rocketId === "firework") {
+        unlockAudio();
+        blast();
+      }
     }
+    stepWingSkill(dt);
     const shake = fuse > 0 ? (1 - fuse / 0.95) : 0;
     const amp = shake * shake * 1.7;
     meshX = x + Math.sin(shakeT * 62) * amp;
@@ -2136,6 +2854,7 @@
     meshYaw = yaw + Math.sin(shakeT * 70) * shake * 0.95;
     meshPitch = pitch + Math.cos(shakeT * 64) * shake * 0.55;
     showHud();
+    paintSkillCool();
 
     if (Math.hypot(vx, vy, vz) >= 15) {
       trail.push({ t: now, w: wingPoints(axes(meshYaw, meshPitch)) });
@@ -2178,7 +2897,12 @@
     const ux = view.ux;
     const uy = view.uy;
     const uz = view.uz;
-    const tan = 2.2 + boost * 0.28;
+    let tanTarget = 2.2 + boost * 0.28;
+    if (violetOn && rocketId === "violet") tanTarget *= 2;
+    viewTan += (tanTarget - viewTan) * (1 - Math.exp(-dt / 0.55));
+    let basicMul = 1;
+    if (basicFov > 0) basicMul = 1 + dashEnv(Math.min(1, basicFov / 0.5)) * dashKick;
+    const tan = viewTan * basicMul;
     const aspect = bw / bh;
     shotCamX = camX;
     shotCamY = camY;
@@ -2543,8 +3267,19 @@
     }
     drawTrail();
     drawSparks();
+    drawWingBits();
     drawPops();
     if (downTime <= 0 && !gameOver) drawPreview();
+    musicStep(dt, {
+      dead: dead,
+      calm: onRail && !railLocked,
+      flying: !dead && Math.hypot(vx, vy, vz) >= 1,
+      thrusting: thrusting,
+      glide: rocketId === "band" && (wingSkill > 0 || wingDone),
+      lift: violetOn || wingSkill > 0 || basicFov > 0,
+      won: won,
+    });
+    skillEdge = false;
   }
   requestAnimationFrame(loop);
 })();
