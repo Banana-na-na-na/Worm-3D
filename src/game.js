@@ -1,9 +1,7 @@
 (() => {
   const canvas = document.getElementById("view");
   const stage = document.getElementById("screen");
-  const pick = document.getElementById("pick");
   const fireBtn = document.getElementById("fire");
-  let screenMode = "";
   const hud = document.getElementById("hud");
   const fuelFill = document.getElementById("fuel-fill");
   const preview = document.getElementById("preview");
@@ -16,10 +14,10 @@
   let yaw = 0;
   let pitch = 0.15;
   let x = 0;
-  let y = 8;
+  let y = 3.35;
   let z = 0;
   let laserX = 0;
-  let laserY = 8;
+  let laserY = 3.35;
   let laserZ = 16;
   let boom = 0;
   let fuse = 0;
@@ -28,12 +26,12 @@
   let boomY = 0;
   let boomZ = 0;
   let meshX = 0;
-  let meshY = 8;
+  let meshY = 3.35;
   let meshZ = 0;
   let meshYaw = 0;
   let meshPitch = 0.15;
   const spawnX = 0;
-  const spawnY = 8;
+  const spawnY = 3.35;
   const spawnZ = 0;
   let vx = 0;
   let vy = 0;
@@ -120,34 +118,10 @@
   let bh = 180;
   let frame = null;
 
-  function fitStage() {
-    if (!stage) return;
-    if (screenMode !== "phone" && screenMode !== "pad") {
-      stage.style.width = "100%";
-      stage.style.height = "100%";
-      return;
-    }
-    const sw = window.innerWidth;
-    const sh = window.innerHeight;
-    const aspect = screenMode === "phone" ? 9 / 19.5 : 3 / 4;
-    let w = sw;
-    let h = sh;
-    if (sw / sh > aspect) {
-      h = sh;
-      w = Math.floor(h * aspect);
-    } else {
-      w = sw;
-      h = Math.floor(w / aspect);
-    }
-    stage.style.width = Math.max(1, w) + "px";
-    stage.style.height = Math.max(1, h) + "px";
-  }
-
   function resize() {
-    fitStage();
     const sw = Math.max(1, stage ? stage.clientWidth : window.innerWidth);
     const sh = Math.max(1, stage ? stage.clientHeight : window.innerHeight);
-    const scale = Math.max(2, Math.ceil(Math.max(sw, sh) / 520));
+    const scale = 2;
     bw = Math.max(1, Math.floor(sw / scale));
     bh = Math.max(1, Math.floor(sh / scale));
     canvas.width = bw;
@@ -643,20 +617,54 @@
   let cG = 0;
   let cB = 0;
 
+  function rainbowCss(angle) {
+    return "conic-gradient(from " + angle + "deg, #ff0040, #ff8a00, #ffea00, #00ff66, #00c8ff, #b400ff, #ff0040)";
+  }
+
   function showHud() {
+    const cash = money + "원";
+    if (gameOver) {
+      hud.textContent = "스폰 파괴  ·  패배  ·  부활 불가  ·  " + cash;
+      fuelFill.style.transform = "scaleY(" + Math.max(0, fuel) + ")";
+      cats.hidden = true;
+      return;
+    }
+    if (won) {
+      hud.textContent = "승리  ·  연료 무한  ·  " + cash;
+      fuelFill.style.transform = "scaleY(1)";
+      fuelFill.style.background = rainbowCss((winClock * 140) % 360);
+      cats.hidden = !(onRail && !railLocked);
+      return;
+    }
     const speed = Math.hypot(vx, vy, vz);
     const locked = document.pointerLockElement === canvas;
     const lock = locked ? "" : "  ·  클릭해서 조종";
     const place = onRail ? (locked ? "발사대  ·  좌클릭으로 발사  ·  " : "발사대  ·  ") : "";
-    hud.textContent = place + "속도 " + Math.round(speed) + "  ·  레이저를 따라 미끄러짐" + lock;
+    const room = inLobby ? "로비  ·  " : "";
+    hud.textContent = room + place + "속도 " + Math.round(speed) + "  ·  " + cash + "  ·  나와 적은 다른 팀" + lock;
     fuelFill.style.transform = "scaleY(" + Math.max(0, fuel) + ")";
+    fuelFill.style.background = "rgb(" + bodyColor[0] + "," + bodyColor[1] + "," + bodyColor[2] + ")";
     cats.hidden = !(onRail && !railLocked);
+  }
+
+  function checkWin() {
+    if (won || gameOver || !foesOn) return;
+    if (!foeSpawnAlive() && foes.length === 0 && foeDown <= 0) {
+      won = true;
+      fuel = 1;
+      winClock = 0;
+    }
   }
 
   function shipById(id) {
     if (id === "heavy") return heavyShip;
     if (id === "firework") return fireworkShip;
     return basicShip;
+  }
+
+  function randomShip() {
+    const kinds = [basicShip, heavyShip, fireworkShip];
+    return kinds[(Math.random() * kinds.length) | 0];
   }
 
   function dropCorpse(px, py, pz, pvx, pvy, pvz, yaw, pitch, look) {
@@ -711,8 +719,31 @@
   }
 
   let downTime = 0;
+  let gameOver = false;
+  let won = false;
+  let winClock = 0;
+  let money = 0;
+  let moneyTick = 0;
+
+  function addMoney(n) {
+    if (n <= 0) return;
+    money += n;
+  }
+
+  function mySpawnAlive() {
+    return spawnPads[0] && spawnPads[0].alive;
+  }
+
+  function foeSpawnAlive() {
+    return spawnPads[1] && spawnPads[1].alive;
+  }
 
   function resetPlayer() {
+    if (!mySpawnAlive()) {
+      downTime = 0;
+      gameOver = true;
+      return;
+    }
     x = spawnX;
     y = spawnY;
     z = spawnZ;
@@ -731,24 +762,26 @@
     fuel = 1;
     hurt = 0;
     boomWait = 0;
-    for (let i = 0; i < spawnPads.length; i += 1) {
-      spawnPads[i].hp = 150;
-      spawnPads[i].hurt = 0;
-      spawnPads[i].alive = true;
-    }
-    foesOn = false;
-    foes = [];
     downTime = 0;
+    gameOver = false;
+    pickRocket(randomShip());
+    if (typeof paintCats === "function") paintCats();
   }
 
   function downPlayer(quiet) {
-    if (downTime > 0) return;
+    if (downTime > 0 || gameOver) return;
     if (!quiet) playNoise(0.2, 0.06, 180);
     dropPlayer();
     vx = 0;
     vy = 0;
     vz = 0;
     boomWait = 0;
+    if (!mySpawnAlive()) {
+      downTime = 0;
+      gameOver = true;
+      engineOff();
+      return;
+    }
     downTime = 5;
     engineOff();
   }
@@ -880,7 +913,7 @@
       if (foe.fuel <= 0) {
         burstAt(foe.x, foe.y, foe.z, 14);
         dropFoe(foe);
-        foes.splice(i, 1);
+        removeFoe(i);
       }
     }
     boomWait = 0;
@@ -961,32 +994,44 @@
     };
   }
 
-  function spawnFoes() {
-    foesOn = true;
-    const kinds = [basicShip, heavyShip, fireworkShip];
+  let foeDown = 0;
+
+  function makeFoe() {
+    const spec = randomShip();
     const shot = forward(Math.PI, 0.2);
     const speed = 26;
-    foes = [0].map((side) => {
-      const spec = kinds[(Math.random() * kinds.length) | 0];
-      return {
-        x: foePadX,
-        y: foePadY,
-        z: foePadZ,
-        vx: shot[0] * speed,
-        vy: shot[1] * speed,
-        vz: shot[2] * speed,
-        fuel: 1,
-        hurt: 0,
-        charge: 0,
-        boom: 0,
-        boomClock: 0,
-        tx: spawnX,
-        ty: spawnY,
-        tz: spawnZ,
-        look: makeLook(spec),
-        ax: axes(Math.PI, 0.2),
-      };
-    });
+    return {
+      x: foePadX,
+      y: foePadY,
+      z: foePadZ,
+      vx: shot[0] * speed,
+      vy: shot[1] * speed,
+      vz: shot[2] * speed,
+      fuel: 1,
+      hurt: 0,
+      charge: 0,
+      boom: 0,
+      boomClock: 0,
+      tx: spawnX,
+      ty: spawnY,
+      tz: spawnZ,
+      look: makeLook(spec),
+      ax: axes(Math.PI, 0.2),
+    };
+  }
+
+  function spawnFoes() {
+    if (inLobby) return;
+    foesOn = true;
+    foeDown = 0;
+    foes = [makeFoe()];
+  }
+
+  function removeFoe(i) {
+    foes.splice(i, 1);
+    if (foesOn) addMoney(200);
+    if (foesOn && foes.length === 0 && foeSpawnAlive()) foeDown = 5;
+    checkWin();
   }
 
   const hitHalf = 1.85;
@@ -1040,6 +1085,13 @@
   function stepFoes(dt) {
     if (hurt > 0) hurt -= dt;
     if (!foesOn) return;
+    if (foeDown > 0) {
+      if (!foeSpawnAlive()) foeDown = 0;
+      else {
+        foeDown -= dt;
+        if (foeDown <= 0) foes.push(makeFoe());
+      }
+    }
     for (let i = 0; i < foes.length; i += 1) {
       const foe = foes[i];
       if (foe.boom > 0) {
@@ -1048,7 +1100,7 @@
         if (foe.boom <= 0) {
           explodeFoe(foe);
           if (!foesOn || dying) return;
-          foes.splice(i, 1);
+          removeFoe(i);
           i -= 1;
           continue;
         }
@@ -1057,7 +1109,7 @@
         if (foe.fuel <= 0 && !armFoeBoom(foe)) {
           burstAt(foe.x, foe.y, foe.z, 14);
           dropFoe(foe);
-          foes.splice(i, 1);
+          removeFoe(i);
           i -= 1;
           continue;
         }
@@ -1066,28 +1118,47 @@
       const pdy = y - foe.y;
       const pdz = z - foe.z;
       const pdist = Math.hypot(pdx, pdy, pdz) || 0.001;
+      const myPad = spawnPads[0];
+      const ownPad = spawnPads[1];
+      const toMySpawn = myPad.alive
+        ? Math.hypot(myPad.x - foe.x, myPad.y - foe.y, myPad.z - foe.z)
+        : 1e9;
+      const playerToMySpawn = myPad.alive
+        ? Math.hypot(myPad.x - x, myPad.y - y, myPad.z - z)
+        : 1e9;
       const ahead = 0.32;
-      if (pdist > 16) {
-        if (foe.charge <= 0) {
-          foe.tx = x + vx * ahead;
-          foe.ty = y + vy * ahead;
-          foe.tz = z + vz * ahead;
-          foe.charge = 0.9;
-          if (pdist > 26) {
-            const bx = foe.x - foe.tx;
-            const by = foe.y - foe.ty;
-            const bz = foe.z - foe.tz;
-            const bl = Math.hypot(bx, by, bz) || 1;
-            for (let s = 0; s < 5; s += 1) addSpark(foe.x, foe.y, foe.z, bx / bl, by / bl, bz / bl, 14, 1.4);
-          }
-        }
-        foe.charge -= dt;
-      } else {
-        foe.charge = 0;
-        foe.tx = x + vx * ahead;
-        foe.ty = y + vy * ahead;
-        foe.tz = z + vz * ahead;
+      let aimX = x + vx * ahead;
+      let aimY = y + vy * ahead;
+      let aimZ = z + vz * ahead;
+      let mode = "hunt";
+      if (myPad.alive && toMySpawn < 24) {
+        mode = "smash";
+        aimX = myPad.x;
+        aimY = myPad.y;
+        aimZ = myPad.z;
+      } else if (myPad.alive && playerToMySpawn < 20 && pdist < toMySpawn) {
+        mode = "defend";
+        aimX = ownPad.x;
+        aimY = ownPad.y;
+        aimZ = ownPad.z;
+      } else if (myPad.alive && pdist > 14) {
+        mode = "smash";
+        aimX = myPad.x;
+        aimY = myPad.y;
+        aimZ = myPad.z;
       }
+      if (mode !== "hunt" && foe.charge <= 0 && Math.hypot(aimX - foe.x, aimY - foe.y, aimZ - foe.z) > 26) {
+        foe.charge = 0.9;
+        const bx = foe.x - aimX;
+        const by = foe.y - aimY;
+        const bz = foe.z - aimZ;
+        const bl = Math.hypot(bx, by, bz) || 1;
+        for (let s = 0; s < 5; s += 1) addSpark(foe.x, foe.y, foe.z, bx / bl, by / bl, bz / bl, 14, 1.4);
+      }
+      if (foe.charge > 0) foe.charge -= dt;
+      foe.tx = aimX;
+      foe.ty = aimY;
+      foe.tz = aimZ;
       let dx = foe.tx - foe.x;
       let dy = foe.ty - foe.y;
       let dz = foe.tz - foe.z;
@@ -1095,7 +1166,7 @@
       dx /= dist;
       dy /= dist;
       dz /= dist;
-      const charging = pdist > 16;
+      const charging = mode === "smash" || mode === "defend" || pdist > 16;
       const accel = charging ? 34 : 22;
       const cap = charging ? 24 : 18;
       foe.vx += dx * accel * dt;
@@ -1135,7 +1206,7 @@
       if (foe.fuel <= 0 && foe.boom <= 0 && !armFoeBoom(foe)) {
         burstAt(foe.x, foe.y, foe.z, 14);
         dropFoe(foe);
-        foes.splice(i, 1);
+        removeFoe(i);
         i -= 1;
         continue;
       }
@@ -1333,57 +1404,178 @@
     }
   }
 
-  const spawnRingR = 3.4;
-  const spawnTubeR = 0.85;
+  const spawnBallR = 3.2;
+  const spawnBallR2 = spawnBallR * spawnBallR;
   const foePadX = 0;
   const foePadY = 8;
   const foePadZ = 86;
-  const spawnPads = [
-    { mine: true, x: spawnX, y: spawnY, z: spawnZ, hp: 150, hurt: 0, alive: true },
-    { mine: false, x: foePadX, y: foePadY, z: foePadZ, hp: 150, hurt: 0, alive: true },
+  let inLobby = true;
+  const mapGroundY0 = 0.15;
+  const CHUNK = 32;
+  const CHUNK_LOAD = 2;
+  const chunks = new Map();
+  const mapBoxes = [];
+  const mapRgb = [
+    [48, 56, 44],
+    [120, 118, 108],
+    [74, 82, 90],
+    [168, 150, 72],
   ];
+  const spawnPads = [
+    { mine: true, immortal: true, x: spawnX, y: spawnY, z: spawnZ, hp: 75, hurt: 0, alive: true },
+    { mine: false, immortal: false, x: foePadX, y: foePadY, z: foePadZ, hp: 75, hurt: 0, alive: false },
+  ];
+  const spawnDraw = [];
+  const mapDraw = [];
+
+  function chunkKey(cx, cz) {
+    return cx + ":" + cz;
+  }
+
+  function worldChunk(wx, wz) {
+    return [Math.floor(wx / CHUNK), Math.floor(wz / CHUNK)];
+  }
+
+  function ensureChunk(cx, cz) {
+    const key = chunkKey(cx, cz);
+    let c = chunks.get(key);
+    if (c) return c;
+    c = { cx: cx, cz: cz, structures: [] };
+    chunks.set(key, c);
+    return c;
+  }
+
+  function updateChunks() {
+    const pair = worldChunk(x, z);
+    const cx = pair[0];
+    const cz = pair[1];
+    for (let iz = cz - CHUNK_LOAD; iz <= cz + CHUNK_LOAD; iz += 1) {
+      for (let ix = cx - CHUNK_LOAD; ix <= cx + CHUNK_LOAD; ix += 1) {
+        ensureChunk(ix, iz);
+      }
+    }
+    if (chunks.size > 80) {
+      const keep = new Set();
+      for (let iz = cz - CHUNK_LOAD - 1; iz <= cz + CHUNK_LOAD + 1; iz += 1) {
+        for (let ix = cx - CHUNK_LOAD - 1; ix <= cx + CHUNK_LOAD + 1; ix += 1) {
+          keep.add(chunkKey(ix, iz));
+        }
+      }
+      chunks.forEach((v, k) => {
+        if (!keep.has(k)) chunks.delete(k);
+      });
+    }
+  }
+
+  function chunkFloorColor(wx, wz) {
+    const cx = Math.floor(wx / CHUNK);
+    const cz = Math.floor(wz / CHUNK);
+    const localX = wx - cx * CHUNK;
+    const localZ = wz - cz * CHUNK;
+    const edge = localX < 0.55 || localZ < 0.55 || localX > CHUNK - 0.55 || localZ > CHUNK - 0.55;
+    if (edge) return [78, 92, 70];
+    if (((cx + cz) & 1) === 0) return [46, 54, 42];
+    return [38, 46, 36];
+  }
+
+  function ballHit(ox, oy, oz, dx, dy, dz, pad) {
+    const px = ox - pad.x;
+    const py = oy - pad.y;
+    const pz = oz - pad.z;
+    return quadT(1, 2 * (px * dx + py * dy + pz * dz), px * px + py * py + pz * pz - spawnBallR2);
+  }
+
+  function mapGroundHit(ox, oy, oz, dx, dy, dz) {
+    if (dy >= -1e-6) return -1;
+    const t = (mapGroundY0 - oy) / dy;
+    if (t < 0.05 || t > 160) return -1;
+    return t;
+  }
+
+  function mapBoxHit(ox, oy, oz, dx, dy, dz, m) {
+    return boxT(ox, oy, oz, dx, dy, dz, m[0], m[1], m[2], m[3], m[4], m[5], 200);
+  }
+
+  function mapGroundY() {
+    let top = null;
+    if (y >= mapGroundY0 - 0.2 && y <= mapGroundY0 + 1.5) top = mapGroundY0;
+    for (let i = 0; i < mapBoxes.length; i += 1) {
+      const m = mapBoxes[i];
+      if (x < m[0] - 0.4 || x > m[3] + 0.4 || z < m[2] - 0.4 || z > m[5] + 0.4) continue;
+      if (y < m[4] - 0.2 || y > m[4] + 1.5) continue;
+      if (top == null || m[4] > top) top = m[4];
+    }
+    return top;
+  }
+
+  function collideMap() {
+    const gy = mapGroundY();
+    if (gy != null && vy <= 0.5) {
+      y = gy + 1.15;
+      if (vy < 0) vy = 0;
+      grounded = true;
+    }
+  }
+
+  function hurtPad(pad, amount) {
+    if (!pad.alive || pad.immortal || amount <= 0 || pad.hurt > 0) return false;
+    pad.hp = Math.max(0, pad.hp - amount);
+    pad.hurt = 0.5;
+    playHit();
+    popText(pad.x, pad.y + 3, pad.z, "때림 " + amount, "#ffe14a");
+    if (pad.hp <= 0) {
+      pad.alive = false;
+      burstAt(pad.x, pad.y, pad.z, 22);
+      playBoom();
+      if (pad.mine) {
+        if (downTime > 0 || fuel <= 0) {
+          downTime = 0;
+          gameOver = true;
+        }
+      } else {
+        foeDown = 0;
+        addMoney(600);
+        checkWin();
+      }
+    }
+    return true;
+  }
 
   function hitSpawns(dt) {
-    if (downTime > 0) return;
-    const speed = Math.hypot(vx, vy, vz);
-    const tubeReach = spawnTubeR + hitHalf;
+    const reach = spawnBallR + hitHalf;
+    const reach2 = reach * reach;
     for (let i = 0; i < spawnPads.length; i += 1) {
       const pad = spawnPads[i];
       if (!pad.alive) continue;
       if (pad.hurt > 0) pad.hurt -= dt;
-      const radial = Math.hypot(x - pad.x, y - pad.y);
-      const tube = Math.hypot(radial - spawnRingR, z - pad.z);
-      const hit = tube < tubeReach;
-      if (!hit || pad.mine || pad.hurt > 0) continue;
-      if (rocketId === "firework" && speed > 20) armBoom();
-      const dealt = ramDamage(speed);
-      if (dealt <= 0) continue;
-      pad.hp = Math.max(0, pad.hp - dealt);
-      pad.hurt = 0.5;
-      playHit();
-      popText(pad.x, pad.y + 3, pad.z, "때림 " + dealt, "#ffe14a");
-      if (pad.hp <= 0) {
-        pad.alive = false;
-        burstAt(pad.x, pad.y, pad.z, 22);
-        playBoom();
+    }
+    if (downTime <= 0) {
+      const speed = Math.hypot(vx, vy, vz);
+      for (let i = 0; i < spawnPads.length; i += 1) {
+        const pad = spawnPads[i];
+        if (!pad.alive || pad.immortal || pad.mine || pad.hurt > 0) continue;
+        const dx = x - pad.x;
+        const dy = y - pad.y;
+        const dz = z - pad.z;
+        if (dx * dx + dy * dy + dz * dz >= reach2) continue;
+        if (rocketId === "firework" && speed > 20) armBoom();
+        hurtPad(pad, ramDamage(speed));
       }
     }
-  }
-  function ringHit(ox, oy, oz, dx, dy, dz, pad) {
-    const px = ox - pad.x;
-    const py = oy - pad.y;
-    const pz = oz - pad.z;
-    let t = 0.05;
-    for (let i = 0; i < 28; i += 1) {
-      const sx = px + dx * t;
-      const sy = py + dy * t;
-      const sz = pz + dz * t;
-      const dist = Math.hypot(Math.hypot(sx, sy) - spawnRingR, sz) - spawnTubeR;
-      if (dist < 0.05) return t;
-      t += Math.max(0.05, dist);
-      if (t > 160) return -1;
+    if (!foesOn) return;
+    for (let fi = 0; fi < foes.length; fi += 1) {
+      const foe = foes[fi];
+      const fSpeed = Math.hypot(foe.vx, foe.vy, foe.vz);
+      for (let i = 0; i < spawnPads.length; i += 1) {
+        const pad = spawnPads[i];
+        if (!pad.alive || pad.immortal || !pad.mine || pad.hurt > 0) continue;
+        const dx = foe.x - pad.x;
+        const dy = foe.y - pad.y;
+        const dz = foe.z - pad.z;
+        if (dx * dx + dy * dy + dz * dz >= reach2) continue;
+        hurtPad(pad, ramDamage(fSpeed));
+      }
     }
-    return -1;
   }
 
   function drawTrail() {
@@ -1599,24 +1791,18 @@
   applyShip(basicShip);
   paintCats();
 
+  let previewTick = 0;
   function drawPreview() {
+    previewTick += 1;
+    if (previewTick % 3 !== 0) return;
     paintRocketCanvas(previewCtx, 140, 160);
   }
 
+  if (fireBtn) {
+    fireBtn.hidden = !window.matchMedia("(pointer: coarse)").matches;
+  }
   resize();
   window.addEventListener("resize", resize);
-  if (pick) {
-    pick.addEventListener("click", (e) => {
-      const btn = e.target.closest("button");
-      if (!btn) return;
-      unlockAudio();
-      playClick();
-      screenMode = btn.dataset.screen || "pc";
-      pick.hidden = true;
-      if (fireBtn) fireBtn.hidden = screenMode !== "phone" && screenMode !== "pad";
-      resize();
-    });
-  }
   function pressPlay() {
     if (!onRail || railLocked || launchKick) return;
     unlockAudio();
@@ -1639,8 +1825,7 @@
   }, true);
   window.addEventListener("mousedown", (e) => {
     if (e.button !== 0) return;
-    if (e.target.closest && (e.target.closest("#cats") || e.target.closest("#pick") || e.target.closest("#fire"))) return;
-    if (pick && !pick.hidden) return;
+    if (e.target.closest && (e.target.closest("#cats") || e.target.closest("#fire"))) return;
     if (document.pointerLockElement !== canvas) {
       canvas.requestPointerLock();
       return;
@@ -1687,13 +1872,32 @@
       downTime -= dt;
       engineOff();
       flaming = false;
-      if (downTime <= 0) resetPlayer();
+      if (downTime <= 0) {
+        if (mySpawnAlive()) resetPlayer();
+        else {
+          downTime = 0;
+          gameOver = true;
+        }
+      }
     }
-    const infinite = boomWait > 0 && downTime <= 0;
-    const thrusting = downTime <= 0 && rightHeld && (fuel > 0 || infinite);
+    const dead = downTime > 0 || gameOver;
+    if (won) {
+      winClock += dt;
+      fuel = 1;
+    }
+    if (foesOn && !gameOver) {
+      moneyTick += dt;
+      while (moneyTick >= 10) {
+        moneyTick -= 10;
+        addMoney(25);
+      }
+    }
+    checkWin();
+    const infinite = (boomWait > 0 || won) && !dead;
+    const thrusting = !dead && rightHeld && (fuel > 0 || infinite);
     flaming = thrusting && rocketId !== "firework";
-    if (downTime <= 0 && thrusting && !onRail && !infinite) fuel = Math.max(0, fuel - dt / fuelSec);
-    if (downTime <= 0 && !onRail && !infinite && fuel <= 0) {
+    if (!dead && thrusting && !onRail && !infinite) fuel = Math.max(0, fuel - dt / fuelSec);
+    if (!dead && !onRail && !infinite && fuel <= 0) {
       if (rocketId === "firework") armBoom();
       else downPlayer();
     }
@@ -1739,8 +1943,9 @@
       pop.y += dt * 1.6;
       if (pop.life <= 0) pops.splice(i, 1);
     }
-    if (downTime > 0) {
+    if (dead) {
       flaming = false;
+      engineOff();
     } else if (boom > 0) {
       boom -= dt;
       if (boom <= 0) {
@@ -1808,15 +2013,14 @@
       } else {
       const accel = 20 * (1 + boost * 2) * speedMul / mass;
       const lift = boost * (10 * Math.PI / 180);
-      const falling = boost < 0.04 && !touchesEarth() && Math.hypot(vx, vy, vz) > 0.35;
+      const onMap = mapGroundY() != null;
+      const falling = boost < 0.04 && !onMap && Math.hypot(vx, vy, vz) > 0.35;
       if (boost < 0.04 && !falling) {
         vx = 0;
         vy = 0;
         vz = 0;
-        grounded = touchesEarth();
-        if (grounded) {
-          for (let n = 0; n < 5 && touchesEarth(); n += 1) y += 0.3;
-        }
+        grounded = onMap;
+        if (grounded) collideMap();
       } else if (falling) {
         grounded = false;
         vy -= 32 * dt;
@@ -1835,13 +2039,13 @@
         x += vx * dt;
         y += vy * dt;
         z += vz * dt;
-        if (touchesEarth()) {
+        if (mapGroundY() != null) {
           if (rocketId === "firework" && Math.hypot(vx, vy, vz) > 20) armBoom();
           vx = 0;
           vy = 0;
           vz = 0;
           grounded = true;
-          for (let n = 0; n < 5 && touchesEarth(); n += 1) y += 0.3;
+          collideMap();
         }
       } else {
         const fly = forward(aimYaw, aimPitch + lift);
@@ -1865,11 +2069,11 @@
         x += vx * dt;
         y += vy * dt;
         z += vz * dt;
-        grounded = touchesEarth();
+        grounded = mapGroundY() != null;
         if (grounded) {
           if (rocketId === "firework" && Math.hypot(vx, vy, vz) > 20) armBoom();
           if (vy < 0) vy = 0;
-          for (let n = 0; n < 5 && touchesEarth(); n += 1) y += 0.3;
+          collideMap();
         }
       }
       const pad = 1.05;
@@ -1914,6 +2118,8 @@
       }
       }
     }
+    collideMap();
+    updateChunks();
     stepFoes(dt);
     hitSpawns(dt);
     stepCorpses(dt);
@@ -2080,12 +2286,123 @@
       if (x1 < x0 || y1 < y0) continue;
       shown.push({ cyl, x0, y0, x1, y1 });
     }
-    const padQx = spawnX - camX;
-    const padQy = spawnY - camY;
-    const padQz = spawnZ - camZ;
-    const foeQx = foePadX - camX;
-    const foeQy = foePadY - camY;
-    const foeQz = foePadZ - camZ;
+    spawnDraw.length = 0;
+    for (let pi = 0; pi < spawnPads.length; pi += 1) {
+      const pad = spawnPads[pi];
+      if (!pad.alive) continue;
+      let x0 = bw;
+      let y0 = bh;
+      let x1 = 0;
+      let y1 = 0;
+      let seen = 0;
+      const rad = spawnBallR;
+      for (let ix = 0; ix < 2; ix += 1) {
+        for (let iy = 0; iy < 2; iy += 1) {
+          for (let iz = 0; iz < 2; iz += 1) {
+            const vxw = pad.x + (ix ? rad : -rad) - camX;
+            const vyw = pad.y + (iy ? rad : -rad) - camY;
+            const vzw = pad.z + (iz ? rad : -rad) - camZ;
+            const df = vxw * lx + vyw * ly + vzw * lz;
+            if (df < 0.2) continue;
+            const dr = vxw * rx + vyw * ry + vzw * rz;
+            const du = vxw * ux + vyw * uy + vzw * uz;
+            const sx0 = ((dr / (df * aspect * tan)) + 1) * 0.5 * bw;
+            const sy0 = (1 - du / (df * tan)) * 0.5 * bh;
+            if (sx0 < x0) x0 = sx0;
+            if (sy0 < y0) y0 = sy0;
+            if (sx0 > x1) x1 = sx0;
+            if (sy0 > y1) y1 = sy0;
+            seen += 1;
+          }
+        }
+      }
+      if (!seen) continue;
+      x0 = Math.max(0, Math.floor(x0) - 3);
+      y0 = Math.max(0, Math.floor(y0) - 3);
+      x1 = Math.min(bw - 1, Math.ceil(x1) + 3);
+      y1 = Math.min(bh - 1, Math.ceil(y1) + 3);
+      if (x1 < x0 || y1 < y0) continue;
+      spawnDraw.push({ pad, x0, y0, x1, y1 });
+    }
+    mapDraw.length = 0;
+    for (let mi = 0; mi < mapBoxes.length; mi += 1) {
+      const m = mapBoxes[mi];
+      let x0 = bw;
+      let y0 = bh;
+      let x1 = 0;
+      let y1 = 0;
+      let seen = 0;
+      const xs = [m[0], m[3]];
+      const ys = [m[1], m[4]];
+      const zs = [m[2], m[5]];
+      for (let ix = 0; ix < 2; ix += 1) {
+        for (let iy = 0; iy < 2; iy += 1) {
+          for (let iz = 0; iz < 2; iz += 1) {
+            const vxw = xs[ix] - camX;
+            const vyw = ys[iy] - camY;
+            const vzw = zs[iz] - camZ;
+            const df = vxw * lx + vyw * ly + vzw * lz;
+            if (df < 0.35) continue;
+            const dr = vxw * rx + vyw * ry + vzw * rz;
+            const du = vxw * ux + vyw * uy + vzw * uz;
+            const sx0 = ((dr / (df * aspect * tan)) + 1) * 0.5 * bw;
+            const sy0 = (1 - du / (df * tan)) * 0.5 * bh;
+            if (sx0 < x0) x0 = sx0;
+            if (sy0 < y0) y0 = sy0;
+            if (sx0 > x1) x1 = sx0;
+            if (sy0 > y1) y1 = sy0;
+            seen += 1;
+          }
+        }
+      }
+      if (!seen) continue;
+      x0 = Math.max(0, Math.floor(x0) - 2);
+      y0 = Math.max(0, Math.floor(y0) - 2);
+      x1 = Math.min(bw - 1, Math.ceil(x1) + 2);
+      y1 = Math.min(bh - 1, Math.ceil(y1) + 2);
+      if (x1 < x0 || y1 < y0) continue;
+      mapDraw.push({ m, x0, y0, x1, y1 });
+    }
+    let rocketBox = null;
+    if (downTime <= 0 && !gameOver && boom <= 0) {
+      const vxw = meshX - camX;
+      const vyw = meshY - camY;
+      const vzw = meshZ - camZ;
+      const df = vxw * lx + vyw * ly + vzw * lz;
+      if (df >= 0.6) {
+        const dr = vxw * rx + vyw * ry + vzw * rz;
+        const du = vxw * ux + vyw * uy + vzw * uz;
+        const pr = Math.max(14, 4.2 * bh * 0.5 / (df * tan));
+        const sx0 = ((dr / (df * aspect * tan)) + 1) * 0.5 * bw;
+        const sy0 = (1 - du / (df * tan)) * 0.5 * bh;
+        rocketBox = {
+          x0: Math.max(0, Math.floor(sx0 - pr)),
+          y0: Math.max(0, Math.floor(sy0 - pr)),
+          x1: Math.min(bw - 1, Math.ceil(sx0 + pr)),
+          y1: Math.min(bh - 1, Math.ceil(sy0 + pr)),
+        };
+      }
+    }
+    let beamBox = null;
+    {
+      const vxw = laserX - camX;
+      const vyw = laserY - camY;
+      const vzw = laserZ - camZ;
+      const df = vxw * lx + vyw * ly + vzw * lz;
+      if (df >= 0.35) {
+        const dr = vxw * rx + vyw * ry + vzw * rz;
+        const du = vxw * ux + vyw * uy + vzw * uz;
+        const pr = Math.max(6, 1.2 * bh * 0.5 / (df * tan));
+        const sx0 = ((dr / (df * aspect * tan)) + 1) * 0.5 * bw;
+        const sy0 = (1 - du / (df * tan)) * 0.5 * bh;
+        beamBox = {
+          x0: Math.max(0, Math.floor(sx0 - pr)),
+          y0: Math.max(0, Math.floor(sy0 - pr)),
+          x1: Math.min(bw - 1, Math.ceil(sx0 + pr)),
+          y1: Math.min(bh - 1, Math.ceil(sy0 + pr)),
+        };
+      }
+    }
     const data = frame.data;
     for (let sy = 0; sy < bh; sy += 1) {
       const ndcY = 1 - ((sy + 0.5) / bh) * 2;
@@ -2106,29 +2423,25 @@
           g = 214;
           b = 242;
         }
-        const beam = beamHit(camX, camY, camZ, dx, dy, dz, view);
-        const px = camX - meshX;
-        const py = camY - meshY;
-        const pz = camZ - meshZ;
-        const aimB = px * dx + py * dy + pz * dz;
-        const aimC = px * px + py * py + pz * pz - 18;
-        const aimDisc = aimB * aimB - aimC;
-        const hit = downTime > 0 || boom > 0 || aimDisc < 0 || -aimB + Math.sqrt(Math.max(0, aimDisc)) <= 0.05
-          ? null
-          : rocketHit(camX, camY, camZ, dx, dy, dz, ax);
         let best = 160;
-        if (beam && beam < best) {
-          best = beam;
-          r = 255;
-          g = 70;
-          b = 64;
+        if (beamBox && sx >= beamBox.x0 && sx <= beamBox.x1 && sy >= beamBox.y0 && sy <= beamBox.y1) {
+          const beam = beamHit(camX, camY, camZ, dx, dy, dz, view);
+          if (beam && beam < best) {
+            best = beam;
+            r = 255;
+            g = 70;
+            b = 64;
+          }
         }
-        if (hit && hit.t < best) {
-          best = hit.t;
-          paintPixel(hit);
-          r = cR;
-          g = cG;
-          b = cB;
+        if (rocketBox && sx >= rocketBox.x0 && sx <= rocketBox.x1 && sy >= rocketBox.y0 && sy <= rocketBox.y1) {
+          const hit = rocketHit(camX, camY, camZ, dx, dy, dz, ax);
+          if (hit && hit.t < best) {
+            best = hit.t;
+            paintPixel(hit);
+            r = cR;
+            g = cG;
+            b = cB;
+          }
         }
         if (foeDraw.length) {
           for (let fi = 0; fi < foeDraw.length; fi += 1) {
@@ -2155,11 +2468,11 @@
             b = 28;
           }
         }
-        const padAlong = padQx * dx + padQy * dy + padQz * dz;
-        if (spawnPads[0].alive && padAlong > 0.4 && padAlong < 90) {
-          const padMiss = padQx * padQx + padQy * padQy + padQz * padQz - padAlong * padAlong;
-          if (padMiss <= 100) {
-            const lt = ringHit(camX, camY, camZ, dx, dy, dz, spawnPads[0]);
+        if (spawnDraw.length) {
+          for (let si = 0; si < spawnDraw.length; si += 1) {
+            const slot = spawnDraw[si];
+            if (sx < slot.x0 || sx > slot.x1 || sy < slot.y0 || sy > slot.y1) continue;
+            const lt = ballHit(camX, camY, camZ, dx, dy, dz, slot.pad);
             if (lt > 0.05 && lt < best) {
               best = lt;
               r = 226;
@@ -2168,68 +2481,25 @@
             }
           }
         }
-        const foeAlong = foeQx * dx + foeQy * dy + foeQz * dz;
-        if (spawnPads[1].alive && foeAlong > 0.4 && foeAlong < 160) {
-          const foeMiss = foeQx * foeQx + foeQy * foeQy + foeQz * foeQz - foeAlong * foeAlong;
-          if (foeMiss <= 100) {
-            const lt = ringHit(camX, camY, camZ, dx, dy, dz, spawnPads[1]);
-            if (lt > 0.05 && lt < best) {
-              best = lt;
-              r = 226;
-              g = 230;
-              b = 214;
-            }
-          }
+        const gt = mapGroundHit(camX, camY, camZ, dx, dy, dz);
+        if (gt > 0.05 && gt < best) {
+          best = gt;
+          const tint = chunkFloorColor(camX + dx * gt, camZ + dz * gt);
+          r = tint[0];
+          g = tint[1];
+          b = tint[2];
         }
-        if (camY < 0) {
-          if (dy > 0.25) {
-            const gt = -camY / dy;
-            if (gt > 0.05 && gt < best) {
-              const ix = Math.floor((camX + dx * gt) / VOX);
-              const iz = Math.floor((camZ + dz * gt) / VOX);
-              if (isSolid(ix, -1, iz)) {
-                best = gt;
-                r = 78;
-                g = 58;
-                b = 40;
-              }
-            }
-          } else {
-            const earth = caveHit(camX, camY, camZ, dx, dy, dz, 0.2);
-            if (earth > 0.05 && earth < best) {
-              best = earth;
-              r = dy < -0.45 ? 40 : 78;
-              g = dy < -0.45 ? 30 : 58;
-              b = dy < -0.45 ? 22 : 40;
-            } else if (dy < 0.05) {
-              r = 36;
-              g = 26;
-              b = 18;
-            }
-          }
-        } else if (dy < -1e-6) {
-          const gt = -camY / dy;
-          if (gt > 0.05 && gt < best) {
-            const wx = camX + dx * gt;
-            const wz = camZ + dz * gt;
-            const ix = Math.floor(wx / VOX);
-            const iz = Math.floor(wz / VOX);
-            if (isSolid(ix, -1, iz)) {
-              const gx = Math.floor(wx);
-              const gz = Math.floor(wz);
-              const line = ((gx % 16) + 16) % 16 < 1 || ((gz % 16) + 16) % 16 < 1;
-              best = gt;
-              r = line ? 86 : 34;
-              g = line ? 96 : 40;
-              b = line ? 78 : 36;
-            } else {
-              const earth = caveHit(camX, camY, camZ, dx, dy, dz, gt + 0.3);
-              if (earth > 0.05 && earth < best) {
-                best = earth;
-                r = dy < -0.45 ? 40 : 78;
-                g = dy < -0.45 ? 30 : 58;
-                b = dy < -0.45 ? 22 : 40;
-              }
+        if (mapDraw.length) {
+          for (let mi = 0; mi < mapDraw.length; mi += 1) {
+            const slot = mapDraw[mi];
+            if (sx < slot.x0 || sx > slot.x1 || sy < slot.y0 || sy > slot.y1) continue;
+            const mt = mapBoxHit(camX, camY, camZ, dx, dy, dz, slot.m);
+            if (mt > 0.05 && mt < best) {
+              best = mt;
+              const tint = mapRgb[slot.m[6]] || mapRgb[1];
+              r = tint[0];
+              g = tint[1];
+              b = tint[2];
             }
           }
         }
@@ -2258,10 +2528,23 @@
       ctx.fillStyle = glow;
       ctx.fillRect(0, 0, bw, bh);
     }
+    if (won) {
+      const cx = bw * 0.5;
+      const cy = bh * 0.5;
+      const hue = (winClock * 110) % 360;
+      const glow = ctx.createRadialGradient(cx, cy, Math.min(bw, bh) * 0.24, cx, cy, Math.hypot(cx, cy));
+      glow.addColorStop(0, "rgba(0,0,0,0)");
+      glow.addColorStop(0.58, "rgba(0,0,0,0)");
+      glow.addColorStop(0.78, "hsla(" + hue + ",100%,55%,0.2)");
+      glow.addColorStop(0.9, "hsla(" + ((hue + 80) % 360) + ",100%,55%,0.62)");
+      glow.addColorStop(1, "hsla(" + ((hue + 160) % 360) + ",100%,50%,0.9)");
+      ctx.fillStyle = glow;
+      ctx.fillRect(0, 0, bw, bh);
+    }
     drawTrail();
     drawSparks();
     drawPops();
-    drawPreview();
+    if (downTime <= 0 && !gameOver) drawPreview();
   }
   requestAnimationFrame(loop);
 })();

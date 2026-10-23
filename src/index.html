@@ -8,18 +8,24 @@
     html, body {
       margin: 0;
       height: 100%;
-      background: #111418;
+      background: #000;
       overflow: hidden;
     }
     body {
       display: flex;
-      align-items: center;
-      justify-content: center;
+      flex-direction: column;
+    }
+    #bar-top,
+    #bar-bottom {
+      flex: 0 0 11%;
+      background: #000;
+      pointer-events: none;
     }
     #screen {
       position: relative;
+      flex: 1 1 auto;
       width: 100%;
-      height: 100%;
+      min-height: 0;
       overflow: hidden;
       background: #87b4dc;
     }
@@ -29,41 +35,6 @@
       height: 100%;
       image-rendering: pixelated;
       image-rendering: crisp-edges;
-    }
-    #pick {
-      position: fixed;
-      inset: 0;
-      z-index: 30;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 28px;
-      background: #12141a;
-      color: #f4f4f6;
-      font: 700 28px/1.2 "Segoe UI", sans-serif;
-    }
-    #pick[hidden] {
-      display: none;
-    }
-    #pick-row {
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: center;
-      gap: 18px;
-    }
-    #pick button {
-      min-width: 168px;
-      margin: 0;
-      padding: 28px 22px;
-      border: 4px solid #111;
-      background: #1c1e26;
-      color: #f4f4f6;
-      font: 700 32px/1 "Segoe UI", sans-serif;
-      cursor: pointer;
-    }
-    #pick button:hover {
-      background: rgb(220, 36, 36);
     }
     #cross {
       position: absolute;
@@ -221,14 +192,7 @@
   </style>
 </head>
 <body>
-  <div id="pick">
-    <p>화면을 고르세요</p>
-    <div id="pick-row">
-      <button type="button" data-screen="pad">패드</button>
-      <button type="button" data-screen="phone">폰</button>
-      <button type="button" data-screen="pc">PC</button>
-    </div>
-  </div>
+  <div id="bar-top"></div>
   <div id="screen">
     <canvas id="view"></canvas>
     <div id="cross"></div>
@@ -243,6 +207,7 @@
     <p id="ver">v1.1.0</p>
     <button type="button" id="fire" hidden>발사</button>
   </div>
-  <script src="./game.js?v=117"></script>
+  <div id="bar-bottom"></div>
+  <script src="./game.js?v=141"></script>
 </body>
 </html>
