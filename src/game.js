@@ -18,8 +18,11 @@
   let yaw = 0;
   let pitch = 0.15;
   let x = 0;
-  let y = 3.35;
+  let y = 127.35;
   let z = 0;
+  let moveX = 0;
+  let moveY = 127.35;
+  let moveZ = 0;
   let laserX = 0;
   let laserY = 3.35;
   let laserZ = 16;
@@ -35,7 +38,7 @@
   let meshYaw = 0;
   let meshPitch = 0.15;
   const spawnX = 0;
-  const spawnY = 3.35;
+  const spawnY = 127.35;
   const spawnZ = 0;
   let vx = 0;
   let vy = 0;
@@ -102,8 +105,8 @@
     id: "violet",
     name: "보라",
     body: [68, 26, 112],
-    nose: [16, 14, 18],
-    fin: [16, 14, 18],
+    nose: [18, 18, 20],
+    fin: [18, 18, 20],
     fat: 1,
     len: 1,
     wing: 1,
@@ -111,8 +114,6 @@
     speed: 1,
     fuel: 0.85,
     mass: 1,
-    noseMul: 1.85,
-    noseSharp: 0.3,
   };
   const bandShip = {
     id: "band",
@@ -129,12 +130,14 @@
     mass: 1,
   };
   const rocketCats = [
-    { ship: basicShip, kids: [heavyShip, fireworkShip] },
+    { ship: basicShip, kids: [heavyShip, fireworkShip, bandShip, violetShip] },
   ];
   let rocketId = "basic";
   let openCat = "";
   let grounded = false;
   let flaming = false;
+  let meteorOn = false;
+  let meteorClock = 0;
   let onRail = true;
   let railLocked = false;
   let railYaw = 0;
@@ -152,6 +155,7 @@
   let bw = 320;
   let bh = 180;
   let frame = null;
+  let mineBinStore = [];
 
   function resize() {
     const sw = Math.max(1, stage ? stage.clientWidth : window.innerWidth);
@@ -406,10 +410,10 @@
           const dz = z - qz;
           if (dx * dx + dy * dy + dz * dz < r2) return true;
         }
+        }
       }
+      return false;
     }
-    return false;
-  }
 
   function bumped() {
     if (touchesEarth()) return true;
@@ -430,7 +434,7 @@
         if (dist - pad < c[4] && dist + pad > c[5]) return true;
       }
     }
-    return false;
+        return false;
   }
 
   function pointInObject(px, py, pz) {
@@ -490,8 +494,8 @@
           const sz = pz - s.z;
           if (sx * sx + sy * sy + sz * sz <= s.r2) {
             air = true;
-            break;
-          }
+          break;
+        }
         }
         if (!air) return t;
       }
@@ -523,6 +527,7 @@
     [-0.06, -1.05, -1.45, 0.06, -0.4, -0.25],
   ];
   let finTris = [];
+  let finDiags = [];
   let wingBits = [];
   let wingSkill = 0;
   let wingDone = false;
@@ -689,6 +694,13 @@
           kind = 4;
         }
       }
+      for (let i = 0; i < finDiags.length; i += 1) {
+        const hit = diagFinT(lx, ly, lz, ldx, ldy, ldz, finDiags[i], 40);
+        if (hit > 0.05 && hit < best) {
+          best = hit;
+          kind = 4;
+        }
+      }
     }
     if (Math.abs(ldz) > 1e-8) {
       const back = (bodyBack - lz) / ldz;
@@ -719,6 +731,23 @@
   }
 
   function paintPixel(hit) {
+    if (meteorOn) {
+      const flick = Math.abs(Math.sin(hit.hx * 9.1 + hit.hy * 6.4 + hit.hz * 4.2 + meteorClock * 22));
+      if (flick > 0.72) {
+        cR = 255;
+        cG = 248;
+        cB = 220;
+      } else if (flick > 0.38) {
+        cR = 255;
+        cG = 168;
+        cB = 36;
+    } else {
+        cR = 255;
+        cG = 64;
+        cB = 14;
+      }
+      return;
+    }
     if (boomRed() && hit.kind !== 3) {
       cR = 255;
       cG = 32;
@@ -762,15 +791,6 @@
       return;
     }
     if (hit.kind === 2) {
-      if (rocketId === "violet") {
-        const span = noseTip - bodyFront || 1;
-        if ((hit.hz - bodyFront) / span < 0.38) {
-          cR = 78;
-          cG = 36;
-          cB = 120;
-          return;
-        }
-      }
       cR = noseColor[0];
       cG = noseColor[1];
       cB = noseColor[2];
@@ -871,11 +891,19 @@
     dropCorpse(foe.x, foe.y, foe.z, foe.vx, foe.vy, foe.vz, yaw, pitch, foe.look);
   }
 
+  function corpseRest(c) {
+    let rest = 1.15;
+    const hit = floorStand(c.x, c.y, c.z);
+    if (hit > rest) rest = hit;
+    return rest;
+  }
+
   function stepCorpses(dt) {
     const down = -Math.PI / 2;
     for (let i = 0; i < corpses.length; i += 1) {
       const c = corpses[i];
-      if (c.y > 1.15) {
+      const rest = corpseRest(c);
+      if (c.y > rest) {
         c.vy -= 32 * dt;
         const drag = Math.exp(-0.35 * dt);
         c.vx *= drag;
@@ -884,8 +912,8 @@
         c.y += c.vy * dt;
         c.z += c.vz * dt;
       }
-      if (c.y < 1.15) {
-        c.y = 1.15;
+      if (c.y < rest) {
+        c.y = rest;
         c.vx = 0;
         c.vy = 0;
         c.vz = 0;
@@ -939,6 +967,9 @@
     x = spawnX;
     y = spawnY;
     z = spawnZ;
+    moveX = x;
+    moveY = y;
+    moveZ = z;
     vx = 0;
     vy = 0;
     vz = 0;
@@ -983,6 +1014,7 @@
     vy = 0;
     vz = 0;
     boomWait = 0;
+    chaser = null;
     if (!mySpawnAlive()) {
       downTime = 0;
       gameOver = true;
@@ -1195,7 +1227,8 @@
   }
 
   function blast() {
-    const reach = 12;
+    const wide = rocketId === "firework";
+    const reach = wide ? 18 : 12;
     for (let i = foes.length - 1; i >= 0; i -= 1) {
       const foe = foes[i];
       const dx = foe.x - x;
@@ -1211,6 +1244,9 @@
       }
     }
     boomWait = 0;
+    carveBuilding(x, y, z, wide ? 18 : 40 / 4.4);
+    if (rocketId === "firework") fireworkBurst(x, y, z);
+    else realBoom(x, y, z);
     die();
   }
 
@@ -1260,6 +1296,52 @@
     if (sparks.length > 1100) sparks.splice(0, sparks.length - 1100);
   }
 
+  function realBoom(ox, oy, oz) {
+    const fire = [[255, 244, 220], [255, 186, 48], [255, 96, 24], [180, 32, 12]];
+    const smoke = [[78, 78, 82], [46, 46, 50], [28, 28, 32]];
+    for (let i = 0; i < 220; i += 1) {
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.random() * Math.PI * 0.65;
+      const dx = Math.sin(phi) * Math.cos(theta);
+      const dy = Math.cos(phi);
+      const dz = Math.sin(phi) * Math.sin(theta);
+      const speed = 10 + Math.random() * 26;
+      const life = 0.35 + Math.random() * 0.65;
+      sparks.push({
+        x: ox,
+        y: oy,
+        z: oz,
+        vx: dx * speed,
+        vy: dy * speed,
+        vz: dz * speed,
+        life: life,
+        max: life,
+        color: fire[(Math.random() * fire.length) | 0],
+        grav: 18,
+        px: Math.random() < 0.22 ? 3 : 2,
+      });
+    }
+    for (let i = 0; i < 70; i += 1) {
+      const theta = Math.random() * Math.PI * 2;
+      const speed = 2 + Math.random() * 5;
+      const life = 1.1 + Math.random() * 0.8;
+      sparks.push({
+        x: ox,
+        y: oy,
+        z: oz,
+        vx: Math.cos(theta) * speed,
+        vy: 2 + Math.random() * 4,
+        vz: Math.sin(theta) * speed,
+        life: life,
+        max: life,
+        color: smoke[(Math.random() * smoke.length) | 0],
+        grav: -1.4,
+        px: 3,
+      });
+    }
+    if (sparks.length > 1100) sparks.splice(0, sparks.length - 1100);
+  }
+
   function burstAt(ox, oy, oz, n) {
     for (let i = 0; i < n; i += 1) {
       const ay = Math.random() * Math.PI * 2;
@@ -1272,8 +1354,17 @@
     if (dying) return;
     dying = true;
     playBoom();
-    fireworkBurst(x, y, z);
     downPlayer(true);
+  }
+
+  function diagFinT(lx, ly, lz, ldx, ldy, ldz, fin, far) {
+    const c = Math.cos(fin.ang);
+    const s = Math.sin(fin.ang);
+    const ox = c * lx + s * ly;
+    const oy = -s * lx + c * ly;
+    const dx = c * ldx + s * ldy;
+    const dy = -s * ldx + c * ldy;
+    return boxT(ox, oy, lz, dx, dy, ldz, fin.x0, -fin.thick, fin.z0, fin.x1, fin.thick, fin.z1, far);
   }
 
   function buildFins(spec) {
@@ -1292,21 +1383,21 @@
     ];
     let wingOut = outer;
     const tris = [];
+    const diags = [];
     if (spec.id === "violet") {
-      wingOut = inner + 1.25;
-      return {
-        fins: [],
-        tris: [
-          [1, 0.07, inner, -1.5, wingOut, -1.15, inner + 0.08, 0.55],
-          [1, 0.07, -inner, -1.5, -wingOut, -1.15, -(inner + 0.08), 0.55],
-          [0, 0.06, inner, -1.45, inner + 0.7, -1.1, inner + 0.06, -0.15],
-          [0, 0.06, -inner, -1.45, -(inner + 0.85), -1.05, -(inner + 0.06), 0.2],
-        ],
-        wingOut: wingOut,
-        wingZ: -1.15,
-      };
+      const angles = [Math.PI / 4, Math.PI * 3 / 4, -Math.PI * 3 / 4, -Math.PI / 4];
+      for (let i = 0; i < angles.length; i += 1) {
+        diags.push({
+          ang: angles[i],
+          x0: 0.36 * fat,
+          x1: 0.82 * fat,
+          z0: -1.2 * len,
+          z1: -0.5 * len,
+          thick: 0.05 * fat,
+        });
+      }
     }
-    return { fins: fins, tris: tris, wingOut: wingOut, wingZ: (z0 + z1) * 0.5 };
+    return { fins: fins, tris: tris, diags: diags, wingOut: wingOut, wingZ: (z0 + z1) * 0.5 };
   }
 
   function makeLook(spec) {
@@ -1339,6 +1430,7 @@
       showFlame: spec.id !== "firework",
       fins: built.fins,
       tris: built.tris,
+      diags: built.diags,
     };
   }
 
@@ -1407,6 +1499,7 @@
 
   function explodeFoe(foe) {
     playBoom();
+    carveBuilding(foe.x, foe.y, foe.z, 40 / 4.4);
     burstAt(foe.x, foe.y, foe.z, 40);
     dropFoe(foe);
     const reach2 = 144;
@@ -1449,7 +1542,7 @@
           i -= 1;
           continue;
         }
-      } else {
+    } else {
         foe.fuel = Math.max(0, foe.fuel - dt / 30);
         if (foe.fuel <= 0 && !armFoeBoom(foe)) {
           burstAt(foe.x, foe.y, foe.z, 14);
@@ -1568,7 +1661,7 @@
         const s = oy < 0 ? -1 : 1;
         foe.y += s * (penY + 0.2);
         foe.vy = s * 10;
-      } else {
+    } else {
         const s = oz < 0 ? -1 : 1;
         foe.z += s * (penZ + 0.2);
         foe.vz = s * 10;
@@ -1644,6 +1737,14 @@
         kind = 4;
       }
     }
+    const diags = g.diags || [];
+    for (let i = 0; i < diags.length; i += 1) {
+      const hit = diagFinT(lx, ly, lz, ldx, ldy, ldz, diags[i], 160);
+      if (hit > 0.05 && hit < best) {
+        best = hit;
+        kind = 4;
+      }
+    }
     if (!kind) return null;
     return { t: best, kind: kind, hx: hx, hy: hy, hz: hz };
   }
@@ -1667,13 +1768,7 @@
       }
       return look.spec.body;
     }
-    if (hit.kind === 2) {
-      if (look.spec.id === "violet") {
-        const span = look.noseTip - look.bodyFront || 1;
-        if ((hit.hz - look.bodyFront) / span < 0.38) return [78, 36, 120];
-      }
-      return look.spec.nose;
-    }
+    if (hit.kind === 2) return look.spec.nose;
     return look.spec.fin;
   }
 
@@ -1786,6 +1881,10 @@
     [120, 118, 108],
     [74, 82, 90],
     [168, 150, 72],
+    [176, 184, 190],
+    [32, 40, 54],
+    [24, 26, 30],
+    [232, 198, 96],
   ];
   const spawnPads = [
     { mine: true, immortal: true, x: spawnX, y: spawnY, z: spawnZ, hp: 75, hurt: 0, alive: true },
@@ -1793,6 +1892,7 @@
   ];
   const spawnDraw = [];
   const mapDraw = [];
+  let chaser = null;
 
   function chunkKey(cx, cz) {
     return cx + ":" + cz;
@@ -1855,6 +1955,9 @@
     if (dy >= -1e-6) return -1;
     const t = (mapGroundY0 - oy) / dy;
     if (t < 0.05 || t > 160) return -1;
+    const wx = ox + dx * t;
+    const wz = oz + dz * t;
+    if (inMineMouth(wx, wz)) return -1;
     return t;
   }
 
@@ -1864,14 +1967,694 @@
 
   function mapGroundY() {
     let top = null;
-    if (y >= mapGroundY0 - 0.2 && y <= mapGroundY0 + 1.5) top = mapGroundY0;
+    if (!inMineMouth(x, z) && y >= mapGroundY0 - 0.2 && y <= mapGroundY0 + 1.5) top = mapGroundY0;
     for (let i = 0; i < mapBoxes.length; i += 1) {
       const m = mapBoxes[i];
+      if (m[6] === 5 || m[6] === 7) continue;
       if (x < m[0] - 0.4 || x > m[3] + 0.4 || z < m[2] - 0.4 || z > m[5] + 0.4) continue;
       if (y < m[4] - 0.2 || y > m[4] + 1.5) continue;
       if (top == null || m[4] > top) top = m[4];
     }
+    const ix = Math.floor((x - voxX) / CELL);
+    const iz = Math.floor((z - voxZ) / CELL);
+    if (ix >= 0 && iz >= 0 && ix < VW && iz < VD) {
+      for (let iy = VH - 1; iy >= 0; iy -= 1) {
+        if (!voxAt(ix, iy, iz)) continue;
+        const face = voxY + (iy + 1) * CELL;
+        if (y >= face - 0.2 && y <= face + 1.5 && (top == null || face > top)) top = face;
+        break;
+      }
+    }
+    const mix = Math.floor(x / CELL);
+    const miz = Math.floor(z / CELL);
+    const iyTop = Math.floor((y + 1.5 - mapGroundY0) / CELL);
+    const iyBot = Math.floor((y - 0.2 - mapGroundY0) / CELL);
+    for (let iy = iyTop; iy >= iyBot; iy -= 1) {
+      if (!mineShell.has(mineKey(mix, iy, miz))) continue;
+      const face = mapGroundY0 + (iy + 1) * CELL;
+      if (y >= face - 0.2 && y <= face + 1.5 && (top == null || face > top)) top = face;
+      break;
+    }
+    const floor = floorStand(x, y, z);
+    if (floor > 1.15 && (top == null || floor - 1 > top)) top = floor - 1;
     return top;
+  }
+
+  function collideBoxes() {
+    const pad = 1.15;
+    for (let i = 0; i < mapBoxes.length; i += 1) {
+      const m = mapBoxes[i];
+      if (m[6] === 5 || m[6] === 7) continue;
+      if (x < m[0] - pad || x > m[3] + pad || y < m[1] - pad || y > m[4] + pad || z < m[2] - pad || z > m[5] + pad) continue;
+      const left = x - (m[0] - pad);
+      const right = (m[3] + pad) - x;
+      const below = y - (m[1] - pad);
+      const above = (m[4] + pad) - y;
+      const near = z - (m[2] - pad);
+      const far = (m[5] + pad) - z;
+      const min = Math.min(left, right, below, above, near, far);
+      if (min === above) {
+        y = m[4] + pad;
+        if (vy < 0) vy = 0;
+        grounded = true;
+      } else if (min === below) {
+        y = m[1] - pad;
+        if (vy > 0) vy = 0;
+      } else if (min === left) {
+        x = m[0] - pad;
+        if (vx > 0) vx = 0;
+      } else if (min === right) {
+        x = m[3] + pad;
+        if (vx < 0) vx = 0;
+      } else if (min === near) {
+        z = m[2] - pad;
+        if (vz > 0) vz = 0;
+      } else {
+        z = m[5] + pad;
+        if (vz < 0) vz = 0;
+      }
+    }
+  }
+
+  const CELL = CHUNK / 8;
+  const VW = 8;
+  const VH = 8;
+  const VD = 8;
+  const voxX = 0;
+  const voxY = mapGroundY0;
+  const voxZ = CHUNK;
+  const voxGrid = new Uint8Array(VW * VH * VD);
+  const voxRgb = [
+    [176, 184, 190],
+    [32, 40, 54],
+    [24, 26, 30],
+    [232, 198, 96],
+  ];
+  const FLOOR_N = 16;
+  const FLOOR_W = 8;
+  const floorX0 = -16;
+  const floorZ0 = -16;
+  const floorRgb = [176, 184, 190];
+  const floorGrids = [];
+  let floorFace = [];
+
+  function floorLayerY(layer) {
+    return mapGroundY0 + layer * 8;
+  }
+
+  function rebuildFloorFace() {
+    floorFace = [];
+    for (let layer = 0; layer < FLOOR_N; layer += 1) {
+      const grid = floorGrids[layer];
+      const y0 = floorLayerY(layer);
+      for (let iz = 0; iz < FLOOR_W; iz += 1) {
+        for (let ix = 0; ix < FLOOR_W; ix += 1) {
+          if (!grid[ix + iz * FLOOR_W]) continue;
+          const x0 = floorX0 + ix * CELL;
+          const z0 = floorZ0 + iz * CELL;
+          floorFace.push({
+            x0: x0,
+            y0: y0,
+            z0: z0,
+            x1: x0 + CELL,
+            y1: y0 + CELL,
+            z1: z0 + CELL,
+            cx: x0 + CELL * 0.5,
+            cy: y0 + CELL * 0.5,
+            cz: z0 + CELL * 0.5,
+            gray: 1,
+          });
+        }
+      }
+    }
+  }
+
+  function carveFloors(ox, oy, oz, radius) {
+    const r2 = radius * radius;
+    let changed = false;
+    for (let layer = 0; layer < FLOOR_N; layer += 1) {
+      const cy = floorLayerY(layer) + CELL * 0.5;
+      if (Math.abs(cy - oy) > radius + CELL) continue;
+      const grid = floorGrids[layer];
+      for (let iz = 0; iz < FLOOR_W; iz += 1) {
+        for (let ix = 0; ix < FLOOR_W; ix += 1) {
+          const at = ix + iz * FLOOR_W;
+          if (!grid[at]) continue;
+          const cx = floorX0 + (ix + 0.5) * CELL;
+          const cz = floorZ0 + (iz + 0.5) * CELL;
+          const dx = cx - ox;
+          const dy = cy - oy;
+          const dz = cz - oz;
+          if (dx * dx + dy * dy + dz * dz > r2) continue;
+          grid[at] = 0;
+          changed = true;
+        }
+      }
+    }
+    if (changed) rebuildFloorFace();
+  }
+
+  function floorBlocked(px, py, pz) {
+    const pad = 1.05;
+    const ix0 = Math.floor((px - pad - floorX0) / CELL);
+    const ix1 = Math.floor((px + pad - floorX0) / CELL);
+    const iz0 = Math.floor((pz - pad - floorZ0) / CELL);
+    const iz1 = Math.floor((pz + pad - floorZ0) / CELL);
+    for (let iz = iz0; iz <= iz1; iz += 1) {
+      if (iz < 0 || iz >= FLOOR_W) continue;
+      for (let ix = ix0; ix <= ix1; ix += 1) {
+        if (ix < 0 || ix >= FLOOR_W) continue;
+        for (let layer = 0; layer < FLOOR_N; layer += 1) {
+          if (!floorGrids[layer][ix + iz * FLOOR_W]) continue;
+          const y0 = floorLayerY(layer);
+          if (py > y0 - pad && py < y0 + CELL + pad) return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  function floorStand(px, py, pz) {
+    const ix = Math.floor((px - floorX0) / CELL);
+    const iz = Math.floor((pz - floorZ0) / CELL);
+    if (ix < 0 || iz < 0 || ix >= FLOOR_W || iz >= FLOOR_W) return 0;
+    let stand = 0;
+    for (let layer = 0; layer < FLOOR_N; layer += 1) {
+      if (!floorGrids[layer][ix + iz * FLOOR_W]) continue;
+      const top = floorLayerY(layer) + CELL + 1;
+      if (top <= py + 1.2 && top > stand) stand = top;
+    }
+    return stand;
+  }
+
+  for (let layer = 0; layer < FLOOR_N; layer += 1) {
+    const grid = new Uint8Array(FLOOR_W * FLOOR_W);
+    grid.fill(1);
+    floorGrids.push(grid);
+  }
+  rebuildFloorFace();
+
+  function voxAt(ix, iy, iz) {
+    if (ix < 0 || iy < 0 || iz < 0 || ix >= VW || iy >= VH || iz >= VD) return 0;
+    return voxGrid[ix + iz * VW + iy * VW * VD];
+  }
+
+  function buildVoxels() {
+    for (let iy = 0; iy < VH; iy += 1) {
+      for (let iz = 0; iz < VD; iz += 1) {
+        for (let ix = 0; ix < VW; ix += 1) {
+          const skin = ix <= 1 || ix >= VW - 2 || iy <= 1 || iy >= VH - 2 || iz <= 1 || iz >= VD - 2;
+          if (!skin) continue;
+          voxGrid[ix + iz * VW + iy * VW * VD] = 1;
+        }
+      }
+    }
+  }
+
+  buildVoxels();
+
+  function carveBuilding(ox, oy, oz, radius) {
+    const r2 = radius * radius;
+    for (let iy = 0; iy < VH; iy += 1) {
+      for (let iz = 0; iz < VD; iz += 1) {
+        for (let ix = 0; ix < VW; ix += 1) {
+          const cx = voxX + (ix + 0.5) * CELL;
+          const cy = voxY + (iy + 0.5) * CELL;
+          const cz = voxZ + (iz + 0.5) * CELL;
+          const dx = cx - ox;
+          const dy = cy - oy;
+          const dz = cz - oz;
+          if (dx * dx + dy * dy + dz * dz > r2) continue;
+          voxGrid[ix + iz * VW + iy * VW * VD] = 0;
+        }
+      }
+    }
+    mineCarve(ox, oy, oz, radius);
+    carveFloors(ox, oy, oz, radius);
+  }
+
+  const MINE = 8;
+  const mineIX = 8;
+  const mineIZ = 0;
+  const mineShell = new Map();
+  const mineAir = new Set();
+  const mineChunks = new Map();
+  const mineRgb = [132, 116, 96];
+  let mineFace = [];
+
+  function mineKey(ix, iy, iz) {
+    return ix + "," + iy + "," + iz;
+  }
+
+  function mineChunkKey(ix, iy, iz) {
+    return Math.floor(ix / MINE) + "," + Math.floor(iy / MINE) + "," + Math.floor(iz / MINE);
+  }
+
+  function mineChunk(ix, iy, iz) {
+    const key = mineChunkKey(ix, iy, iz);
+    let chunk = mineChunks.get(key);
+    if (chunk) return chunk;
+    chunk = {
+      cx: Math.floor(ix / MINE),
+      cy: Math.floor(iy / MINE),
+      cz: Math.floor(iz / MINE),
+      grid: new Uint8Array(MINE * MINE * MINE),
+      n: 0,
+    };
+    mineChunks.set(key, chunk);
+    return chunk;
+  }
+
+  function mineIndex(chunk, ix, iy, iz) {
+    const lx = ix - chunk.cx * MINE;
+    const ly = iy - chunk.cy * MINE;
+    const lz = iz - chunk.cz * MINE;
+    if (lx < 0 || ly < 0 || lz < 0 || lx >= MINE || ly >= MINE || lz >= MINE) return -1;
+    return lx + lz * MINE + ly * MINE * MINE;
+  }
+
+  function mineInChunk(ix, iy, iz) {
+    return ix >= mineIX && ix < mineIX + MINE && iz >= mineIZ && iz < mineIZ + MINE && iy <= -1 && iy >= -MINE;
+  }
+
+  function minePut(ix, iy, iz) {
+    if (!mineInChunk(ix, iy, iz)) return;
+    const key = mineKey(ix, iy, iz);
+    if (mineAir.has(key) || mineShell.has(key)) return;
+    mineShell.set(key, 1);
+    const chunk = mineChunk(ix, iy, iz);
+    const at = mineIndex(chunk, ix, iy, iz);
+    if (at >= 0 && !chunk.grid[at]) {
+      chunk.grid[at] = 1;
+      chunk.n += 1;
+    }
+  }
+
+  function mineShellRemove(ix, iy, iz) {
+    const key = mineKey(ix, iy, iz);
+    if (!mineShell.has(key)) return;
+    mineShell.delete(key);
+    const chunk = mineChunks.get(mineChunkKey(ix, iy, iz));
+    if (!chunk) return;
+    const at = mineIndex(chunk, ix, iy, iz);
+    if (at >= 0 && chunk.grid[at]) {
+      chunk.grid[at] = 0;
+      chunk.n -= 1;
+      if (chunk.n <= 0) mineChunks.delete(mineChunkKey(ix, iy, iz));
+    }
+  }
+
+  function mineCarve(ox, oy, oz, radius) {
+    const r2 = radius * radius;
+    const hit = [];
+    mineShell.forEach((v, key) => {
+      const part = key.split(",");
+      const ix = +part[0];
+      const iy = +part[1];
+      const iz = +part[2];
+      const cx = (ix + 0.5) * CELL;
+      const cy = mapGroundY0 + (iy + 0.5) * CELL;
+      const cz = (iz + 0.5) * CELL;
+      const dx = cx - ox;
+      const dy = cy - oy;
+      const dz = cz - oz;
+      if (dx * dx + dy * dy + dz * dz > r2) return;
+      hit.push(ix, iy, iz);
+    });
+    for (let i = 0; i < hit.length; i += 3) {
+      const ix = hit[i];
+      const iy = hit[i + 1];
+      const iz = hit[i + 2];
+      mineAir.add(mineKey(ix, iy, iz));
+      mineShellRemove(ix, iy, iz);
+    }
+    if (hit.length) mineMark();
+  }
+
+  function mineAirDist(ix, iy, iz) {
+    const near = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
+    for (let i = 0; i < near.length; i += 1) {
+      if (mineAir.has(mineKey(ix + near[i][0], iy + near[i][1], iz + near[i][2]))) return 1;
+    }
+    for (let i = 0; i < near.length; i += 1) {
+      const ax = ix + near[i][0];
+      const ay = iy + near[i][1];
+      const az = iz + near[i][2];
+      for (let j = 0; j < near.length; j += 1) {
+        if (mineAir.has(mineKey(ax + near[j][0], ay + near[j][1], az + near[j][2]))) return 2;
+      }
+    }
+    return 9;
+  }
+
+  function mineMark() {
+    const drop = [];
+    mineShell.forEach((v, key) => {
+      const part = key.split(",");
+      const ix = +part[0];
+      const iy = +part[1];
+      const iz = +part[2];
+      const dist = mineAirDist(ix, iy, iz);
+      if (dist > 2) drop.push(ix, iy, iz);
+      else mineShell.set(key, dist);
+    });
+    for (let i = 0; i < drop.length; i += 3) mineShellRemove(drop[i], drop[i + 1], drop[i + 2]);
+    mineFace = [];
+    mineShell.forEach((dist, key) => {
+      if (dist !== 1) return;
+      const part = key.split(",");
+      const ix = +part[0];
+      const iy = +part[1];
+      const iz = +part[2];
+      mineFace.push({
+        x0: ix * CELL,
+        y0: mapGroundY0 + iy * CELL,
+        z0: iz * CELL,
+        x1: (ix + 1) * CELL,
+        y1: mapGroundY0 + (iy + 1) * CELL,
+        z1: (iz + 1) * CELL,
+        cx: (ix + 0.5) * CELL,
+        cy: mapGroundY0 + (iy + 0.5) * CELL,
+        cz: (iz + 0.5) * CELL,
+      });
+    });
+  }
+
+  function inMineMouth(wx, wz) {
+    return wx >= mineIX * CELL && wx < (mineIX + MINE) * CELL && wz >= mineIZ * CELL && wz < (mineIZ + MINE) * CELL;
+  }
+
+  function openMine() {
+    for (let iy = -MINE; iy <= -1; iy += 1) {
+      for (let iz = 0; iz < MINE; iz += 1) {
+        for (let ix = 0; ix < MINE; ix += 1) {
+          const side = ix <= 1 || ix >= MINE - 2 || iz <= 1 || iz >= MINE - 2;
+          const bed = iy <= -MINE + 1;
+          if (iy < -1 && (side || bed)) minePut(mineIX + ix, iy, mineIZ + iz);
+          else mineAir.add(mineKey(mineIX + ix, iy, mineIZ + iz));
+        }
+      }
+    }
+    mineMark();
+  }
+
+  openMine();
+
+  function mineChunkHit(ox, oy, oz, dx, dy, dz, chunk) {
+    const x0 = chunk.cx * MINE * CELL;
+    const y0 = mapGroundY0 + chunk.cy * MINE * CELL;
+    const z0 = chunk.cz * MINE * CELL;
+    const x1 = x0 + MINE * CELL;
+    const y1 = y0 + MINE * CELL;
+    const z1 = z0 + MINE * CELL;
+    let tmin = 0.05;
+    let tmax = 160;
+    const slabs = [
+      [dx, ox, x0, x1],
+      [dy, oy, y0, y1],
+      [dz, oz, z0, z1],
+    ];
+    for (let i = 0; i < 3; i += 1) {
+      const d = slabs[i][0];
+      const o = slabs[i][1];
+      const a = slabs[i][2];
+      const b = slabs[i][3];
+      if (Math.abs(d) < 1e-8) {
+        if (o < a || o > b) return null;
+      } else {
+        let ta = (a - o) / d;
+        let tb = (b - o) / d;
+        if (ta > tb) {
+          const swap = ta;
+          ta = tb;
+          tb = swap;
+        }
+        if (ta > tmin) tmin = ta;
+        if (tb < tmax) tmax = tb;
+        if (tmin > tmax) return null;
+      }
+    }
+    const px = ox + dx * (tmin + 0.0001);
+    const py = oy + dy * (tmin + 0.0001);
+    const pz = oz + dz * (tmin + 0.0001);
+    let ix = Math.floor(px / CELL);
+    let iy = Math.floor((py - mapGroundY0) / CELL);
+    let iz = Math.floor(pz / CELL);
+    const stepX = dx >= 0 ? 1 : -1;
+    const stepY = dy >= 0 ? 1 : -1;
+    const stepZ = dz >= 0 ? 1 : -1;
+    const tDeltaX = Math.abs(dx) > 1e-8 ? CELL / Math.abs(dx) : 1e9;
+    const tDeltaY = Math.abs(dy) > 1e-8 ? CELL / Math.abs(dy) : 1e9;
+    const tDeltaZ = Math.abs(dz) > 1e-8 ? CELL / Math.abs(dz) : 1e9;
+    let tMaxX = Math.abs(dx) > 1e-8 ? tmin + ((dx > 0 ? (ix + 1) * CELL : ix * CELL) - px) / dx : 1e9;
+    let tMaxY = Math.abs(dy) > 1e-8 ? tmin + ((dy > 0 ? mapGroundY0 + (iy + 1) * CELL : mapGroundY0 + iy * CELL) - py) / dy : 1e9;
+    let tMaxZ = Math.abs(dz) > 1e-8 ? tmin + ((dz > 0 ? (iz + 1) * CELL : iz * CELL) - pz) / dz : 1e9;
+    let tHit = tmin;
+    for (let n = 0; n < MINE * 3 + 3; n += 1) {
+      const at = mineIndex(chunk, ix, iy, iz);
+      if (at >= 0 && chunk.grid[at]) return tHit;
+      if (tMaxX <= tMaxY && tMaxX <= tMaxZ) {
+        if (tMaxX > tmax) return null;
+        ix += stepX;
+        tHit = tMaxX;
+        tMaxX += tDeltaX;
+      } else if (tMaxY <= tMaxZ) {
+        if (tMaxY > tmax) return null;
+        iy += stepY;
+        tHit = tMaxY;
+        tMaxY += tDeltaY;
+      } else {
+        if (tMaxZ > tmax) return null;
+        iz += stepZ;
+        tHit = tMaxZ;
+        tMaxZ += tDeltaZ;
+      }
+    }
+    return null;
+  }
+
+  function mineBlocked(px, py, pz) {
+    const pad = 1.05;
+    const ix0 = Math.floor((px - pad) / CELL);
+    const ix1 = Math.floor((px + pad) / CELL);
+    const iy0 = Math.floor((py - pad - mapGroundY0) / CELL);
+    const iy1 = Math.floor((py + pad - mapGroundY0) / CELL);
+    const iz0 = Math.floor((pz - pad) / CELL);
+    const iz1 = Math.floor((pz + pad) / CELL);
+    for (let iy = iy0; iy <= iy1; iy += 1) {
+      for (let iz = iz0; iz <= iz1; iz += 1) {
+        for (let ix = ix0; ix <= ix1; ix += 1) {
+          if (!mineShell.has(mineKey(ix, iy, iz))) continue;
+          const a0 = ix * CELL;
+          const a1 = a0 + CELL;
+          const b0 = mapGroundY0 + iy * CELL;
+          const b1 = b0 + CELL;
+          const c0 = iz * CELL;
+          const c1 = c0 + CELL;
+          if (px > a0 - pad && px < a1 + pad && py > b0 - pad && py < b1 + pad && pz > c0 - pad && pz < c1 + pad) return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  function voxelHit(ox, oy, oz, dx, dy, dz, far) {
+    const x1 = voxX + VW * CELL;
+    const y1 = voxY + VH * CELL;
+    const z1 = voxZ + VD * CELL;
+    let tmin = 0.05;
+    let tmax = far || 160;
+    const slabs = [
+      [dx, ox, voxX, x1],
+      [dy, oy, voxY, y1],
+      [dz, oz, voxZ, z1],
+    ];
+    for (let i = 0; i < 3; i += 1) {
+      const d = slabs[i][0];
+      const o = slabs[i][1];
+      const a = slabs[i][2];
+      const b = slabs[i][3];
+      if (Math.abs(d) < 1e-8) {
+        if (o < a || o > b) return null;
+      } else {
+        let ta = (a - o) / d;
+        let tb = (b - o) / d;
+        if (ta > tb) {
+          const swap = ta;
+          ta = tb;
+          tb = swap;
+        }
+        if (ta > tmin) tmin = ta;
+        if (tb < tmax) tmax = tb;
+        if (tmin > tmax) return null;
+      }
+    }
+    const px = ox + dx * (tmin + 0.0001);
+    const py = oy + dy * (tmin + 0.0001);
+    const pz = oz + dz * (tmin + 0.0001);
+    let ix = Math.floor((px - voxX) / CELL);
+    let iy = Math.floor((py - voxY) / CELL);
+    let iz = Math.floor((pz - voxZ) / CELL);
+    if (ix < 0) ix = 0;
+    if (iy < 0) iy = 0;
+    if (iz < 0) iz = 0;
+    if (ix >= VW) ix = VW - 1;
+    if (iy >= VH) iy = VH - 1;
+    if (iz >= VD) iz = VD - 1;
+    const stepX = dx >= 0 ? 1 : -1;
+    const stepY = dy >= 0 ? 1 : -1;
+    const stepZ = dz >= 0 ? 1 : -1;
+    const tDeltaX = Math.abs(dx) > 1e-8 ? CELL / Math.abs(dx) : 1e9;
+    const tDeltaY = Math.abs(dy) > 1e-8 ? CELL / Math.abs(dy) : 1e9;
+    const tDeltaZ = Math.abs(dz) > 1e-8 ? CELL / Math.abs(dz) : 1e9;
+    let tMaxX = Math.abs(dx) > 1e-8 ? tmin + ((dx > 0 ? voxX + (ix + 1) * CELL : voxX + ix * CELL) - px) / dx : 1e9;
+    let tMaxY = Math.abs(dy) > 1e-8 ? tmin + ((dy > 0 ? voxY + (iy + 1) * CELL : voxY + iy * CELL) - py) / dy : 1e9;
+    let tMaxZ = Math.abs(dz) > 1e-8 ? tmin + ((dz > 0 ? voxZ + (iz + 1) * CELL : voxZ + iz * CELL) - pz) / dz : 1e9;
+    let tHit = tmin;
+    const limit = VW + VH + VD + 3;
+    for (let n = 0; n < limit; n += 1) {
+      const id = voxAt(ix, iy, iz);
+      if (id) return { t: tHit, id: id };
+      if (tMaxX <= tMaxY && tMaxX <= tMaxZ) {
+        if (tMaxX > tmax) return null;
+        ix += stepX;
+        tHit = tMaxX;
+        tMaxX += tDeltaX;
+      } else if (tMaxY <= tMaxZ) {
+        if (tMaxY > tmax) return null;
+        iy += stepY;
+        tHit = tMaxY;
+        tMaxY += tDeltaY;
+      } else {
+        if (tMaxZ > tmax) return null;
+        iz += stepZ;
+        tHit = tMaxZ;
+        tMaxZ += tDeltaZ;
+      }
+    }
+    return null;
+  }
+
+  function voxEdge(ox, oy, oz, dx, dy, dz, t) {
+    const hx = ox + dx * t;
+    const hy = oy + dy * t;
+    const hz = oz + dz * t;
+    const du = Math.abs((hx - voxX) / CELL - Math.round((hx - voxX) / CELL));
+    const dv = Math.abs((hy - voxY) / CELL - Math.round((hy - voxY) / CELL));
+    const dw = Math.abs((hz - voxZ) / CELL - Math.round((hz - voxZ) / CELL));
+    const edge = 0.12;
+    if (du <= dv && du <= dw) return dv < edge || dw < edge;
+    if (dv <= dw) return du < edge || dw < edge;
+    return du < edge || dv < edge;
+  }
+
+  function mineEdge(ox, oy, oz, dx, dy, dz, t) {
+    const hx = ox + dx * t;
+    const hy = oy + dy * t;
+    const hz = oz + dz * t;
+    const du = Math.abs(hx / CELL - Math.round(hx / CELL));
+    const dv = Math.abs((hy - mapGroundY0) / CELL - Math.round((hy - mapGroundY0) / CELL));
+    const dw = Math.abs(hz / CELL - Math.round(hz / CELL));
+    const edge = 0.12;
+    if (du <= dv && du <= dw) return dv < edge || dw < edge;
+    if (dv <= dw) return du < edge || dw < edge;
+    return du < edge || dv < edge;
+  }
+
+  function voxelBlocked(px, py, pz) {
+    const pad = 1.05;
+    const ix0 = Math.floor((px - pad - voxX) / CELL);
+    const ix1 = Math.floor((px + pad - voxX) / CELL);
+    const iy0 = Math.floor((py - pad - voxY) / CELL);
+    const iy1 = Math.floor((py + pad - voxY) / CELL);
+    const iz0 = Math.floor((pz - pad - voxZ) / CELL);
+    const iz1 = Math.floor((pz + pad - voxZ) / CELL);
+    for (let iy = iy0; iy <= iy1; iy += 1) {
+      for (let iz = iz0; iz <= iz1; iz += 1) {
+        for (let ix = ix0; ix <= ix1; ix += 1) {
+          if (!voxAt(ix, iy, iz)) continue;
+          const a0 = voxX + ix * CELL;
+          const a1 = a0 + CELL;
+          const b0 = voxY + iy * CELL;
+          const b1 = b0 + CELL;
+          const c0 = voxZ + iz * CELL;
+          const c1 = c0 + CELL;
+          if (px > a0 - pad && px < a1 + pad && py > b0 - pad && py < b1 + pad && pz > c0 - pad && pz < c1 + pad) return true;
+        }
+      }
+    }
+    if (mineBlocked(px, py, pz)) return true;
+    return floorBlocked(px, py, pz);
+  }
+
+  function escapeVoxels(px, py, pz) {
+    if (!voxelBlocked(px, py, pz)) return [px, py, pz];
+    const step = 0.5;
+    let bestX = px;
+    let bestY = py;
+    let bestZ = pz;
+    let bestD = 1e9;
+    const dirs = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
+    for (let d = 0; d < dirs.length; d += 1) {
+      const dir = dirs[d];
+      for (let n = 1; n <= 48; n += 1) {
+        const qx = px + dir[0] * step * n;
+        const qy = py + dir[1] * step * n;
+        const qz = pz + dir[2] * step * n;
+        if (voxelBlocked(qx, qy, qz)) continue;
+        if (step * n < bestD) {
+          bestD = step * n;
+          bestX = qx;
+          bestY = qy;
+          bestZ = qz;
+        }
+        break;
+      }
+    }
+    return [bestX, bestY, bestZ];
+  }
+
+  function collideVoxels() {
+    const out = escapeVoxels(moveX, moveY, moveZ);
+    moveX = out[0];
+    moveY = out[1];
+    moveZ = out[2];
+    const dx = x - moveX;
+    const dy = y - moveY;
+    const dz = z - moveZ;
+    const dist = Math.hypot(dx, dy, dz);
+    const steps = Math.max(1, Math.ceil(dist / Math.max(0.8, CELL * 0.35)));
+    let cx = moveX;
+    let cy = moveY;
+    let cz = moveZ;
+    const sx = dx / steps;
+    const sy = dy / steps;
+    const sz = dz / steps;
+    for (let i = 0; i < steps; i += 1) {
+      const nx = cx + sx;
+      if (voxelBlocked(nx, cy, cz)) {
+        if (sx > 0) vx = Math.min(vx, 0);
+        else if (sx < 0) vx = Math.max(vx, 0);
+      } else cx = nx;
+      const ny = cy + sy;
+      if (voxelBlocked(cx, ny, cz)) {
+        if (sy < 0) {
+          vy = Math.max(vy, 0);
+          grounded = true;
+        } else if (sy > 0) vy = Math.min(vy, 0);
+      } else cy = ny;
+      const nz = cz + sz;
+      if (voxelBlocked(cx, cy, nz)) {
+        if (sz > 0) vz = Math.min(vz, 0);
+        else if (sz < 0) vz = Math.max(vz, 0);
+      } else cz = nz;
+    }
+    x = cx;
+    y = cy;
+    z = cz;
+    moveX = x;
+    moveY = y;
+    moveZ = z;
   }
 
   function collideMap() {
@@ -1881,6 +2664,8 @@
       if (vy < 0) vy = 0;
       grounded = true;
     }
+    collideBoxes();
+    collideVoxels();
   }
 
   function hurtPad(pad, amount) {
@@ -1905,6 +2690,37 @@
       }
     }
     return true;
+  }
+
+  function stepChaser(dt) {
+    if (!chaser) return;
+    if (chaser.hurt > 0) chaser.hurt -= dt;
+    let dx = x - chaser.x;
+    let dy = y - chaser.y;
+    let dz = z - chaser.z;
+    let dist = Math.hypot(dx, dy, dz);
+    if (dist < 0.05) {
+      dx = 1;
+      dy = 0;
+      dz = 0;
+      dist = 1;
+    }
+    const speed = 22;
+    chaser.x += (dx / dist) * speed * dt;
+    chaser.y += (dy / dist) * speed * dt;
+    chaser.z += (dz / dist) * speed * dt;
+    const reach = spawnBallR + hitHalf;
+    const ndx = x - chaser.x;
+    const ndy = y - chaser.y;
+    const ndz = z - chaser.z;
+    const nd = Math.hypot(ndx, ndy, ndz);
+    if (nd >= reach || nd < 0.001) return;
+    const push = reach - nd;
+    chaser.x -= (ndx / nd) * push;
+    chaser.y -= (ndy / nd) * push;
+    chaser.z -= (ndz / nd) * push;
+    if (downTime > 0 || gameOver || chaser.hurt > 0) return;
+    if (harm(ramDamage(speed))) chaser.hurt = 0.55;
   }
 
   function hitSpawns(dt) {
@@ -2001,7 +2817,24 @@
       if (!p) continue;
       const a = Math.max(0, s.life / s.max);
       const c = s.color;
+      if (s.meteor) {
+      const q = projectShot(s.x - s.vx * 0.07, s.y - s.vy * 0.07, s.z - s.vz * 0.07);
       ctx.fillStyle = "rgba(" + c[0] + "," + c[1] + "," + c[2] + "," + a + ")";
+      if (q) {
+        const steps = Math.max(1, Math.min(12, Math.ceil(Math.hypot(p[0] - q[0], p[1] - q[1]))));
+        for (let k = 0; k <= steps; k += 1) {
+          const u = k / steps;
+          const sx = Math.floor(q[0] + (p[0] - q[0]) * u);
+          const sy = Math.floor(q[1] + (p[1] - q[1]) * u);
+          if (sx < 0 || sy < 0 || sx >= bw || sy >= bh) continue;
+          ctx.fillRect(sx, sy, 2, 2);
+        }
+      }
+      ctx.fillStyle = "rgba(255,255,255," + a + ")";
+      ctx.fillRect(Math.floor(p[0]), Math.floor(p[1]), 2, 2);
+        continue;
+      }
+    ctx.fillStyle = "rgba(" + c[0] + "," + c[1] + "," + c[2] + "," + a + ")";
       const sz = s.px || (a > 0.45 ? 2 : 1);
       ctx.fillRect(Math.floor(p[0]), Math.floor(p[1]), sz, sz);
     }
@@ -2148,6 +2981,7 @@
     const built = buildFins(spec);
     fins = built.fins;
     finTris = built.tris;
+    finDiags = built.diags || [];
     wingOut = built.wingOut;
     wingZ = built.wingZ;
     speedMul = spec.speed * (1 + speedLv * 0.12);
@@ -2196,7 +3030,7 @@
     const bandReady = rocketId === "band" && wingSkill <= 0 && !wingDone;
     const violetReady = rocketId === "violet";
     const basicReady = rocketId === "basic";
-    skillEl.hidden = rocketId !== "firework" && !bandReady && !violetReady && !basicReady;
+    skillEl.hidden = !bandReady && !violetReady && !basicReady;
     if (skillCoolEl) skillCoolEl.hidden = rocketId !== "violet" && rocketId !== "basic";
     paintSkillCool();
   }
@@ -2458,6 +3292,22 @@
     launchKick = true;
     if (document.pointerLockElement !== canvas) canvas.requestPointerLock();
   }
+  const startBtn = document.getElementById("start");
+  if (startBtn) {
+    startBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      unlockAudio();
+      const aim = forward(aimYaw, aimPitch);
+      const gap = spawnBallR * 2 + 3;
+      chaser = {
+        x: spawnX + aim[0] * gap,
+        y: spawnY + aim[1] * gap,
+        z: spawnZ + aim[2] * gap,
+        hurt: 0,
+      };
+    });
+  }
   canvas.addEventListener("contextmenu", (e) => e.preventDefault());
   window.addEventListener("contextmenu", (e) => e.preventDefault());
   document.addEventListener("mousedown", (e) => {
@@ -2474,7 +3324,7 @@
   }, true);
   window.addEventListener("mousedown", (e) => {
     if (e.button !== 0) return;
-    if (e.target.closest && (e.target.closest("#cats") || e.target.closest("#fire") || e.target.closest("#shop"))) return;
+    if (e.target.closest && (e.target.closest("#cats") || e.target.closest("#fire") || e.target.closest("#shop") || e.target.closest("#start"))) return;
     if (document.pointerLockElement !== canvas) {
       canvas.requestPointerLock();
       return;
@@ -2503,7 +3353,12 @@
   }
   let skillEdge = false;
   let skillHeld = false;
+  let boomEdge = false;
   document.addEventListener("keydown", (e) => {
+    if (e.code === "KeyQ") {
+      if (!e.repeat) boomEdge = true;
+      return;
+    }
     if (e.code !== "KeyE") return;
     skillHeld = true;
     if (e.repeat) return;
@@ -2590,6 +3445,38 @@
     const infinite = (boomWait > 0 || won) && !dead;
     const thrusting = !dead && !noBoost && (rightHeld || violetOn) && (fuel > 0 || infinite);
     flaming = thrusting && rocketId !== "firework" && !(rocketId === "band" && (wingSkill > 0 || wingDone));
+    const flySpeed = Math.hypot(vx, vy, vz);
+    meteorOn = !dead && flySpeed > 200;
+    if (meteorOn) {
+      meteorClock += dt;
+      flaming = true;
+      const inv = 1 / flySpeed;
+      const bx = -vx * inv;
+      const by = -vy * inv;
+      const bz = -vz * inv;
+      const meteorColors = [[255, 255, 255], [255, 236, 120], [255, 150, 32], [255, 64, 16]];
+      for (let i = 0; i < 28; i += 1) {
+        const back = 40 + Math.random() * 90;
+        const spray = 14;
+        const color = meteorColors[(Math.random() * meteorColors.length) | 0];
+        const life = 0.28 + Math.random() * 0.4;
+        sparks.push({
+          x: x + (Math.random() - 0.5) * 3.2,
+          y: y + (Math.random() - 0.5) * 3.2,
+          z: z + (Math.random() - 0.5) * 3.2,
+          vx: bx * back + (Math.random() - 0.5) * spray,
+          vy: by * back + (Math.random() - 0.5) * spray,
+          vz: bz * back + (Math.random() - 0.5) * spray,
+          life: life,
+          max: life,
+          color: color,
+          grav: 0,
+          px: 2,
+          meteor: true,
+        });
+      }
+      if (sparks.length > 1100) sparks.splice(0, sparks.length - 1100);
+    }
     if (!dead && thrusting && !onRail && !infinite) {
       const burn = violetOn && rocketId === "violet" ? 1.75 : 1;
       fuel = Math.max(0, fuel - dt / fuelSec * burn);
@@ -2663,7 +3550,10 @@
         fuse = 0;
         downPlayer();
       }
-    } else {
+      } else {
+      moveX = x;
+      moveY = y;
+      moveZ = z;
       const aim = forward(aimYaw, aimPitch);
       const lead = 1 - Math.exp(-7 * dt);
       laserX += (x + aim[0] * 18 - laserX) * lead;
@@ -2753,7 +3643,7 @@
           collideMap();
           bandLockDeath();
         }
-      } else {
+          } else {
         const fly = forward(aimYaw, aimPitch + lift);
         vx += fly[0] * accel * dt;
         vy += fly[1] * accel * dt;
@@ -2837,13 +3727,12 @@
     collideMap();
     updateChunks();
     stepFoes(dt);
+    stepChaser(dt);
     hitSpawns(dt);
     stepCorpses(dt);
-    if (skillEdge && downTime <= 0 && !gameOver) {
-      if (rocketId === "firework") {
-        unlockAudio();
-        blast();
-      }
+    if (boomEdge && downTime <= 0 && !gameOver) {
+      unlockAudio();
+      blast();
     }
     stepWingSkill(dt);
     const shake = fuse > 0 ? (1 - fuse / 0.95) : 0;
@@ -3048,6 +3937,42 @@
       if (x1 < x0 || y1 < y0) continue;
       spawnDraw.push({ pad, x0, y0, x1, y1 });
     }
+    let chaserBox = null;
+    if (chaser) {
+      let x0 = bw;
+      let y0 = bh;
+      let x1 = 0;
+      let y1 = 0;
+      let seen = 0;
+      const rad = spawnBallR;
+      for (let ix = 0; ix < 2; ix += 1) {
+        for (let iy = 0; iy < 2; iy += 1) {
+          for (let iz = 0; iz < 2; iz += 1) {
+            const vxw = chaser.x + (ix ? rad : -rad) - camX;
+            const vyw = chaser.y + (iy ? rad : -rad) - camY;
+            const vzw = chaser.z + (iz ? rad : -rad) - camZ;
+            const df = vxw * lx + vyw * ly + vzw * lz;
+            if (df < 0.2) continue;
+            const dr = vxw * rx + vyw * ry + vzw * rz;
+            const du = vxw * ux + vyw * uy + vzw * uz;
+            const sx0 = ((dr / (df * aspect * tan)) + 1) * 0.5 * bw;
+            const sy0 = (1 - du / (df * tan)) * 0.5 * bh;
+            if (sx0 < x0) x0 = sx0;
+            if (sy0 < y0) y0 = sy0;
+            if (sx0 > x1) x1 = sx0;
+            if (sy0 > y1) y1 = sy0;
+            seen += 1;
+          }
+        }
+      }
+      if (seen) {
+        x0 = Math.max(0, Math.floor(x0) - 3);
+        y0 = Math.max(0, Math.floor(y0) - 3);
+        x1 = Math.min(bw - 1, Math.ceil(x1) + 3);
+        y1 = Math.min(bh - 1, Math.ceil(y1) + 3);
+        if (x1 >= x0 && y1 >= y0) chaserBox = { x0, y0, x1, y1 };
+      }
+    }
     mapDraw.length = 0;
     for (let mi = 0; mi < mapBoxes.length; mi += 1) {
       const m = mapBoxes[mi];
@@ -3087,6 +4012,83 @@
       if (x1 < x0 || y1 < y0) continue;
       mapDraw.push({ m, x0, y0, x1, y1 });
     }
+    let voxBox = null;
+    {
+      let x0 = bw;
+      let y0 = bh;
+      let x1 = 0;
+      let y1 = 0;
+      let seen = 0;
+      const xs = [voxX, voxX + VW * CELL];
+      const ys = [voxY, voxY + VH * CELL];
+      const zs = [voxZ, voxZ + VD * CELL];
+      for (let ix = 0; ix < 2; ix += 1) {
+        for (let iy = 0; iy < 2; iy += 1) {
+          for (let iz = 0; iz < 2; iz += 1) {
+            const vxw = xs[ix] - camX;
+            const vyw = ys[iy] - camY;
+            const vzw = zs[iz] - camZ;
+            const df = vxw * lx + vyw * ly + vzw * lz;
+            if (df < 0.35) continue;
+            const dr = vxw * rx + vyw * ry + vzw * rz;
+            const du = vxw * ux + vyw * uy + vzw * uz;
+            const sx0 = ((dr / (df * aspect * tan)) + 1) * 0.5 * bw;
+            const sy0 = (1 - du / (df * tan)) * 0.5 * bh;
+            if (sx0 < x0) x0 = sx0;
+            if (sy0 < y0) y0 = sy0;
+            if (sx0 > x1) x1 = sx0;
+            if (sy0 > y1) y1 = sy0;
+            seen += 1;
+          }
+        }
+      }
+      if (seen) {
+        x0 = Math.max(0, Math.floor(x0) - 4);
+        y0 = Math.max(0, Math.floor(y0) - 4);
+        x1 = Math.min(bw - 1, Math.ceil(x1) + 4);
+        y1 = Math.min(bh - 1, Math.ceil(y1) + 4);
+        if (x1 >= x0 && y1 >= y0) voxBox = { x0: x0, y0: y0, x1: x1, y1: y1 };
+      }
+    }
+    const mineTile = 32;
+    const mineTw = Math.ceil(bw / mineTile);
+    const mineTh = Math.ceil(bh / mineTile);
+    if (mineBinStore.length < mineTw * mineTh) mineBinStore = new Array(mineTw * mineTh);
+    const mineBins = mineBinStore;
+    for (let i = 0; i < mineTw * mineTh; i += 1) {
+      if (mineBins[i]) mineBins[i].length = 0;
+      else mineBins[i] = [];
+    }
+    function binWorldCells(list) {
+    for (let fi = 0; fi < list.length; fi += 1) {
+      const cell = list[fi];
+      const vxw = cell.cx - camX;
+      const vyw = cell.cy - camY;
+      const vzw = cell.cz - camZ;
+      const df = vxw * lx + vyw * ly + vzw * lz;
+      if (df < 0.55) continue;
+      if (vxw * vxw + vyw * vyw + vzw * vzw > 140 * 140) continue;
+      const span = Math.min(96, (CELL * 1.3) * (bh * 0.5) / (df * tan) + 2);
+      const dr = vxw * rx + vyw * ry + vzw * rz;
+      const du = vxw * ux + vyw * uy + vzw * uz;
+      const sx0 = ((dr / (df * aspect * tan)) + 1) * 0.5 * bw;
+      const sy0 = (1 - du / (df * tan)) * 0.5 * bh;
+      const bx0 = Math.max(0, Math.floor(sx0 - span));
+      const by0 = Math.max(0, Math.floor(sy0 - span));
+      const bx1 = Math.min(bw - 1, Math.ceil(sx0 + span));
+      const by1 = Math.min(bh - 1, Math.ceil(sy0 + span));
+      if (bx1 < bx0 || by1 < by0) continue;
+      const tx0 = Math.floor(bx0 / mineTile);
+      const ty0 = Math.floor(by0 / mineTile);
+      const tx1 = Math.min(mineTw - 1, Math.floor(bx1 / mineTile));
+      const ty1 = Math.min(mineTh - 1, Math.floor(by1 / mineTile));
+      for (let ty = ty0; ty <= ty1; ty += 1) {
+        for (let tx = tx0; tx <= tx1; tx += 1) mineBins[tx + ty * mineTw].push(cell);
+      }
+    }
+    }
+    binWorldCells(mineFace);
+    binWorldCells(floorFace);
     let rocketBox = null;
     if (downTime <= 0 && !gameOver && boom <= 0) {
       const vxw = meshX - camX;
@@ -3205,6 +4207,15 @@
             }
           }
         }
+        if (chaserBox && chaser && sx >= chaserBox.x0 && sx <= chaserBox.x1 && sy >= chaserBox.y0 && sy <= chaserBox.y1) {
+          const ct = ballHit(camX, camY, camZ, dx, dy, dz, chaser);
+          if (ct > 0.05 && ct < best) {
+            best = ct;
+            r = 0;
+            g = 0;
+            b = 0;
+          }
+        }
         const gt = mapGroundHit(camX, camY, camZ, dx, dy, dz);
         if (gt > 0.05 && gt < best) {
           best = gt;
@@ -3225,6 +4236,31 @@
               g = tint[1];
               b = tint[2];
             }
+          }
+        }
+        if (voxBox && sx >= voxBox.x0 && sx <= voxBox.x1 && sy >= voxBox.y0 && sy <= voxBox.y1) {
+          const vh = voxelHit(camX, camY, camZ, dx, dy, dz, best);
+          if (vh && vh.t < best) {
+            best = vh.t;
+            const tint = voxRgb[vh.id - 1];
+            const shade = voxEdge(camX, camY, camZ, dx, dy, dz, vh.t) ? 0.72 : 1;
+            r = Math.round(tint[0] * shade);
+            g = Math.round(tint[1] * shade);
+            b = Math.round(tint[2] * shade);
+          }
+        }
+        const mineBin = mineBins[Math.floor(sx / mineTile) + Math.floor(sy / mineTile) * mineTw];
+        if (mineBin && mineBin.length) {
+          for (let mi = 0; mi < mineBin.length; mi += 1) {
+            const cell = mineBin[mi];
+            const mt = boxT(camX, camY, camZ, dx, dy, dz, cell.x0, cell.y0, cell.z0, cell.x1, cell.y1, cell.z1, best);
+            if (mt < 0.05 || mt >= best) continue;
+            best = mt;
+            const shade = mineEdge(camX, camY, camZ, dx, dy, dz, mt) ? 0.72 : 1;
+            const tint = cell.gray ? floorRgb : mineRgb;
+            r = Math.round(tint[0] * shade);
+            g = Math.round(tint[1] * shade);
+            b = Math.round(tint[2] * shade);
           }
         }
         const i = (sy * bw + sx) * 4;
@@ -3280,6 +4316,7 @@
       won: won,
     });
     skillEdge = false;
+    boomEdge = false;
   }
   requestAnimationFrame(loop);
 })();

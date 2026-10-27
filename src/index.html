@@ -21,6 +21,21 @@
       background: #000;
       pointer-events: none;
     }
+    #bar-top {
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+    }
+    #start {
+      pointer-events: auto;
+      margin-top: 8px;
+      padding: 0;
+      border: none;
+      background: transparent;
+      color: #f4f4f6;
+      font: 700 28px/1 "Segoe UI", sans-serif;
+      cursor: pointer;
+    }
     #screen {
       position: relative;
       flex: 1 1 auto;
@@ -319,7 +334,7 @@
   </style>
 </head>
 <body>
-  <div id="bar-top"></div>
+  <div id="bar-top"><button type="button" id="start">시작</button></div>
   <div id="screen">
     <canvas id="view"></canvas>
     <div id="cross"></div>
@@ -343,6 +358,6 @@
     <button type="button" id="fire" hidden>발사</button>
   </div>
   <div id="bar-bottom"></div>
-  <script src="./game.js?v=178"></script>
+  <script src="./game.js?v=213"></script>
 </body>
 </html>
