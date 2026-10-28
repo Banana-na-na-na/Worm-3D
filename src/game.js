@@ -3,7 +3,6 @@
   const stage = document.getElementById("screen");
   const fireBtn = document.getElementById("fire");
   const hud = document.getElementById("hud");
-  const fuelFill = document.getElementById("fuel-fill");
   const preview = document.getElementById("preview");
   const cats = document.getElementById("cats");
   const catList = document.getElementById("cat-list");
@@ -15,13 +14,15 @@
   const ctx = canvas.getContext("2d", { alpha: false });
   let aimYaw = 0;
   let aimPitch = 0.15;
+  let lookYaw = 0;
+  let lookPitch = 0.15;
   let yaw = 0;
   let pitch = 0.15;
   let x = 0;
-  let y = 127.35;
+  let y = 11.35;
   let z = 0;
   let moveX = 0;
-  let moveY = 127.35;
+  let moveY = 11.35;
   let moveZ = 0;
   let laserX = 0;
   let laserY = 3.35;
@@ -33,12 +34,12 @@
   let boomY = 0;
   let boomZ = 0;
   let meshX = 0;
-  let meshY = 3.35;
+  let meshY = 11.35;
   let meshZ = 0;
   let meshYaw = 0;
   let meshPitch = 0.15;
   const spawnX = 0;
-  const spawnY = 127.35;
+  const spawnY = 11.35;
   const spawnZ = 0;
   let vx = 0;
   let vy = 0;
@@ -160,7 +161,7 @@
   function resize() {
     const sw = Math.max(1, stage ? stage.clientWidth : window.innerWidth);
     const sh = Math.max(1, stage ? stage.clientHeight : window.innerHeight);
-    const scale = 2;
+    const scale = 3;
     bw = Math.max(1, Math.floor(sw / scale));
     bh = Math.max(1, Math.floor(sh / scale));
     canvas.width = bw;
@@ -432,10 +433,10 @@
         const dz = z - c[3];
         const dist = Math.hypot(dx, dz) || 0.001;
         if (dist - pad < c[4] && dist + pad > c[5]) return true;
+        }
       }
+      return false;
     }
-        return false;
-  }
 
   function pointInObject(px, py, pz) {
     const margin = 0.45;
@@ -476,7 +477,7 @@
         if (dist <= rOut && dist >= rIn) return true;
       }
     }
-    return false;
+        return false;
   }
 
   function caveHit(ox, oy, oz, dx, dy, dz, t0) {
@@ -494,8 +495,8 @@
           const sz = pz - s.z;
           if (sx * sx + sy * sy + sz * sz <= s.r2) {
             air = true;
-          break;
-        }
+              break;
+            }
         }
         if (!air) return t;
       }
@@ -813,14 +814,11 @@
     const cash = money + "원";
     if (gameOver) {
       hud.textContent = "스폰 파괴  ·  패배  ·  부활 불가  ·  " + cash;
-      fuelFill.style.transform = "scaleY(" + Math.max(0, fuel) + ")";
       syncShopPanel();
       return;
     }
     if (won) {
       hud.textContent = "승리  ·  연료 무한  ·  " + cash;
-      fuelFill.style.transform = "scaleY(1)";
-      fuelFill.style.background = rainbowCss((winClock * 140) % 360);
       syncShopPanel();
       return;
     }
@@ -830,16 +828,12 @@
     const place = onRail ? (locked ? "발사대  ·  좌클릭으로 발사  ·  " : "발사대  ·  ") : "";
     const room = inLobby ? "로비  ·  " : "";
     hud.textContent = room + place + "속도 " + Math.round(speed) + "  ·  " + cash + "  ·  나와 적은 다른 팀" + lock;
-    fuelFill.style.transform = "scaleY(" + Math.max(0, fuel) + ")";
-    fuelFill.style.background = "rgb(" + bodyColor[0] + "," + bodyColor[1] + "," + bodyColor[2] + ")";
     syncShopPanel();
   }
 
   function syncShopPanel() {
-    const open = onRail && !railLocked && !gameOver;
     cats.hidden = true;
-    shopEl.hidden = !open;
-    if (open) refreshShopState();
+    if (shopEl) shopEl.hidden = true;
   }
 
   function checkWin() {
@@ -975,6 +969,8 @@
     vz = 0;
     yaw = aimYaw;
     pitch = aimPitch;
+    lookYaw = aimYaw;
+    lookPitch = aimPitch;
     const aim = forward(aimYaw, aimPitch);
     laserX = x + aim[0] * 18;
     laserY = y + aim[1] * 18;
@@ -1021,8 +1017,9 @@
       engineOff();
       return;
     }
-    downTime = 5;
+    downTime = 0;
     engineOff();
+    resetPlayer();
   }
 
   function bandLockDeath() {
@@ -1867,6 +1864,13 @@
 
   const spawnBallR = 3.2;
   const spawnBallR2 = spawnBallR * spawnBallR;
+  const crouchSquat = 0.78;
+  function bodyY0(py) {
+    return py - spawnBallR;
+  }
+  function bodyY1(py) {
+    return py + spawnBallR * (crouchHeld ? crouchSquat * 2 - 1 : 1);
+  }
   const foePadX = 0;
   const foePadY = 8;
   const foePadZ = 86;
@@ -1886,6 +1890,7 @@
     [24, 26, 30],
     [232, 198, 96],
   ];
+  mapRgb[9] = [255, 78, 18];
   const spawnPads = [
     { mine: true, immortal: true, x: spawnX, y: spawnY, z: spawnZ, hp: 75, hurt: 0, alive: true },
     { mine: false, immortal: false, x: foePadX, y: foePadY, z: foePadZ, hp: 75, hurt: 0, alive: false },
@@ -1951,23 +1956,26 @@
     return quadT(1, 2 * (px * dx + py * dy + pz * dz), px * px + py * py + pz * pz - spawnBallR2);
   }
 
-  function mapGroundHit(ox, oy, oz, dx, dy, dz) {
-    if (dy >= -1e-6) return -1;
-    const t = (mapGroundY0 - oy) / dy;
-    if (t < 0.05 || t > 160) return -1;
-    const wx = ox + dx * t;
-    const wz = oz + dz * t;
-    if (inMineMouth(wx, wz)) return -1;
-    return t;
+  function ellipsoidHit(ox, oy, oz, dx, dy, dz, cx, cy, cz, rx, ry, rz) {
+    const px = (ox - cx) / rx;
+    const py = (oy - cy) / ry;
+    const pz = (oz - cz) / rz;
+    const ddx = dx / rx;
+    const ddy = dy / ry;
+    const ddz = dz / rz;
+    return quadT(ddx * ddx + ddy * ddy + ddz * ddz, 2 * (px * ddx + py * ddy + pz * ddz), px * px + py * py + pz * pz - 1);
+  }
+
+  function mapGroundHit() {
+    return -1;
   }
 
   function mapBoxHit(ox, oy, oz, dx, dy, dz, m) {
-    return boxT(ox, oy, oz, dx, dy, dz, m[0], m[1], m[2], m[3], m[4], m[5], 200);
+    return boxT(ox, oy, oz, dx, dy, dz, m[0], m[1], m[2], m[3], m[4], m[5], 360);
   }
 
   function mapGroundY() {
     let top = null;
-    if (!inMineMouth(x, z) && y >= mapGroundY0 - 0.2 && y <= mapGroundY0 + 1.5) top = mapGroundY0;
     for (let i = 0; i < mapBoxes.length; i += 1) {
       const m = mapBoxes[i];
       if (m[6] === 5 || m[6] === 7) continue;
@@ -2001,24 +2009,26 @@
   }
 
   function collideBoxes() {
-    const pad = 1.15;
+    const pad = spawnBallR;
+    const y0 = bodyY0(y);
+    const y1 = bodyY1(y);
     for (let i = 0; i < mapBoxes.length; i += 1) {
       const m = mapBoxes[i];
       if (m[6] === 5 || m[6] === 7) continue;
-      if (x < m[0] - pad || x > m[3] + pad || y < m[1] - pad || y > m[4] + pad || z < m[2] - pad || z > m[5] + pad) continue;
+      if (x < m[0] - pad || x > m[3] + pad || y1 < m[1] || y0 > m[4] || z < m[2] - pad || z > m[5] + pad) continue;
       const left = x - (m[0] - pad);
       const right = (m[3] + pad) - x;
-      const below = y - (m[1] - pad);
-      const above = (m[4] + pad) - y;
+      const below = y1 - m[1];
+      const above = m[4] - y0;
       const near = z - (m[2] - pad);
       const far = (m[5] + pad) - z;
       const min = Math.min(left, right, below, above, near, far);
       if (min === above) {
-        y = m[4] + pad;
+        y = m[4] + spawnBallR;
         if (vy < 0) vy = 0;
         grounded = true;
       } else if (min === below) {
-        y = m[1] - pad;
+        y = m[1] - (y1 - y);
         if (vy > 0) vy = 0;
       } else if (min === left) {
         x = m[0] - pad;
@@ -2029,20 +2039,78 @@
       } else if (min === near) {
         z = m[2] - pad;
         if (vz > 0) vz = 0;
-      } else {
+    } else {
         z = m[5] + pad;
         if (vz < 0) vz = 0;
       }
     }
   }
 
-  const CELL = CHUNK / 8;
-  const VW = 8;
-  const VH = 8;
-  const VD = 8;
-  const voxX = 0;
+  const CELL = 8;
+  const VW = 16;
+  const VH = 16;
+  const VD = 16;
+  const voxX = -64;
   const voxY = mapGroundY0;
-  const voxZ = CHUNK;
+  const voxZ = -64;
+  const wallTop = 40;
+  const wallT = 2;
+  const plateX0 = voxX;
+  const plateX1 = voxX + VW * CELL;
+  const plateZ0 = voxZ;
+  const plateZ1 = voxZ + VD * CELL;
+  mapBoxes.push([plateX0 - wallT, voxY, plateZ0 - wallT, plateX0, wallTop, plateZ1 + wallT, 8]);
+  mapBoxes.push([plateX1, voxY, plateZ0 - wallT, plateX1 + wallT, wallTop, plateZ1 + wallT, 8]);
+  mapBoxes.push([plateX0, voxY, plateZ0 - wallT, plateX1, wallTop, plateZ0, 8]);
+  mapBoxes.push([plateX0, voxY, plateZ1, plateX1, wallTop, plateZ1 + wallT, 8]);
+  const LAVA_N = 30;
+  const LAVA_H = 40;
+  const PILLAR = 10;
+  const lavaX = -LAVA_N * CELL * 0.5;
+  const lavaY = mapGroundY0 - CELL;
+  const lavaZ = plateZ1;
+  const lavaMid = 14;
+  const lavaGrid = new Uint8Array(LAVA_N * LAVA_H * LAVA_N);
+  const lavaRgb = [[176, 184, 190], [255, 78, 18]];
+  let lavaLevel = 1;
+  let lavaClock = 0;
+  function lavaSheetY() {
+    return lavaY + (lavaLevel - 1 + lavaClock / 6) * CELL;
+  }
+  function lavaAt(ix, iy, iz) {
+    if (ix < 0 || iy < 0 || iz < 0 || ix >= LAVA_N || iy >= LAVA_H || iz >= LAVA_N) return 0;
+    return lavaGrid[ix + iz * LAVA_N + iy * LAVA_N * LAVA_N];
+  }
+  function setLava(ix, iy, iz, id) {
+    lavaGrid[ix + iz * LAVA_N + iy * LAVA_N * LAVA_N] = id;
+  }
+  for (let iy = 0; iy < PILLAR; iy += 1) setLava(lavaMid, iy, lavaMid, 1);
+  for (let iz = 0; iz < LAVA_N; iz += 1) {
+    for (let ix = 0; ix < LAVA_N; ix += 1) {
+      if (ix === lavaMid && iz === lavaMid) continue;
+      setLava(ix, 0, iz, 2);
+    }
+  }
+  function riseLava() {
+    if (lavaLevel >= LAVA_H) return;
+    const old = lavaLevel - 1;
+    for (let iz = 0; iz < LAVA_N; iz += 1) {
+      for (let ix = 0; ix < LAVA_N; ix += 1) {
+        if (lavaAt(ix, old, iz) === 2) setLava(ix, old, iz, 0);
+      }
+    }
+    const iy = lavaLevel;
+    for (let iz = 0; iz < LAVA_N; iz += 1) {
+      for (let ix = 0; ix < LAVA_N; ix += 1) {
+        if (lavaAt(ix, iy, iz)) continue;
+        setLava(ix, iy, iz, 2);
+      }
+    }
+    lavaLevel += 1;
+  }
+  let roundLeft = 20;
+  let teleported = false;
+  const clockEl = document.getElementById("clock");
   const voxGrid = new Uint8Array(VW * VH * VD);
   const voxRgb = [
     [176, 184, 190],
@@ -2147,12 +2215,7 @@
     return stand;
   }
 
-  for (let layer = 0; layer < FLOOR_N; layer += 1) {
-    const grid = new Uint8Array(FLOOR_W * FLOOR_W);
-    grid.fill(1);
-    floorGrids.push(grid);
-  }
-  rebuildFloorFace();
+  for (let layer = 0; layer < FLOOR_N; layer += 1) floorGrids.push(new Uint8Array(FLOOR_W * FLOOR_W));
 
   function voxAt(ix, iy, iz) {
     if (ix < 0 || iy < 0 || iz < 0 || ix >= VW || iy >= VH || iz >= VD) return 0;
@@ -2160,14 +2223,8 @@
   }
 
   function buildVoxels() {
-    for (let iy = 0; iy < VH; iy += 1) {
-      for (let iz = 0; iz < VD; iz += 1) {
-        for (let ix = 0; ix < VW; ix += 1) {
-          const skin = ix <= 1 || ix >= VW - 2 || iy <= 1 || iy >= VH - 2 || iz <= 1 || iz >= VD - 2;
-          if (!skin) continue;
-          voxGrid[ix + iz * VW + iy * VW * VD] = 1;
-        }
-      }
+    for (let iz = 0; iz < VD; iz += 1) {
+      for (let ix = 0; ix < VW; ix += 1) voxGrid[ix + iz * VW] = 1;
     }
   }
 
@@ -2358,8 +2415,6 @@
     mineMark();
   }
 
-  openMine();
-
   function mineChunkHit(ox, oy, oz, dx, dy, dz, chunk) {
     const x0 = chunk.cx * MINE * CELL;
     const y0 = mapGroundY0 + chunk.cy * MINE * CELL;
@@ -2423,7 +2478,7 @@
         iy += stepY;
         tHit = tMaxY;
         tMaxY += tDeltaY;
-      } else {
+    } else {
         if (tMaxZ > tmax) return null;
         iz += stepZ;
         tHit = tMaxZ;
@@ -2458,16 +2513,16 @@
     return false;
   }
 
-  function voxelHit(ox, oy, oz, dx, dy, dz, far) {
-    const x1 = voxX + VW * CELL;
-    const y1 = voxY + VH * CELL;
-    const z1 = voxZ + VD * CELL;
+  function gridHit(ox, oy, oz, dx, dy, dz, far, gx, gy, gz, gw, gh, gd, at) {
+    const x1 = gx + gw * CELL;
+    const y1 = gy + gh * CELL;
+    const z1 = gz + gd * CELL;
     let tmin = 0.05;
     let tmax = far || 160;
     const slabs = [
-      [dx, ox, voxX, x1],
-      [dy, oy, voxY, y1],
-      [dz, oz, voxZ, z1],
+      [dx, ox, gx, x1],
+      [dy, oy, gy, y1],
+      [dz, oz, gz, z1],
     ];
     for (let i = 0; i < 3; i += 1) {
       const d = slabs[i][0];
@@ -2492,29 +2547,29 @@
     const px = ox + dx * (tmin + 0.0001);
     const py = oy + dy * (tmin + 0.0001);
     const pz = oz + dz * (tmin + 0.0001);
-    let ix = Math.floor((px - voxX) / CELL);
-    let iy = Math.floor((py - voxY) / CELL);
-    let iz = Math.floor((pz - voxZ) / CELL);
+    let ix = Math.floor((px - gx) / CELL);
+    let iy = Math.floor((py - gy) / CELL);
+    let iz = Math.floor((pz - gz) / CELL);
     if (ix < 0) ix = 0;
     if (iy < 0) iy = 0;
     if (iz < 0) iz = 0;
-    if (ix >= VW) ix = VW - 1;
-    if (iy >= VH) iy = VH - 1;
-    if (iz >= VD) iz = VD - 1;
+    if (ix >= gw) ix = gw - 1;
+    if (iy >= gh) iy = gh - 1;
+    if (iz >= gd) iz = gd - 1;
     const stepX = dx >= 0 ? 1 : -1;
     const stepY = dy >= 0 ? 1 : -1;
     const stepZ = dz >= 0 ? 1 : -1;
     const tDeltaX = Math.abs(dx) > 1e-8 ? CELL / Math.abs(dx) : 1e9;
     const tDeltaY = Math.abs(dy) > 1e-8 ? CELL / Math.abs(dy) : 1e9;
     const tDeltaZ = Math.abs(dz) > 1e-8 ? CELL / Math.abs(dz) : 1e9;
-    let tMaxX = Math.abs(dx) > 1e-8 ? tmin + ((dx > 0 ? voxX + (ix + 1) * CELL : voxX + ix * CELL) - px) / dx : 1e9;
-    let tMaxY = Math.abs(dy) > 1e-8 ? tmin + ((dy > 0 ? voxY + (iy + 1) * CELL : voxY + iy * CELL) - py) / dy : 1e9;
-    let tMaxZ = Math.abs(dz) > 1e-8 ? tmin + ((dz > 0 ? voxZ + (iz + 1) * CELL : voxZ + iz * CELL) - pz) / dz : 1e9;
+    let tMaxX = Math.abs(dx) > 1e-8 ? tmin + ((dx > 0 ? gx + (ix + 1) * CELL : gx + ix * CELL) - px) / dx : 1e9;
+    let tMaxY = Math.abs(dy) > 1e-8 ? tmin + ((dy > 0 ? gy + (iy + 1) * CELL : gy + iy * CELL) - py) / dy : 1e9;
+    let tMaxZ = Math.abs(dz) > 1e-8 ? tmin + ((dz > 0 ? gz + (iz + 1) * CELL : gz + iz * CELL) - pz) / dz : 1e9;
     let tHit = tmin;
-    const limit = VW + VH + VD + 3;
+    const limit = gw + gh + gd + 3;
     for (let n = 0; n < limit; n += 1) {
-      const id = voxAt(ix, iy, iz);
-      if (id) return { t: tHit, id: id };
+      const id = at(ix, iy, iz);
+      if (id) return { t: tHit, id: id, ix: ix, iy: iy, iz: iz };
       if (tMaxX <= tMaxY && tMaxX <= tMaxZ) {
         if (tMaxX > tmax) return null;
         ix += stepX;
@@ -2533,6 +2588,144 @@
       }
     }
     return null;
+  }
+
+  function layerHit(ox, oy, oz, dx, dy, dz, far, gx, gy, gz, gw, gd, at) {
+    const x1 = gx + gw * CELL;
+    const y1 = gy + CELL;
+    const z1 = gz + gd * CELL;
+    let tmin = 0.05;
+    let tmax = far || 160;
+    if (Math.abs(dx) < 1e-8) {
+      if (ox < gx || ox > x1) return null;
+    } else {
+      let ta = (gx - ox) / dx;
+      let tb = (x1 - ox) / dx;
+      if (ta > tb) { const s = ta; ta = tb; tb = s; }
+      if (ta > tmin) tmin = ta;
+      if (tb < tmax) tmax = tb;
+      if (tmin > tmax) return null;
+    }
+    if (Math.abs(dy) < 1e-8) {
+      if (oy < gy || oy > y1) return null;
+    } else {
+      let ta = (gy - oy) / dy;
+      let tb = (y1 - oy) / dy;
+      if (ta > tb) { const s = ta; ta = tb; tb = s; }
+      if (ta > tmin) tmin = ta;
+      if (tb < tmax) tmax = tb;
+      if (tmin > tmax) return null;
+    }
+    if (Math.abs(dz) < 1e-8) {
+      if (oz < gz || oz > z1) return null;
+    } else {
+      let ta = (gz - oz) / dz;
+      let tb = (z1 - oz) / dz;
+      if (ta > tb) { const s = ta; ta = tb; tb = s; }
+      if (ta > tmin) tmin = ta;
+      if (tb < tmax) tmax = tb;
+      if (tmin > tmax) return null;
+    }
+    const px = ox + dx * (tmin + 0.0001);
+    const pz = oz + dz * (tmin + 0.0001);
+    let ix = Math.floor((px - gx) / CELL);
+    let iz = Math.floor((pz - gz) / CELL);
+    if (ix < 0) ix = 0;
+    if (iz < 0) iz = 0;
+    if (ix >= gw) ix = gw - 1;
+    if (iz >= gd) iz = gd - 1;
+    const stepX = dx >= 0 ? 1 : -1;
+    const stepZ = dz >= 0 ? 1 : -1;
+    const tDeltaX = Math.abs(dx) > 1e-8 ? CELL / Math.abs(dx) : 1e9;
+    const tDeltaZ = Math.abs(dz) > 1e-8 ? CELL / Math.abs(dz) : 1e9;
+    let tMaxX = Math.abs(dx) > 1e-8 ? tmin + ((dx > 0 ? gx + (ix + 1) * CELL : gx + ix * CELL) - px) / dx : 1e9;
+    let tMaxZ = Math.abs(dz) > 1e-8 ? tmin + ((dz > 0 ? gz + (iz + 1) * CELL : gz + iz * CELL) - pz) / dz : 1e9;
+    let tHit = tmin;
+    const limit = gw + gd + 2;
+    for (let n = 0; n < limit; n += 1) {
+      const id = at(ix, 0, iz);
+      if (id) return { t: tHit, id: id, ix: ix, iy: 0, iz: iz };
+      if (tMaxX < tMaxZ) {
+        if (tMaxX > tmax) return null;
+        ix += stepX;
+        if (ix < 0 || ix >= gw) return null;
+        tHit = tMaxX;
+        tMaxX += tDeltaX;
+      } else {
+        if (tMaxZ > tmax) return null;
+        iz += stepZ;
+        if (iz < 0 || iz >= gd) return null;
+        tHit = tMaxZ;
+        tMaxZ += tDeltaZ;
+      }
+    }
+    return null;
+  }
+
+  function voxelHit(ox, oy, oz, dx, dy, dz, far) {
+    return layerHit(ox, oy, oz, dx, dy, dz, far, voxX, voxY, voxZ, VW, VD, voxAt);
+  }
+
+  function lavaHit(ox, oy, oz, dx, dy, dz, far) {
+    if (lavaLevel <= 0) return null;
+    const iy = lavaLevel - 1;
+    return layerHit(ox, oy, oz, dx, dy, dz, far, lavaX, lavaSheetY(), lavaZ, LAVA_N, LAVA_N, function (ix, localIy, iz) {
+      return lavaAt(ix, iy, iz) === 2 ? 2 : 0;
+    });
+  }
+
+  function pillarHit(ox, oy, oz, dx, dy, dz, far) {
+    return gridHit(ox, oy, oz, dx, dy, dz, far, lavaX + lavaMid * CELL, lavaY, lavaZ + lavaMid * CELL, 1, PILLAR, 1, function (ix, iy) {
+      return lavaAt(lavaMid, iy, lavaMid) === 1 ? 1 : 0;
+    });
+  }
+
+  function lavaEdge(ox, oy, oz, dx, dy, dz, t, gy, gx, gz) {
+    const hx = ox + dx * t;
+    const hy = oy + dy * t;
+    const hz = oz + dz * t;
+    const baseX = gx == null ? lavaX : gx;
+    const baseY = gy == null ? lavaY : gy;
+    const baseZ = gz == null ? lavaZ : gz;
+    const du = Math.abs((hx - baseX) / CELL - Math.round((hx - baseX) / CELL));
+    const dv = Math.abs((hy - baseY) / CELL - Math.round((hy - baseY) / CELL));
+    const dw = Math.abs((hz - baseZ) / CELL - Math.round((hz - baseZ) / CELL));
+    const edge = 0.12;
+    if (du <= dv && du <= dw) return dv < edge || dw < edge;
+    if (dv <= dw) return du < edge || dw < edge;
+    return du < edge || dv < edge;
+  }
+
+  function voxCrack(ox, oy, oz, dx, dy, dz, t, hurt) {
+    if (hurt <= 0) return false;
+    const hx = ox + dx * t;
+    const hy = oy + dy * t;
+    const hz = oz + dz * t;
+    const du = Math.abs((hx - voxX) / CELL - Math.round((hx - voxX) / CELL));
+    const dv = Math.abs((hy - voxY) / CELL - Math.round((hy - voxY) / CELL));
+    const dw = Math.abs((hz - voxZ) / CELL - Math.round((hz - voxZ) / CELL));
+    let a;
+    let b;
+    if (du <= dv && du <= dw) {
+      a = (hy - voxY) / CELL;
+      b = (hz - voxZ) / CELL;
+    } else if (dv <= dw) {
+      a = (hx - voxX) / CELL;
+      b = (hz - voxZ) / CELL;
+    } else {
+      a = (hx - voxX) / CELL;
+      b = (hy - voxY) / CELL;
+    }
+    const fa = a - Math.floor(a);
+    const fb = b - Math.floor(b);
+    const bands = Math.max(1, Math.ceil(hurt * 4));
+    const line = 0.045;
+    for (let i = 1; i <= bands; i += 1) {
+      const p = i / (bands + 1);
+      if (Math.abs(fa - p) < line || Math.abs(fb - p) < line) return true;
+      if (Math.abs(fa + fb - p * 1.3) < line) return true;
+    }
+    return false;
   }
 
   function voxEdge(ox, oy, oz, dx, dy, dz, t) {
@@ -2562,11 +2755,13 @@
   }
 
   function voxelBlocked(px, py, pz) {
-    const pad = 1.05;
+    const pad = spawnBallR;
+    const y0 = bodyY0(py);
+    const y1 = bodyY1(py);
     const ix0 = Math.floor((px - pad - voxX) / CELL);
     const ix1 = Math.floor((px + pad - voxX) / CELL);
-    const iy0 = Math.floor((py - pad - voxY) / CELL);
-    const iy1 = Math.floor((py + pad - voxY) / CELL);
+    const iy0 = Math.floor((y0 - voxY) / CELL);
+    const iy1 = Math.floor((y1 - voxY) / CELL);
     const iz0 = Math.floor((pz - pad - voxZ) / CELL);
     const iz1 = Math.floor((pz + pad - voxZ) / CELL);
     for (let iy = iy0; iy <= iy1; iy += 1) {
@@ -2579,12 +2774,101 @@
           const b1 = b0 + CELL;
           const c0 = voxZ + iz * CELL;
           const c1 = c0 + CELL;
-          if (px > a0 - pad && px < a1 + pad && py > b0 - pad && py < b1 + pad && pz > c0 - pad && pz < c1 + pad) return true;
+          if (px > a0 - pad && px < a1 + pad && y1 > b0 && y0 < b1 && pz > c0 - pad && pz < c1 + pad) return true;
         }
       }
     }
     if (mineBlocked(px, py, pz)) return true;
+    if (lavaOverlap(px, py, pz, false)) return true;
     return floorBlocked(px, py, pz);
+  }
+
+  function lavaOverlap(px, py, pz, side) {
+    return cellOverlap(px, py, pz, side, lavaX, lavaY, lavaZ, lavaAt);
+  }
+
+  function cellOverlap(px, py, pz, side, ox, oy, oz, at) {
+    const pad = spawnBallR;
+    const y0 = bodyY0(py);
+    const y1 = bodyY1(py);
+    const feet = y0;
+    const ix0 = Math.floor((px - pad - ox) / CELL);
+    const ix1 = Math.floor((px + pad - ox) / CELL);
+    const iy0 = Math.floor((y0 - oy) / CELL);
+    const iy1 = Math.floor((y1 - oy) / CELL);
+    const iz0 = Math.floor((pz - pad - oz) / CELL);
+    const iz1 = Math.floor((pz + pad - oz) / CELL);
+    for (let iy = iy0; iy <= iy1; iy += 1) {
+      for (let iz = iz0; iz <= iz1; iz += 1) {
+        for (let ix = ix0; ix <= ix1; ix += 1) {
+          if (at(ix, iy, iz) !== 1) continue;
+          const b1 = oy + (iy + 1) * CELL;
+          if (side && b1 <= feet + 0.4) continue;
+          const a0 = ox + ix * CELL;
+          const a1 = a0 + CELL;
+          const b0 = oy + iy * CELL;
+          const c0 = oz + iz * CELL;
+          const c1 = c0 + CELL;
+          if (px > a0 - pad && px < a1 + pad && y1 > b0 && y0 < b1 && pz > c0 - pad && pz < c1 + pad) return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  function touchesLava(px, py, pz) {
+    const pad = spawnBallR;
+    const iy = lavaLevel - 1;
+    const b0 = lavaSheetY();
+    const b1 = b0 + CELL;
+    const y0 = bodyY0(py);
+    const y1 = bodyY1(py);
+    if (y1 <= b0 || y0 >= b1) return false;
+    const ix0 = Math.floor((px - pad - lavaX) / CELL);
+    const ix1 = Math.floor((px + pad - lavaX) / CELL);
+    const iz0 = Math.floor((pz - pad - lavaZ) / CELL);
+    const iz1 = Math.floor((pz + pad - lavaZ) / CELL);
+    for (let iz = iz0; iz <= iz1; iz += 1) {
+      for (let ix = ix0; ix <= ix1; ix += 1) {
+        if (lavaAt(ix, iy, iz) !== 2) continue;
+        const a0 = lavaX + ix * CELL;
+        const a1 = a0 + CELL;
+        const c0 = lavaZ + iz * CELL;
+        const c1 = c0 + CELL;
+        if (px > a0 - pad && px < a1 + pad && pz > c0 - pad && pz < c1 + pad) return true;
+      }
+    }
+          return false;
+  }
+
+  function voxelSideBlocked(px, py, pz) {
+    const pad = spawnBallR;
+    const y0 = bodyY0(py);
+    const y1 = bodyY1(py);
+    const feet = y0;
+    const ix0 = Math.floor((px - pad - voxX) / CELL);
+    const ix1 = Math.floor((px + pad - voxX) / CELL);
+    const iy0 = Math.floor((y0 - voxY) / CELL);
+    const iy1 = Math.floor((y1 - voxY) / CELL);
+    const iz0 = Math.floor((pz - pad - voxZ) / CELL);
+    const iz1 = Math.floor((pz + pad - voxZ) / CELL);
+    for (let iy = iy0; iy <= iy1; iy += 1) {
+      for (let iz = iz0; iz <= iz1; iz += 1) {
+        for (let ix = ix0; ix <= ix1; ix += 1) {
+          if (!voxAt(ix, iy, iz)) continue;
+          const b1 = voxY + (iy + 1) * CELL;
+          if (b1 <= feet + 0.4) continue;
+          const a0 = voxX + ix * CELL;
+          const a1 = a0 + CELL;
+          const b0 = voxY + iy * CELL;
+          const c0 = voxZ + iz * CELL;
+          const c1 = c0 + CELL;
+          if (px > a0 - pad && px < a1 + pad && y1 > b0 && y0 < b1 && pz > c0 - pad && pz < c1 + pad) return true;
+        }
+      }
+    }
+    if (lavaOverlap(px, py, pz, true)) return true;
+    return false;
   }
 
   function escapeVoxels(px, py, pz) {
@@ -2631,11 +2915,6 @@
     const sy = dy / steps;
     const sz = dz / steps;
     for (let i = 0; i < steps; i += 1) {
-      const nx = cx + sx;
-      if (voxelBlocked(nx, cy, cz)) {
-        if (sx > 0) vx = Math.min(vx, 0);
-        else if (sx < 0) vx = Math.max(vx, 0);
-      } else cx = nx;
       const ny = cy + sy;
       if (voxelBlocked(cx, ny, cz)) {
         if (sy < 0) {
@@ -2643,8 +2922,13 @@
           grounded = true;
         } else if (sy > 0) vy = Math.min(vy, 0);
       } else cy = ny;
+      const nx = cx + sx;
+      if (voxelSideBlocked(nx, cy, cz)) {
+        if (sx > 0) vx = Math.min(vx, 0);
+        else if (sx < 0) vx = Math.max(vx, 0);
+      } else cx = nx;
       const nz = cz + sz;
-      if (voxelBlocked(cx, cy, nz)) {
+      if (voxelSideBlocked(cx, cy, nz)) {
         if (sz > 0) vz = Math.min(vz, 0);
         else if (sz < 0) vz = Math.max(vz, 0);
       } else cz = nz;
@@ -2658,12 +2942,6 @@
   }
 
   function collideMap() {
-    const gy = mapGroundY();
-    if (gy != null && vy <= 0.5) {
-      y = gy + 1.15;
-      if (vy < 0) vy = 0;
-      grounded = true;
-    }
     collideBoxes();
     collideVoxels();
   }
@@ -2683,7 +2961,7 @@
           downTime = 0;
           gameOver = true;
         }
-      } else {
+    } else {
         foeDown = 0;
         addMoney(600);
         checkWin();
@@ -2986,11 +3264,9 @@
     wingZ = built.wingZ;
     speedMul = spec.speed * (1 + speedLv * 0.12);
     fuelSec = 30 * spec.fuel * (1 + fuelLv * 0.2);
-    if (fuelFill.parentElement) fuelFill.parentElement.style.height = Math.round(220 * spec.fuel) + "px";
     mass = spec.mass;
     shipFat = fat;
     shipWing = spec.wing;
-    fuelFill.style.background = "rgb(" + bodyColor[0] + "," + bodyColor[1] + "," + bodyColor[2] + ")";
   }
 
   const skillEl = document.getElementById("skill");
@@ -3079,8 +3355,8 @@
         const i = (sy * gw + sx) * 4;
         if (!hit) {
           pix[i + 3] = 0;
-          continue;
-        }
+        continue;
+      }
         paintPixel(hit);
         pix[i] = cR;
         pix[i + 1] = cG;
@@ -3145,6 +3421,7 @@
   }
 
   function refreshShopState() {
+    if (!shopMoney || !shopRockets || !shopUps) return;
     shopMoney.textContent = money + "원";
     shopRockets.querySelectorAll(".shop-row").forEach((btn) => {
       const id = btn.dataset.id;
@@ -3212,6 +3489,7 @@
   }
 
   function paintShop() {
+    if (!shopRockets || !shopUps) return;
     shopRockets.textContent = "";
     shopUps.textContent = "";
     [basicShip, heavyShip, fireworkShip, bandShip, violetShip].forEach((spec) => {
@@ -3329,11 +3607,33 @@
       canvas.requestPointerLock();
       return;
     }
-    pressPlay();
+    leftHeld = true;
+    leftTime = 0;
+    digTime = 0;
+    digBroke = false;
+    mineX = -1e9;
+  });
+  window.addEventListener("mouseup", (e) => {
+    if (e.button !== 0) return;
+    if (leftHeld && inGameArea() && !digBroke && leftTime < 0.22) placeSelected();
+    leftHeld = false;
+    digTime = 0;
+    mineX = -1e9;
   });
   window.addEventListener("blur", () => {
+    leftHeld = false;
+    digTime = 0;
+    mineX = -1e9;
     rightHeld = false;
     skillHeld = false;
+    jumpEdge = false;
+    jumpHeld = false;
+    moveW = false;
+    moveA = false;
+    moveS = false;
+    moveD = false;
+    sprintHeld = false;
+    crouchHeld = false;
   });
   if (fireBtn) {
     fireBtn.addEventListener("pointerdown", (e) => {
@@ -3354,27 +3654,344 @@
   let skillEdge = false;
   let skillHeld = false;
   let boomEdge = false;
+  let viewMode = 1;
+  let leftHeld = false;
+  let leftTime = 0;
+  let digBroke = false;
+  let mineX = -1e9;
+  let mineY = -1e9;
+  let mineZ = -1e9;
+  let digTime = 0;
+  let moveW = false;
+  let moveA = false;
+  let moveS = false;
+  let moveD = false;
+  let jumpEdge = false;
+  let jumpHeld = false;
+  let sprintHeld = false;
+  let crouchHeld = false;
+  let stepGround = false;
+  function floorTop(px, pz, limit) {
+    let stand = -1e9;
+    const ix0 = Math.floor((px - spawnBallR - voxX) / CELL);
+    const ix1 = Math.floor((px + spawnBallR - voxX) / CELL);
+    const iz0 = Math.floor((pz - spawnBallR - voxZ) / CELL);
+    const iz1 = Math.floor((pz + spawnBallR - voxZ) / CELL);
+    for (let iz = iz0; iz <= iz1; iz += 1) {
+      for (let ix = ix0; ix <= ix1; ix += 1) {
+        for (let iy = VH - 1; iy >= 0; iy -= 1) {
+          if (!voxAt(ix, iy, iz)) continue;
+          const top = voxY + (iy + 1) * CELL;
+          if (top > limit) continue;
+          if (top > stand) stand = top;
+          break;
+        }
+      }
+    }
+    const lax0 = Math.floor((px - spawnBallR - lavaX) / CELL);
+    const lax1 = Math.floor((px + spawnBallR - lavaX) / CELL);
+    const laz0 = Math.floor((pz - spawnBallR - lavaZ) / CELL);
+    const laz1 = Math.floor((pz + spawnBallR - lavaZ) / CELL);
+    for (let iz = laz0; iz <= laz1; iz += 1) {
+      for (let ix = lax0; ix <= lax1; ix += 1) {
+        for (let iy = LAVA_H - 1; iy >= 0; iy -= 1) {
+          if (lavaAt(ix, iy, iz) !== 1) continue;
+          const top = lavaY + (iy + 1) * CELL;
+          if (top > limit) continue;
+          if (top > stand) stand = top;
+          break;
+        }
+      }
+    }
+    for (let i = 0; i < mapBoxes.length; i += 1) {
+      const m = mapBoxes[i];
+      if (px + spawnBallR <= m[0] || px - spawnBallR >= m[3] || pz + spawnBallR <= m[2] || pz - spawnBallR >= m[5]) continue;
+      if (m[4] > limit) continue;
+      if (m[4] > stand) stand = m[4];
+    }
+    return stand;
+  }
+  let jumpReady = true;
+  const hotKinds = {
+    stone: [176, 184, 190],
+  };
+  const hotbar = new Array(9).fill(null);
+  let hotSelect = 0;
+  let giveClock = 0;
+  const hotEl = document.getElementById("hotbar");
+  const hotSlots = [];
+  let hp = 20;
+  const hpMax = 20;
+  const hpFill = document.getElementById("hp-fill");
+  function paintHp() {
+    if (!hpFill) return;
+    const n = hpMax > 0 ? Math.max(0, Math.min(1, hp / hpMax)) : 0;
+    hpFill.style.width = (n * 100) + "%";
+  }
+  paintHp();
+  function paintHotbar() {
+    for (let i = 0; i < hotSlots.length; i += 1) {
+      const item = hotbar[i];
+      const ui = hotSlots[i];
+      ui.slot.classList.toggle("on", i === hotSelect);
+      if (!item) {
+        ui.cube.hidden = true;
+        ui.num.hidden = true;
+        continue;
+      }
+      const color = hotKinds[item.id];
+      ui.cube.hidden = false;
+      ui.cube.style.background = "rgb(" + color[0] + "," + color[1] + "," + color[2] + ")";
+      ui.num.hidden = item.count < 2;
+      if (item.count >= 2) ui.num.textContent = String(item.count);
+    }
+  }
+  function giveBlock(id) {
+    for (let i = 0; i < hotbar.length; i += 1) {
+      const slot = hotbar[i];
+      if (slot && slot.id === id && slot.count < 64) {
+        slot.count += 1;
+        paintHotbar();
+        return;
+      }
+    }
+    for (let i = 0; i < hotbar.length; i += 1) {
+      if (hotbar[i]) continue;
+      hotbar[i] = { id: id, count: 1 };
+      paintHotbar();
+      return;
+    }
+  }
+  if (hotEl) {
+    for (let i = 0; i < 9; i += 1) {
+      const slot = document.createElement("div");
+      slot.className = "hot-slot";
+      const cube = document.createElement("span");
+      cube.className = "hot-cube";
+      cube.hidden = true;
+      const num = document.createElement("span");
+      num.className = "hot-num";
+      num.hidden = true;
+      slot.appendChild(cube);
+      slot.appendChild(num);
+      hotEl.appendChild(slot);
+      hotSlots.push({ slot: slot, cube: cube, num: num });
+    }
+    paintHotbar();
+  }
+  function inGameArea() {
+    return x < plateX0 || x > plateX1 || z < plateZ0 || z > plateZ1;
+  }
+  function overSheet(ox, oz) {
+    return x >= ox && x <= ox + LAVA_N * CELL && z >= oz && z <= oz + LAVA_N * CELL;
+  }
+  function aimSolid() {
+    const ox = shotCamX;
+    const oy = shotCamY;
+    const oz = shotCamZ;
+    const dx = shotLx;
+    const dy = shotLy;
+    const dz = shotLz;
+    const lobby = voxelHit(ox, oy, oz, dx, dy, dz, 64);
+    const lava = lavaHit(ox, oy, oz, dx, dy, dz, 64);
+    const pillar = pillarHit(ox, oy, oz, dx, dy, dz, 64);
+    let bestT = 64;
+    let x0 = 0;
+    let y0 = 0;
+    let z0 = 0;
+    function consider(t, ax, ay, az) {
+      if (t > 0.05 && t < bestT) {
+        bestT = t;
+        x0 = ax;
+        y0 = ay;
+        z0 = az;
+      }
+    }
+    if (lobby) consider(lobby.t, voxX + lobby.ix * CELL, voxY + lobby.iy * CELL, voxZ + lobby.iz * CELL);
+    if (lava) consider(lava.t, lavaX + lava.ix * CELL, lavaSheetY() + lava.iy * CELL, lavaZ + lava.iz * CELL);
+    if (pillar) consider(pillar.t, lavaX + lavaMid * CELL, lavaY + pillar.iy * CELL, lavaZ + lavaMid * CELL);
+    for (let i = 0; i < mapBoxes.length; i += 1) {
+      const m = mapBoxes[i];
+      if (m[6] === 8) continue;
+      const t = mapBoxHit(ox, oy, oz, dx, dy, dz, m);
+      if (t > 0.05) consider(t, m[0], m[1], m[2]);
+    }
+    if (bestT >= 64) return null;
+    return { x0: x0, y0: y0, z0: z0, t: bestT, ox: ox, oy: oy, oz: oz, dx: dx, dy: dy, dz: dz };
+  }
+  function lavaCellHere(wx, wy, wz) {
+    const lix = Math.round((wx - lavaX) / CELL);
+    const liz = Math.round((wz - lavaZ) / CELL);
+    if (lix < 0 || liz < 0 || lix >= LAVA_N || liz >= LAVA_N) return false;
+    if (Math.abs(wy - lavaSheetY()) >= 0.35) return false;
+    return lavaAt(lix, lavaLevel - 1, liz) === 2;
+  }
+  function clearSolid(wx, wy, wz) {
+    if (lavaCellHere(wx, wy, wz)) return false;
+    let stone = false;
+    let cleared = false;
+    const vix = Math.round((wx - voxX) / CELL);
+    const viy = Math.round((wy - voxY) / CELL);
+    const viz = Math.round((wz - voxZ) / CELL);
+    if (vix >= 0 && viy >= 0 && viz >= 0 && vix < VW && viy < VH && viz < VD && voxAt(vix, viy, viz)) {
+      if (voxAt(vix, viy, viz) === 1) stone = true;
+      voxGrid[vix + viz * VW + viy * VW * VD] = 0;
+      cleared = true;
+    }
+    const lix = Math.round((wx - lavaX) / CELL);
+    const liz = Math.round((wz - lavaZ) / CELL);
+    const liy = Math.round((wy - lavaY) / CELL);
+    if (lix >= 0 && liy >= 0 && liz >= 0 && lix < LAVA_N && liy < LAVA_H && liz < LAVA_N && lavaAt(lix, liy, liz) === 1) {
+      stone = true;
+      setLava(lix, liy, liz, 0);
+      cleared = true;
+    }
+    for (let i = mapBoxes.length - 1; i >= 0; i -= 1) {
+      const m = mapBoxes[i];
+      if (m[6] !== 4) continue;
+      if (Math.abs(m[0] - wx) > 0.2 || Math.abs(m[1] - wy) > 0.2 || Math.abs(m[2] - wz) > 0.2) continue;
+      mapBoxes.splice(i, 1);
+      stone = true;
+      cleared = true;
+    }
+    if (stone) giveBlock("stone");
+    return cleared;
+  }
+  function mineShade(shade, hx, hy, hz) {
+    if (digTime <= 0) return shade;
+    if (hx < mineX - 0.35 || hy < mineY - 0.35 || hz < mineZ - 0.35) return shade;
+    if (hx > mineX + CELL + 0.35 || hy > mineY + CELL + 0.35 || hz > mineZ + CELL + 0.35) return shade;
+    const hurt = Math.min(1, digTime / 2);
+    let next = shade * (1 - hurt * 0.45);
+    const du = Math.abs((hx - mineX) / CELL - Math.round((hx - mineX) / CELL));
+    const dv = Math.abs((hy - mineY) / CELL - Math.round((hy - mineY) / CELL));
+    const dw = Math.abs((hz - mineZ) / CELL - Math.round((hz - mineZ) / CELL));
+    let a;
+    let b;
+    if (du <= dv && du <= dw) {
+      a = (hy - mineY) / CELL;
+      b = (hz - mineZ) / CELL;
+    } else if (dv <= dw) {
+      a = (hx - mineX) / CELL;
+      b = (hz - mineZ) / CELL;
+    } else {
+      a = (hx - mineX) / CELL;
+      b = (hy - mineY) / CELL;
+    }
+    const fa = a - Math.floor(a);
+    const fb = b - Math.floor(b);
+    const bands = Math.max(1, Math.ceil(hurt * 4));
+    const line = 0.045;
+    for (let i = 1; i <= bands; i += 1) {
+      const p = i / (bands + 1);
+      if (Math.abs(fa - p) < line || Math.abs(fb - p) < line || Math.abs(fa + fb - p * 1.3) < line) {
+        next *= 0.35;
+          break;
+        }
+      }
+    return next;
+  }
+  function placeSelected() {
+    if (!inGameArea()) return;
+    const item = hotbar[hotSelect];
+    if (!item || item.count <= 0) return;
+    const aimed = aimSolid();
+    if (!aimed || lavaCellHere(aimed.x0, aimed.y0, aimed.z0)) return;
+    const hx = aimed.ox + aimed.dx * aimed.t;
+    const hy = aimed.oy + aimed.dy * aimed.t;
+    const hz = aimed.oz + aimed.dz * aimed.t;
+    const x0 = aimed.x0;
+    const y0 = aimed.y0;
+    const z0 = aimed.z0;
+    const gaps = [
+      [hx - x0, -1, 0, 0],
+      [x0 + CELL - hx, 1, 0, 0],
+      [hy - y0, 0, -1, 0],
+      [y0 + CELL - hy, 0, 1, 0],
+      [hz - z0, 0, 0, -1],
+      [z0 + CELL - hz, 0, 0, 1],
+    ];
+    let face = gaps[0];
+    for (let i = 1; i < gaps.length; i += 1) if (gaps[i][0] < face[0]) face = gaps[i];
+    const wx = x0 + face[1] * CELL;
+    const wy = y0 + face[2] * CELL;
+    const wz = z0 + face[3] * CELL;
+    if (x + spawnBallR > wx && x - spawnBallR < wx + CELL && bodyY1(y) > wy && bodyY0(y) < wy + CELL && z + spawnBallR > wz && z - spawnBallR < wz + CELL) return;
+    const vix = Math.round((wx - voxX) / CELL);
+    const viy = Math.round((wy - voxY) / CELL);
+    const viz = Math.round((wz - voxZ) / CELL);
+    let placed = false;
+    if (vix >= 0 && viy >= 0 && viz >= 0 && vix < VW && viy < VH && viz < VD && Math.abs(voxX + vix * CELL - wx) < 0.2 && Math.abs(voxY + viy * CELL - wy) < 0.2 && Math.abs(voxZ + viz * CELL - wz) < 0.2) {
+      if (voxAt(vix, viy, viz)) return;
+      voxGrid[vix + viz * VW + viy * VW * VD] = 1;
+      if (viy >= 1) mapBoxes.push([wx, wy, wz, wx + CELL, wy + CELL, wz + CELL, 4]);
+      placed = true;
+    }
+    const lix = Math.round((wx - lavaX) / CELL);
+    const liy = Math.round((wy - lavaY) / CELL);
+    const liz = Math.round((wz - lavaZ) / CELL);
+    if (!placed && lix >= 0 && liy >= 0 && liz >= 0 && lix < LAVA_N && liy < LAVA_H && liz < LAVA_N && Math.abs(lavaX + lix * CELL - wx) < 0.2 && Math.abs(lavaY + liy * CELL - wy) < 0.2 && Math.abs(lavaZ + liz * CELL - wz) < 0.2) {
+      if (lavaAt(lix, liy, liz)) return;
+      setLava(lix, liy, liz, 1);
+      if (liy >= lavaLevel) mapBoxes.push([wx, wy, wz, wx + CELL, wy + CELL, wz + CELL, 4]);
+      placed = true;
+    }
+    if (!placed) return;
+    item.count -= 1;
+    if (item.count <= 0) hotbar[hotSelect] = null;
+    paintHotbar();
+  }
   document.addEventListener("keydown", (e) => {
+    if (e.code === "KeyW") { moveW = true; e.preventDefault(); return; }
+    if (e.code === "KeyA") { moveA = true; e.preventDefault(); return; }
+    if (e.code === "KeyS") { moveS = true; e.preventDefault(); return; }
+    if (e.code === "KeyD") { moveD = true; e.preventDefault(); return; }
+    if (e.code === "F1") { e.preventDefault(); viewMode = 1; return; }
+    if (e.code === "F2") { e.preventDefault(); viewMode = 3; return; }
+    if (e.code.startsWith("Digit")) {
+      const n = Number(e.code.slice(5));
+      if (n >= 1 && n <= 9) {
+        hotSelect = n - 1;
+        paintHotbar();
+        e.preventDefault();
+      }
+      return;
+    }
+    if (e.code === "Space") {
+      e.preventDefault();
+      jumpHeld = true;
+      if (!e.repeat) jumpEdge = true;
+      return;
+    }
     if (e.code === "KeyQ") {
       if (!e.repeat) boomEdge = true;
       return;
     }
+    if (e.code === "ShiftLeft" || e.code === "ShiftRight") {
+      crouchHeld = true;
+      e.preventDefault();
+      return;
+    }
     if (e.code !== "KeyE") return;
-    skillHeld = true;
-    if (e.repeat) return;
-    skillEdge = true;
+    sprintHeld = true;
+    e.preventDefault();
   });
   document.addEventListener("keyup", (e) => {
-    if (e.code !== "KeyE") return;
-    skillHeld = false;
+    if (e.code === "KeyW") moveW = false;
+    else if (e.code === "KeyA") moveA = false;
+    else if (e.code === "KeyS") moveS = false;
+    else if (e.code === "KeyD") moveD = false;
+    else if (e.code === "Space") jumpHeld = false;
+    else if (e.code === "ShiftLeft" || e.code === "ShiftRight") crouchHeld = false;
+    else if (e.code === "KeyE") sprintHeld = false;
   });
   document.addEventListener("pointerlockchange", showHud);
   window.addEventListener("mousemove", (e) => {
     const locked = document.pointerLockElement === canvas;
     const waiting = onRail && !railLocked && !launchKick;
     if (waiting && !locked && Math.hypot(e.movementX, e.movementY) > 28) return;
-    aimYaw += e.movementX * 0.0022;
-    aimPitch -= e.movementY * 0.0022;
+    aimYaw += e.movementX * 0.0007;
+    aimPitch -= e.movementY * 0.0007;
     if (aimPitch > 1.15) aimPitch = 1.15;
     if (aimPitch < -1.15) aimPitch = -1.15;
   });
@@ -3559,172 +4176,79 @@
       laserX += (x + aim[0] * 18 - laserX) * lead;
       laserY += (y + aim[1] * 18 - laserY) * lead;
       laserZ += (z + aim[2] * 18 - laserZ) * lead;
-      if (onRail) {
-        if (!railLocked) {
-          if (launchKick || (rightHeld && fuel > 0)) {
-            railYaw = aimYaw;
-            railPitch = aimPitch;
-            railLocked = true;
-            launchKick = false;
-            railDist = 0;
-            if (!foesOn) spawnFoes();
-            playLaunch();
-          } else {
-            railYaw = aimYaw;
-            railPitch = aimPitch;
-            x = spawnX;
-            y = spawnY;
-            z = spawnZ;
-            railDist = 0;
-            vx = 0;
-            vy = 0;
+      const fx = Math.sin(aimYaw);
+      const fz = Math.cos(aimYaw);
+      const rx = Math.cos(aimYaw);
+      const rz = -Math.sin(aimYaw);
+      let mx = 0;
+      let mz = 0;
+      if (moveW) { mx += fx; mz += fz; }
+      if (moveS) { mx -= fx; mz -= fz; }
+      if (moveD) { mx += rx; mz += rz; }
+      if (moveA) { mx -= rx; mz -= rz; }
+      const len = Math.hypot(mx, mz);
+      const wishSpeed = crouchHeld ? 8 : sprintHeld ? 38 : 24;
+      const wishX = len > 0 ? mx / len * wishSpeed : 0;
+      const wishZ = len > 0 ? mz / len * wishSpeed : 0;
+      const gain = 1 - Math.pow(0.3, dt * 60);
+      vx += (wishX - vx) * gain;
+      vz += (wishZ - vz) * gain;
+      vy -= 32 * dt;
+      const speed = Math.hypot(vx, vy, vz);
+      if (speed > 200) {
+        const cut = 200 / speed;
+        vx *= cut;
+        vy *= cut;
+        vz *= cut;
+      }
+      x += vx * dt;
+      z += vz * dt;
+      if (crouchHeld && stepGround && vy <= 0) {
+        const feetNow = y - spawnBallR;
+        const fit = (px, pz) => floorTop(px, pz, feetNow + 0.35) > feetNow - 0.45;
+        if (!fit(x, z)) {
+          const keepX = fit(x, z - vz * dt);
+          const keepZ = fit(x - vx * dt, z);
+          if (keepX && !keepZ) {
+            z -= vz * dt;
             vz = 0;
-            yaw = aimYaw;
-            pitch = aimPitch;
-            grounded = true;
-            bandLockDeath();
-          }
-        }
-        if (railLocked) {
-          const rail = forward(railYaw, railPitch);
-          const along = 40;
-          vx = rail[0] * along;
-          vy = rail[1] * along;
-          vz = rail[2] * along;
-          railDist += along * dt;
-          if (railDist >= railLen) {
-            railDist = railLen;
-            onRail = false;
-            railLocked = false;
-          }
-          x = spawnX + rail[0] * railDist;
-          y = spawnY + rail[1] * railDist;
-          z = spawnZ + rail[2] * railDist;
-          yaw += angDiff(railYaw, yaw) * Math.min(1, dt * 14);
-          pitch += (railPitch - pitch) * Math.min(1, dt * 14);
-          grounded = false;
-        }
-      } else {
-      const flyMul = speedMul * speedMix;
-      const accel = 20 * (1 + boost * 2) * flyMul / mass;
-      const lift = boost * (10 * Math.PI / 180);
-      const onMap = mapGroundY() != null;
-      const falling = boost < 0.04 && !onMap && Math.hypot(vx, vy, vz) > 0.35;
-      if (boost < 0.04 && !falling) {
-        vx = 0;
-        vy = 0;
-        vz = 0;
-        grounded = onMap;
-        if (grounded) collideMap();
-        bandLockDeath();
-      } else if (falling) {
-        grounded = false;
-        vy -= 32 * (rocketId === "band" ? 0.75 : 1) * dt;
-        const nose = forward(aimYaw, aimPitch);
-        const along = vx * nose[0] + vy * nose[1] + vz * nose[2];
-        const steer = 1 - Math.exp(-18 * dt);
-        vx += (nose[0] * along - vx) * steer;
-        vy += (nose[1] * along - vy) * steer;
-        vz += (nose[2] * along - vz) * steer;
-        const glide = Math.exp(-0.02 * dt);
-        vx *= glide;
-        vy *= glide;
-        vz *= glide;
-        yaw += angDiff(aimYaw, yaw) * Math.min(1, dt * 16);
-        pitch += (aimPitch - pitch) * Math.min(1, dt * 16);
-        x += vx * dt;
-        y += vy * dt;
-        z += vz * dt;
-        if (mapGroundY() != null) {
-          vx = 0;
-          vy = 0;
-          vz = 0;
-          grounded = true;
-          collideMap();
-          bandLockDeath();
-        }
+          } else if (keepZ && !keepX) {
+            x -= vx * dt;
+            vx = 0;
           } else {
-        const fly = forward(aimYaw, aimPitch + lift);
-        vx += fly[0] * accel * dt;
-        vy += fly[1] * accel * dt;
-        vz += fly[2] * accel * dt;
-        yaw += angDiff(aimYaw, yaw) * Math.min(1, dt * 16);
-        pitch += (aimPitch + lift - pitch) * Math.min(1, dt * 16);
-        if (dashMul <= 0) {
-          const drag = Math.exp(-0.42 * dt);
-          vx *= drag;
-          vy *= drag;
-          vz *= drag;
+            x -= vx * dt;
+            z -= vz * dt;
+            vx = 0;
+            vz = 0;
+          }
         }
-        const speed = Math.hypot(vx, vy, vz);
-        const cap = (20 + boost * 20) * flyMul;
-        if (dashMul <= 0 && speed > cap) {
-          const cut = cap / speed;
-          vx *= cut;
-          vy *= cut;
-          vz *= cut;
-        }
-        x += vx * dt;
-        y += vy * dt;
-        z += vz * dt;
-        grounded = mapGroundY() != null;
-        if (grounded) {
+      }
+      y += vy * dt;
+      let stand = -1e9;
+      const feet = y - spawnBallR;
+      const prevFeet = feet - vy * dt;
+      stand = floorTop(x, z, prevFeet + 0.35);
+      let onGround = false;
+      if (stand > -1e8) {
+        stand += spawnBallR;
+        onGround = y <= stand + 0.05;
+        if (y < stand) {
+          y = stand;
           if (vy < 0) vy = 0;
-          collideMap();
         }
       }
-      const pad = 1.05;
-      for (let i = 0; i < tubes.length; i += 1) {
-        const c = tubes[i];
-        if (c[0] === 2) {
-          if (z < c[6] - pad || z > c[7] + pad) continue;
-          const dx = x - c[1];
-          const dy = y - c[2];
-          const dist = Math.hypot(dx, dy) || 0.001;
-          const inner = c[5] > 0 && dist < (c[4] + c[5]) * 0.5;
-          const hit = inner ? dist + pad > c[5] && dist < c[4] : dist - pad < c[4] && dist + pad > c[5];
-          if (!hit) continue;
-          const nx = dx / dist;
-          const ny = dy / dist;
-          const target = inner ? c[5] - pad : c[4] + pad;
-          x = c[1] + nx * target;
-          y = c[2] + ny * target;
-          const into = vx * nx + vy * ny;
-          if ((inner && into > 0) || (!inner && into < 0)) {
-            vx -= into * nx;
-            vy -= into * ny;
-          }
-        } else if (y > c[6] - pad && y < c[7] + pad) {
-          const dx = x - c[1];
-          const dz = z - c[3];
-          const dist = Math.hypot(dx, dz) || 0.001;
-          if (dist - pad >= c[4] || dist + pad <= c[5]) continue;
-          const nx = dx / dist;
-          const nz = dz / dist;
-          const target = c[5] > 0 && dist < (c[4] + c[5]) * 0.5 ? c[5] - pad : c[4] + pad;
-          x = c[1] + nx * target;
-          z = c[3] + nz * target;
-          const into = vx * nx + vz * nz;
-          if (into < 0) {
-            vx -= into * nx;
-            vz -= into * nz;
-          }
-        }
+      if ((jumpEdge || jumpHeld) && onGround && jumpReady) {
+        vy = Math.sqrt(64 * CELL * 1.4);
+        jumpReady = false;
       }
-      }
-    }
-    if (basicFov > 0 && dashBase > 0) {
-      const env = dashEnv(Math.min(1, basicFov / 0.5));
-      const want = dashBase * (1 + 2 * env);
-      const sp = Math.hypot(vx, vy, vz);
-      const dx = sp > 0.2 ? vx / sp : dashDX;
-      const dy = sp > 0.2 ? vy / sp : dashDY;
-      const dz = sp > 0.2 ? vz / sp : dashDZ;
-      vx = dx * want;
-      vy = dy * want;
-      vz = dz * want;
+      jumpEdge = false;
+      if (!onGround) jumpReady = true;
+      stepGround = onGround;
+      yaw = aimYaw;
+      pitch = aimPitch;
     }
     collideMap();
+    if (downTime <= 0 && !gameOver && touchesLava(x, y, z)) downPlayer();
     updateChunks();
     stepFoes(dt);
     stepChaser(dt);
@@ -3743,6 +4267,39 @@
     meshYaw = yaw + Math.sin(shakeT * 70) * shake * 0.95;
     meshPitch = pitch + Math.cos(shakeT * 64) * shake * 0.55;
     showHud();
+    if (roundLeft > 0) {
+      roundLeft -= dt;
+      if (roundLeft <= 0) {
+        roundLeft = 0;
+        if (!teleported) {
+          teleported = true;
+          x = lavaX + (lavaMid + 0.5) * CELL;
+          y = lavaY + PILLAR * CELL + spawnBallR;
+          z = lavaZ + (lavaMid + 0.5) * CELL;
+          moveX = x;
+          moveY = y;
+          moveZ = z;
+          vx = 0;
+          vy = 0;
+          vz = 0;
+        }
+      }
+    }
+    if (overSheet(lavaX, lavaZ) && lavaLevel < LAVA_H) {
+      lavaClock += dt;
+      if (lavaClock >= 6) {
+        lavaClock -= 6;
+        riseLava();
+      }
+    }
+    if (inGameArea()) {
+      giveClock += dt;
+      if (giveClock >= 6) {
+        giveClock -= 6;
+        giveBlock("stone");
+      }
+    }
+    if (clockEl) clockEl.textContent = String(Math.ceil(roundLeft));
     paintSkillCool();
 
     if (Math.hypot(vx, vy, vz) >= 15) {
@@ -3754,11 +4311,17 @@
     if (trailDrop > 0) trail.splice(0, trailDrop);
 
     const ax = axes(meshYaw, meshPitch);
-    const view = axes(aimYaw, aimPitch);
-    let camX = x - view.fx * 10 + view.ux * 2.3 + view.rx * 3.5;
-    let camY = y - view.fy * 10 + view.uy * 2.3 + view.ry * 3.5;
-    let camZ = z - view.fz * 10 + view.uz * 2.3 + view.rz * 3.5;
-    if (pointInObject(camX, camY, camZ)) {
+    const view = axes(aimYaw, aimPitch - 0.9);
+    let camX = x;
+    let camY = y;
+    let camZ = z;
+    if (viewMode !== 1) {
+      camX = x - view.fx * 10 + view.ux * 2.3 + view.rx * 3.5;
+      camY = y - view.fy * 10 + view.uy * 2.3 + view.ry * 3.5;
+      camZ = z - view.fz * 10 + view.uz * 2.3 + view.rz * 3.5;
+    }
+    if (crouchHeld) camY -= spawnBallR * 2 * (1 - crouchSquat);
+    if (viewMode !== 1 && pointInObject(camX, camY, camZ)) {
       const dx = camX - x;
       const dy = camY - y;
       const dz = camZ - z;
@@ -3806,49 +4369,32 @@
     shotUy = uy;
     shotUz = uz;
     shotTan = tan;
+    if (leftHeld && inGameArea()) {
+      leftTime += dt;
+      if (leftTime >= 0.22) {
+        const aimed = aimSolid();
+        if (!aimed || lavaCellHere(aimed.x0, aimed.y0, aimed.z0)) {
+          mineX = -1e9;
+          digTime = 0;
+        } else if (aimed.x0 !== mineX || aimed.y0 !== mineY || aimed.z0 !== mineZ) {
+          mineX = aimed ? aimed.x0 : -1e9;
+          mineY = aimed ? aimed.y0 : -1e9;
+          mineZ = aimed ? aimed.z0 : -1e9;
+          digTime = 0;
+        } else {
+          digTime += dt;
+          if (digTime >= 2) {
+            clearSolid(mineX, mineY, mineZ);
+            digBroke = true;
+            digTime = 0;
+            mineX = -1e9;
+          }
+        }
+      }
+    }
     shotAspect = aspect;
     shown.length = 0;
     const foeDraw = [];
-    if (foesOn) {
-      for (let fi = 0; fi < foes.length; fi += 1) {
-        const foe = foes[fi];
-        const vxw = foe.x - camX;
-        const vyw = foe.y - camY;
-        const vzw = foe.z - camZ;
-        const df = vxw * lx + vyw * ly + vzw * lz;
-        if (df < 0.6) continue;
-        const dr = vxw * rx + vyw * ry + vzw * rz;
-        const du = vxw * ux + vyw * uy + vzw * uz;
-        const sx = ((dr / (df * aspect * tan)) + 1) * 0.5 * bw;
-        const sy = (1 - du / (df * tan)) * 0.5 * bh;
-        const pr = Math.max(12, 6 * bh * 0.5 / (df * tan));
-        const x0 = Math.max(0, Math.floor(sx - pr));
-        const y0 = Math.max(0, Math.floor(sy - pr));
-        const x1 = Math.min(bw - 1, Math.ceil(sx + pr));
-        const y1 = Math.min(bh - 1, Math.ceil(sy + pr));
-        if (x1 < x0 || y1 < y0) continue;
-        foeDraw.push({ foe, x0, y0, x1, y1 });
-      }
-    }
-    for (let ci = 0; ci < corpses.length; ci += 1) {
-      const foe = corpses[ci];
-      const vxw = foe.x - camX;
-      const vyw = foe.y - camY;
-      const vzw = foe.z - camZ;
-      const df = vxw * lx + vyw * ly + vzw * lz;
-      if (df < 0.6) continue;
-      const dr = vxw * rx + vyw * ry + vzw * rz;
-      const du = vxw * ux + vyw * uy + vzw * uz;
-      const sx = ((dr / (df * aspect * tan)) + 1) * 0.5 * bw;
-      const sy = (1 - du / (df * tan)) * 0.5 * bh;
-      const pr = Math.max(12, 6 * bh * 0.5 / (df * tan));
-      const x0 = Math.max(0, Math.floor(sx - pr));
-      const y0 = Math.max(0, Math.floor(sy - pr));
-      const x1 = Math.min(bw - 1, Math.ceil(sx + pr));
-      const y1 = Math.min(bh - 1, Math.ceil(sy + pr));
-      if (x1 < x0 || y1 < y0) continue;
-      foeDraw.push({ foe, x0, y0, x1, y1 });
-    }
     for (let i = 0; i < tubes.length; i += 1) {
       const cyl = tubes[i];
       const rad = cyl[4];
@@ -3899,44 +4445,6 @@
       if (x1 < x0 || y1 < y0) continue;
       shown.push({ cyl, x0, y0, x1, y1 });
     }
-    spawnDraw.length = 0;
-    for (let pi = 0; pi < spawnPads.length; pi += 1) {
-      const pad = spawnPads[pi];
-      if (!pad.alive) continue;
-      let x0 = bw;
-      let y0 = bh;
-      let x1 = 0;
-      let y1 = 0;
-      let seen = 0;
-      const rad = spawnBallR;
-      for (let ix = 0; ix < 2; ix += 1) {
-        for (let iy = 0; iy < 2; iy += 1) {
-          for (let iz = 0; iz < 2; iz += 1) {
-            const vxw = pad.x + (ix ? rad : -rad) - camX;
-            const vyw = pad.y + (iy ? rad : -rad) - camY;
-            const vzw = pad.z + (iz ? rad : -rad) - camZ;
-            const df = vxw * lx + vyw * ly + vzw * lz;
-            if (df < 0.2) continue;
-            const dr = vxw * rx + vyw * ry + vzw * rz;
-            const du = vxw * ux + vyw * uy + vzw * uz;
-            const sx0 = ((dr / (df * aspect * tan)) + 1) * 0.5 * bw;
-            const sy0 = (1 - du / (df * tan)) * 0.5 * bh;
-            if (sx0 < x0) x0 = sx0;
-            if (sy0 < y0) y0 = sy0;
-            if (sx0 > x1) x1 = sx0;
-            if (sy0 > y1) y1 = sy0;
-            seen += 1;
-          }
-        }
-      }
-      if (!seen) continue;
-      x0 = Math.max(0, Math.floor(x0) - 3);
-      y0 = Math.max(0, Math.floor(y0) - 3);
-      x1 = Math.min(bw - 1, Math.ceil(x1) + 3);
-      y1 = Math.min(bh - 1, Math.ceil(y1) + 3);
-      if (x1 < x0 || y1 < y0) continue;
-      spawnDraw.push({ pad, x0, y0, x1, y1 });
-    }
     let chaserBox = null;
     if (chaser) {
       let x0 = bw;
@@ -3973,9 +4481,49 @@
         if (x1 >= x0 && y1 >= y0) chaserBox = { x0, y0, x1, y1 };
       }
     }
+    let playerBox = null;
+    if (viewMode !== 1 && downTime <= 0 && !gameOver) {
+      let x0 = bw;
+      let y0 = bh;
+      let x1 = 0;
+      let y1 = 0;
+      let seen = 0;
+      const rad = spawnBallR;
+      const squat = crouchHeld ? crouchSquat : 1;
+      const bodyRy = rad * squat;
+      const cy = y - rad * (1 - squat);
+      for (let ix = 0; ix < 2; ix += 1) {
+        for (let iy = 0; iy < 2; iy += 1) {
+          for (let iz = 0; iz < 2; iz += 1) {
+            const vxw = x + (ix ? rad : -rad) - camX;
+            const vyw = cy + (iy ? bodyRy : -bodyRy) - camY;
+            const vzw = z + (iz ? rad : -rad) - camZ;
+            const df = vxw * lx + vyw * ly + vzw * lz;
+            if (df < 0.2) continue;
+            const dr = vxw * rx + vyw * ry + vzw * rz;
+            const du = vxw * ux + vyw * uy + vzw * uz;
+            const sx0 = ((dr / (df * aspect * tan)) + 1) * 0.5 * bw;
+            const sy0 = (1 - du / (df * tan)) * 0.5 * bh;
+            if (sx0 < x0) x0 = sx0;
+            if (sy0 < y0) y0 = sy0;
+            if (sx0 > x1) x1 = sx0;
+            if (sy0 > y1) y1 = sy0;
+            seen += 1;
+          }
+        }
+      }
+      if (seen) {
+        x0 = Math.max(0, Math.floor(x0) - 3);
+        y0 = Math.max(0, Math.floor(y0) - 3);
+        x1 = Math.min(bw - 1, Math.ceil(x1) + 3);
+        y1 = Math.min(bh - 1, Math.ceil(y1) + 3);
+        if (x1 >= x0 && y1 >= y0) playerBox = { x0, y0, x1, y1 };
+      }
+    }
     mapDraw.length = 0;
     for (let mi = 0; mi < mapBoxes.length; mi += 1) {
       const m = mapBoxes[mi];
+      if (m[6] === 8) continue;
       let x0 = bw;
       let y0 = bh;
       let x1 = 0;
@@ -4012,49 +4560,89 @@
       if (x1 < x0 || y1 < y0) continue;
       mapDraw.push({ m, x0, y0, x1, y1 });
     }
-    let voxBox = null;
-    {
+    function screenBox(xa, xb, ya, yb, za, zb) {
+      const near = 0.35;
+      const xs = [xa, xb];
+      const ys = [ya, yb];
+      const zs = [za, zb];
+      const corner = new Array(8);
+      for (let iz = 0; iz < 2; iz += 1) {
+        for (let iy = 0; iy < 2; iy += 1) {
+          for (let ix = 0; ix < 2; ix += 1) {
+            const vxw = xs[ix] - camX;
+            const vyw = ys[iy] - camY;
+            const vzw = zs[iz] - camZ;
+            corner[ix + iy * 2 + iz * 4] = {
+              df: vxw * lx + vyw * ly + vzw * lz,
+              dr: vxw * rx + vyw * ry + vzw * rz,
+              du: vxw * ux + vyw * uy + vzw * uz,
+            };
+          }
+        }
+      }
       let x0 = bw;
       let y0 = bh;
       let x1 = 0;
       let y1 = 0;
       let seen = 0;
-      const xs = [voxX, voxX + VW * CELL];
-      const ys = [voxY, voxY + VH * CELL];
-      const zs = [voxZ, voxZ + VD * CELL];
-      for (let ix = 0; ix < 2; ix += 1) {
-        for (let iy = 0; iy < 2; iy += 1) {
-          for (let iz = 0; iz < 2; iz += 1) {
-            const vxw = xs[ix] - camX;
-            const vyw = ys[iy] - camY;
-            const vzw = zs[iz] - camZ;
-            const df = vxw * lx + vyw * ly + vzw * lz;
-            if (df < 0.35) continue;
-            const dr = vxw * rx + vyw * ry + vzw * rz;
-            const du = vxw * ux + vyw * uy + vzw * uz;
-            const sx0 = ((dr / (df * aspect * tan)) + 1) * 0.5 * bw;
-            const sy0 = (1 - du / (df * tan)) * 0.5 * bh;
-            if (sx0 < x0) x0 = sx0;
-            if (sy0 < y0) y0 = sy0;
-            if (sx0 > x1) x1 = sx0;
-            if (sy0 > y1) y1 = sy0;
-            seen += 1;
-          }
+      function addView(df, dr, du) {
+        const sx0 = ((dr / (df * aspect * tan)) + 1) * 0.5 * bw;
+        const sy0 = (1 - du / (df * tan)) * 0.5 * bh;
+        if (sx0 < x0) x0 = sx0;
+        if (sy0 < y0) y0 = sy0;
+        if (sx0 > x1) x1 = sx0;
+        if (sy0 > y1) y1 = sy0;
+        seen += 1;
+      }
+      function clipEdge(a, b) {
+        const pa = corner[a];
+        const pb = corner[b];
+        const fa = pa.df >= near;
+        const fb = pb.df >= near;
+        if (fa && fb) {
+          addView(pa.df, pa.dr, pa.du);
+          addView(pb.df, pb.dr, pb.du);
+          return;
         }
+        if (!fa && !fb) return;
+        const t = (near - pa.df) / (pb.df - pa.df);
+        addView(near, pa.dr + (pb.dr - pa.dr) * t, pa.du + (pb.du - pa.du) * t);
+        if (fa) addView(pa.df, pa.dr, pa.du);
+        else addView(pb.df, pb.dr, pb.du);
       }
-      if (seen) {
-        x0 = Math.max(0, Math.floor(x0) - 4);
-        y0 = Math.max(0, Math.floor(y0) - 4);
-        x1 = Math.min(bw - 1, Math.ceil(x1) + 4);
-        y1 = Math.min(bh - 1, Math.ceil(y1) + 4);
-        if (x1 >= x0 && y1 >= y0) voxBox = { x0: x0, y0: y0, x1: x1, y1: y1 };
-      }
+      clipEdge(0, 1);
+      clipEdge(2, 3);
+      clipEdge(4, 5);
+      clipEdge(6, 7);
+      clipEdge(0, 2);
+      clipEdge(1, 3);
+      clipEdge(4, 6);
+      clipEdge(5, 7);
+      clipEdge(0, 4);
+      clipEdge(1, 5);
+      clipEdge(2, 6);
+      clipEdge(3, 7);
+      if (!seen) return null;
+      x0 = Math.max(0, Math.floor(x0) - 4);
+      y0 = Math.max(0, Math.floor(y0) - 4);
+      x1 = Math.min(bw - 1, Math.ceil(x1) + 4);
+      y1 = Math.min(bh - 1, Math.ceil(y1) + 4);
+      if (x1 < x0 || y1 < y0) return null;
+      return { x0: x0, y0: y0, x1: x1, y1: y1 };
     }
-    const mineTile = 32;
-    const mineTw = Math.ceil(bw / mineTile);
+    const voxBox = screenBox(voxX, voxX + VW * CELL, voxY, voxY + CELL, voxZ, voxZ + VD * CELL);
+    const lavaBottom = lavaSheetY();
+    const lavaBox = lavaLevel > 0 ? screenBox(lavaX, lavaX + LAVA_N * CELL, lavaBottom, lavaBottom + CELL, lavaZ, lavaZ + LAVA_N * CELL) : null;
+    const pillarBox = screenBox(lavaX + lavaMid * CELL, lavaX + (lavaMid + 1) * CELL, lavaY, lavaY + PILLAR * CELL, lavaZ + lavaMid * CELL, lavaZ + (lavaMid + 1) * CELL);
+    const mineOn = mineFace.length > 0 || floorFace.length > 0;
+    let mineBins = null;
+    let mineTile = 32;
+    let mineTw = 1;
+    if (mineOn) {
+    mineTw = Math.ceil(bw / mineTile);
     const mineTh = Math.ceil(bh / mineTile);
     if (mineBinStore.length < mineTw * mineTh) mineBinStore = new Array(mineTw * mineTh);
-    const mineBins = mineBinStore;
+    mineBins = mineBinStore;
     for (let i = 0; i < mineTw * mineTh; i += 1) {
       if (mineBins[i]) mineBins[i].length = 0;
       else mineBins[i] = [];
@@ -4089,25 +4677,6 @@
     }
     binWorldCells(mineFace);
     binWorldCells(floorFace);
-    let rocketBox = null;
-    if (downTime <= 0 && !gameOver && boom <= 0) {
-      const vxw = meshX - camX;
-      const vyw = meshY - camY;
-      const vzw = meshZ - camZ;
-      const df = vxw * lx + vyw * ly + vzw * lz;
-      if (df >= 0.6) {
-        const dr = vxw * rx + vyw * ry + vzw * rz;
-        const du = vxw * ux + vyw * uy + vzw * uz;
-        const pr = Math.max(14, 4.2 * bh * 0.5 / (df * tan));
-        const sx0 = ((dr / (df * aspect * tan)) + 1) * 0.5 * bw;
-        const sy0 = (1 - du / (df * tan)) * 0.5 * bh;
-        rocketBox = {
-          x0: Math.max(0, Math.floor(sx0 - pr)),
-          y0: Math.max(0, Math.floor(sy0 - pr)),
-          x1: Math.min(bw - 1, Math.ceil(sx0 + pr)),
-          y1: Math.min(bh - 1, Math.ceil(sy0 + pr)),
-        };
-      }
     }
     let beamBox = null;
     {
@@ -4149,7 +4718,7 @@
           g = 214;
           b = 242;
         }
-        let best = 160;
+        let best = 360;
         if (beamBox && sx >= beamBox.x0 && sx <= beamBox.x1 && sy >= beamBox.y0 && sy <= beamBox.y1) {
           const beam = beamHit(camX, camY, camZ, dx, dy, dz, view);
           if (beam && beam < best) {
@@ -4157,16 +4726,6 @@
             r = 255;
             g = 70;
             b = 64;
-          }
-        }
-        if (rocketBox && sx >= rocketBox.x0 && sx <= rocketBox.x1 && sy >= rocketBox.y0 && sy <= rocketBox.y1) {
-          const hit = rocketHit(camX, camY, camZ, dx, dy, dz, ax);
-          if (hit && hit.t < best) {
-            best = hit.t;
-            paintPixel(hit);
-            r = cR;
-            g = cG;
-            b = cB;
           }
         }
         if (foeDraw.length) {
@@ -4194,19 +4753,6 @@
             b = 28;
           }
         }
-        if (spawnDraw.length) {
-          for (let si = 0; si < spawnDraw.length; si += 1) {
-            const slot = spawnDraw[si];
-            if (sx < slot.x0 || sx > slot.x1 || sy < slot.y0 || sy > slot.y1) continue;
-            const lt = ballHit(camX, camY, camZ, dx, dy, dz, slot.pad);
-            if (lt > 0.05 && lt < best) {
-              best = lt;
-              r = 226;
-              g = 230;
-              b = 214;
-            }
-          }
-        }
         if (chaserBox && chaser && sx >= chaserBox.x0 && sx <= chaserBox.x1 && sy >= chaserBox.y0 && sy <= chaserBox.y1) {
           const ct = ballHit(camX, camY, camZ, dx, dy, dz, chaser);
           if (ct > 0.05 && ct < best) {
@@ -4216,13 +4762,16 @@
             b = 0;
           }
         }
-        const gt = mapGroundHit(camX, camY, camZ, dx, dy, dz);
-        if (gt > 0.05 && gt < best) {
-          best = gt;
-          const tint = chunkFloorColor(camX + dx * gt, camZ + dz * gt);
-          r = tint[0];
-          g = tint[1];
-          b = tint[2];
+        if (playerBox && sx >= playerBox.x0 && sx <= playerBox.x1 && sy >= playerBox.y0 && sy <= playerBox.y1) {
+          const squat = crouchHeld ? crouchSquat : 1;
+          const cy = y - spawnBallR * (1 - squat);
+          const pt = ellipsoidHit(camX, camY, camZ, dx, dy, dz, x, cy, z, spawnBallR, spawnBallR * squat, spawnBallR);
+          if (pt > 0.05 && pt <= best) {
+            best = pt;
+            r = 220;
+            g = 36;
+            b = 36;
+          }
         }
         if (mapDraw.length) {
           for (let mi = 0; mi < mapDraw.length; mi += 1) {
@@ -4232,9 +4781,12 @@
             if (mt > 0.05 && mt < best) {
               best = mt;
               const tint = mapRgb[slot.m[6]] || mapRgb[1];
-              r = tint[0];
-              g = tint[1];
-              b = tint[2];
+              let shade = 1;
+              if (slot.m[6] === 4) shade = lavaEdge(camX, camY, camZ, dx, dy, dz, mt, slot.m[1], slot.m[0], slot.m[2]) ? 0.72 : 1;
+              shade = mineShade(shade, camX + dx * mt, camY + dy * mt, camZ + dz * mt);
+              r = Math.round(tint[0] * shade);
+              g = Math.round(tint[1] * shade);
+              b = Math.round(tint[2] * shade);
             }
           }
         }
@@ -4243,12 +4795,35 @@
           if (vh && vh.t < best) {
             best = vh.t;
             const tint = voxRgb[vh.id - 1];
-            const shade = voxEdge(camX, camY, camZ, dx, dy, dz, vh.t) ? 0.72 : 1;
+            let shade = voxEdge(camX, camY, camZ, dx, dy, dz, vh.t) ? 0.72 : 1;
+            shade = mineShade(shade, camX + dx * vh.t, camY + dy * vh.t, camZ + dz * vh.t);
             r = Math.round(tint[0] * shade);
             g = Math.round(tint[1] * shade);
             b = Math.round(tint[2] * shade);
           }
         }
+        if (lavaBox && sx >= lavaBox.x0 && sx <= lavaBox.x1 && sy >= lavaBox.y0 && sy <= lavaBox.y1) {
+          const lh = lavaHit(camX, camY, camZ, dx, dy, dz, best);
+          if (lh && lh.t < best) {
+            best = lh.t;
+            const tint = lavaRgb[lh.id - 1];
+            const shade = mineShade(lavaEdge(camX, camY, camZ, dx, dy, dz, lh.t, lavaBottom) ? 0.72 : 1, camX + dx * lh.t, camY + dy * lh.t, camZ + dz * lh.t);
+            r = Math.round(tint[0] * shade);
+            g = Math.round(tint[1] * shade);
+            b = Math.round(tint[2] * shade);
+          }
+        }
+        if (pillarBox && sx >= pillarBox.x0 && sx <= pillarBox.x1 && sy >= pillarBox.y0 && sy <= pillarBox.y1) {
+          const ph = pillarHit(camX, camY, camZ, dx, dy, dz, best);
+          if (ph && ph.t < best) {
+            best = ph.t;
+            const shade = mineShade(lavaEdge(camX, camY, camZ, dx, dy, dz, ph.t) ? 0.72 : 1, camX + dx * ph.t, camY + dy * ph.t, camZ + dz * ph.t);
+            r = Math.round(176 * shade);
+            g = Math.round(184 * shade);
+            b = Math.round(190 * shade);
+          }
+        }
+        if (mineOn) {
         const mineBin = mineBins[Math.floor(sx / mineTile) + Math.floor(sy / mineTile) * mineTw];
         if (mineBin && mineBin.length) {
           for (let mi = 0; mi < mineBin.length; mi += 1) {
@@ -4262,6 +4837,7 @@
             g = Math.round(tint[1] * shade);
             b = Math.round(tint[2] * shade);
           }
+        }
         }
         const i = (sy * bw + sx) * 4;
         data[i] = r;
@@ -4301,11 +4877,8 @@
       ctx.fillStyle = glow;
       ctx.fillRect(0, 0, bw, bh);
     }
-    drawTrail();
     drawSparks();
-    drawWingBits();
     drawPops();
-    if (downTime <= 0 && !gameOver) drawPreview();
     musicStep(dt, {
       dead: dead,
       calm: onRail && !railLocked,

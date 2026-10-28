@@ -12,23 +12,25 @@
       overflow: hidden;
     }
     body {
-      display: flex;
-      flex-direction: column;
+      height: 100%;
     }
-    #bar-top,
-    #bar-bottom {
-      flex: 0 0 11%;
-      background: #000;
+    #clock {
+      position: absolute;
+      left: 50%;
+      top: 8px;
+      z-index: 6;
+      margin: 0;
+      transform: translateX(-50%);
+      color: #fff;
+      font: 700 28px/1 "Segoe UI", sans-serif;
       pointer-events: none;
-    }
-    #bar-top {
-      display: flex;
-      justify-content: center;
-      align-items: flex-start;
     }
     #start {
       pointer-events: auto;
-      margin-top: 8px;
+      position: absolute;
+      left: 18px;
+      top: 8px;
+      margin: 0;
       padding: 0;
       border: none;
       background: transparent;
@@ -38,9 +40,8 @@
     }
     #screen {
       position: relative;
-      flex: 1 1 auto;
       width: 100%;
-      min-height: 0;
+      height: 100%;
       overflow: hidden;
       background: #87b4dc;
     }
@@ -77,58 +78,6 @@
       top: 5px;
       width: 12px;
       height: 2px;
-    }
-    #skill {
-      position: absolute;
-      left: 80%;
-      top: 34%;
-      z-index: 3;
-      width: 76px;
-      height: 100px;
-      box-sizing: border-box;
-      transform: translate(-50%, -50%);
-      background: #3c3c42;
-      border: 5px solid #1c1c20;
-      color: #f2f2f4;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      pointer-events: none;
-      user-select: none;
-    }
-    #skill canvas {
-      width: 32px;
-      height: 40px;
-      image-rendering: pixelated;
-      image-rendering: crisp-edges;
-    }
-    #skill[hidden] {
-      display: none;
-    }
-    #skill-cool {
-      position: absolute;
-      left: 80%;
-      top: calc(34% + 56px);
-      z-index: 3;
-      width: 76px;
-      height: 16px;
-      box-sizing: border-box;
-      transform: translateX(-50%);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background: #3c3c42;
-      border: 4px solid #1c1c20;
-      pointer-events: none;
-    }
-    #skill-cool[hidden] {
-      display: none;
-    }
-    #skill-cool canvas {
-      width: 68px;
-      height: 8px;
-      image-rendering: pixelated;
-      image-rendering: crisp-edges;
     }
     #hud {
       position: absolute;
@@ -185,22 +134,6 @@
       pointer-events: none;
       transform: translateY(-50%);
     }
-    #fuel {
-      position: relative;
-      width: 28px;
-      height: 220px;
-      background: #000;
-    }
-    #fuel-fill {
-      position: absolute;
-      left: 4px;
-      right: 4px;
-      bottom: 4px;
-      top: 4px;
-      background: rgb(220, 36, 36);
-      transform-origin: bottom center;
-      transform: scaleY(1);
-    }
     #preview {
       display: block;
       width: 297px;
@@ -209,81 +142,6 @@
       background: transparent;
       image-rendering: pixelated;
       image-rendering: crisp-edges;
-    }
-    #shop {
-      position: absolute;
-      left: 18px;
-      top: 50%;
-      z-index: 5;
-      width: 300px;
-      max-height: 78%;
-      box-sizing: border-box;
-      padding: 14px 14px 16px;
-      transform: translateY(-50%);
-      overflow: auto;
-      background: #3c3c42;
-      border: 5px solid #1c1c20;
-      color: #f2f2f4;
-      font: 700 16px/1.2 "Segoe UI", sans-serif;
-    }
-    #shop[hidden] {
-      display: none;
-    }
-    #shop-title {
-      margin: 0 0 4px;
-      text-align: center;
-      font-size: 22px;
-    }
-    #shop-money {
-      margin: 0 0 12px;
-      text-align: center;
-    }
-    #shop-rockets,
-    #shop-ups {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-    #shop-ups {
-      margin-top: 8px;
-    }
-    .shop-row {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      width: 100%;
-      margin: 0;
-      padding: 6px;
-      box-sizing: border-box;
-      border: 4px solid #1c1c20;
-      background: #4a4a52;
-      color: #f2f2f4;
-      font: 700 16px/1.2 "Segoe UI", sans-serif;
-      text-align: left;
-      cursor: pointer;
-    }
-    .shop-row.poor {
-      background: #2a2a2e;
-      color: #7e7e86;
-      cursor: default;
-    }
-    .shop-row.on {
-      border-color: #f2f2f4;
-    }
-    .shop-row canvas {
-      display: block;
-      width: 84px;
-      height: 62px;
-      flex: 0 0 auto;
-      pointer-events: none;
-      background: transparent;
-      image-rendering: pixelated;
-      image-rendering: crisp-edges;
-    }
-    .shop-row .meta {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
     }
     #cats {
       position: absolute;
@@ -331,33 +189,87 @@
     #cat-list .sub[hidden] {
       display: none;
     }
+    #hotbar {
+      position: absolute;
+      left: 50%;
+      bottom: 18px;
+      z-index: 6;
+      display: flex;
+      gap: 4px;
+      transform: translateX(-50%);
+      pointer-events: none;
+    }
+    #hp {
+      position: absolute;
+      left: 50%;
+      bottom: 78px;
+      z-index: 6;
+      width: 230px;
+      height: 16px;
+      margin-left: -250px;
+      box-sizing: border-box;
+      border: 4px solid #1c1c20;
+      background: #2a1012;
+      pointer-events: none;
+    }
+    #hp-fill {
+      width: 100%;
+      height: 100%;
+      background: #d42020;
+    }
+    .hot-slot {
+      position: relative;
+      width: 52px;
+      height: 52px;
+      box-sizing: border-box;
+      border: 4px solid #1c1c20;
+      background: rgba(20, 20, 24, 0.88);
+    }
+    .hot-slot.on {
+      border-color: #f4f4f6;
+    }
+    .hot-cube {
+      position: absolute;
+      left: 8px;
+      top: 8px;
+      width: 28px;
+      height: 28px;
+      box-shadow: inset -5px -5px 0 rgba(0, 0, 0, 0.35);
+    }
+    .hot-cube[hidden] {
+      display: none;
+    }
+    .hot-num {
+      position: absolute;
+      right: 4px;
+      bottom: 2px;
+      color: #fff;
+      font: 700 16px/1 "Segoe UI", sans-serif;
+      text-shadow: 1px 1px 0 #111, -1px 0 0 #111;
+    }
+    .hot-num[hidden] {
+      display: none;
+    }
   </style>
 </head>
 <body>
-  <div id="bar-top"><button type="button" id="start">시작</button></div>
   <div id="screen">
     <canvas id="view"></canvas>
+    <p id="clock">20</p>
+    <button type="button" id="start">시작</button>
     <div id="cross"></div>
-    <div id="skill" hidden><canvas id="skill-mark" width="16" height="20"></canvas></div>
-    <div id="skill-cool" hidden><canvas id="skill-cool-fill" width="34" height="4"></canvas></div>
     <p id="hud">클릭해서 조종</p>
     <div id="cats" hidden>
       <div id="cat-list"></div>
     </div>
-    <div id="shop" hidden>
-      <p id="shop-title">상점</p>
-      <p id="shop-money">0원</p>
-      <div id="shop-rockets"></div>
-      <div id="shop-ups"></div>
-    </div>
     <div id="fuel-dock">
-      <div id="fuel"><div id="fuel-fill"></div></div>
       <canvas id="preview"></canvas>
     </div>
     <p id="ver">v1.1.0</p>
+    <div id="hp"><div id="hp-fill"></div></div>
+    <div id="hotbar"></div>
     <button type="button" id="fire" hidden>발사</button>
   </div>
-  <div id="bar-bottom"></div>
-  <script src="./game.js?v=213"></script>
+  <script src="./game.js?v=273"></script>
 </body>
 </html>
