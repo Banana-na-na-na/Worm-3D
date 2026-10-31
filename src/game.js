@@ -922,7 +922,24 @@
   let won = false;
   let winClock = 0;
   let money = 0;
+  let moneyShown = 0;
   let moneyTick = 0;
+  const roundKills = [];
+  const killWorth = { green: 1, blue: 5, black: 7, red: 5, purple: 2, custom: 0 };
+  const killName = {
+    green: "초록 좀비",
+    blue: "파란 좀비",
+    black: "거미 좀비",
+    red: "붉은 좀비",
+    purple: "아이 좀비",
+    custom: "만든 좀비",
+  };
+  let lootLines = [];
+  let lootSum = 0;
+  let lootShown = 0;
+  let lootTimer = 0;
+  let lootPhase = 0;
+  let lootPaid = false;
   let flyMoney = 0;
   let speedLv = 0;
   let fuelLv = 0;
@@ -1050,6 +1067,8 @@
   let crack = 0;
 
   let music = null;
+  let bar = null;
+  const playBar = true;
 
   function musicLayer(freq, type, detune, master) {
     const osc = audioCtx.createOscillator();
@@ -1126,12 +1145,70 @@
     music.filter.frequency.setTargetAtTime(open, now, 0.28);
   }
 
+  const barChords = [
+    [130.81, 164.81, 196, 261.63],
+    [110, 130.81, 164.81, 220],
+    [87.31, 130.81, 174.61, 220],
+    [98, 146.83, 196, 246.94],
+  ];
+  const barMelody = [329.63, 392, 440, 392, 349.23, 329.63, 293.66, 329.63];
+
+  function barStart() {
+    if (!audioCtx || bar) return;
+    const master = audioCtx.createGain();
+    master.gain.value = 0.32;
+    const filter = audioCtx.createBiquadFilter();
+    filter.type = "lowpass";
+    filter.frequency.value = 980;
+    filter.Q.value = 0.2;
+    master.connect(filter);
+    filter.connect(audioCtx.destination);
+    bar = { master: master, next: audioCtx.currentTime + 0.15, step: 0 };
+  }
+
+  function barTone(freq, when, dur, vol) {
+    const now = audioCtx.currentTime;
+    if (when < now) when = now + 0.02;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = "sine";
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0.0001, when);
+    gain.gain.exponentialRampToValueAtTime(Math.max(0.0002, vol), when + 0.55);
+    gain.gain.exponentialRampToValueAtTime(Math.max(0.0002, vol * 0.62), when + dur * 0.72);
+    gain.gain.exponentialRampToValueAtTime(0.0001, when + dur);
+    osc.connect(gain);
+    gain.connect(bar.master);
+    osc.start(when);
+    osc.stop(when + dur + 0.05);
+  }
+
+  function barStep() {
+    if (!audioCtx) return;
+    if (audioCtx.state === "suspended") audioCtx.resume();
+    barStart();
+    if (!bar) return;
+    const now = audioCtx.currentTime;
+    const beat = 60 / 68;
+    const hold = beat * 4;
+    if (bar.next < now + 0.02) bar.next = now + 0.08;
+    const horizon = now + hold;
+    while (bar.next < horizon) {
+      const chord = barChords[bar.step % barChords.length];
+      for (let i = 0; i < chord.length; i += 1) barTone(chord[i], bar.next, hold * 0.96, i === 0 ? 0.055 : 0.032);
+      barTone(barMelody[bar.step % barMelody.length], bar.next + beat, beat * 2.4, 0.028);
+      bar.next += hold;
+      bar.step += 1;
+    }
+  }
+
   function unlockAudio() {
     const Ctx = window.AudioContext || window.webkitAudioContext;
     if (!Ctx) return;
     if (!audioCtx) audioCtx = new Ctx();
     if (audioCtx.state === "suspended") audioCtx.resume();
-    musicStart();
+    if (playBar) barStart();
+    else musicStart();
   }
 
   function playTone(freq, dur, type, vol, slide) {
@@ -1183,6 +1260,53 @@
   function playHit() {
     playNoise(0.08, 0.07, 420);
     playTone(140, 0.07, "square", 0.04, 70);
+  }
+
+  function playSwing() {
+    if (!audioCtx) return;
+    const t = audioCtx.currentTime;
+    const n = Math.max(1, Math.floor(audioCtx.sampleRate * 0.16));
+    const buf = audioCtx.createBuffer(1, n, audioCtx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < n; i += 1) data[i] = Math.random() * 2 - 1;
+    const src = audioCtx.createBufferSource();
+    src.buffer = buf;
+    const filter = audioCtx.createBiquadFilter();
+    filter.type = "bandpass";
+    filter.frequency.setValueAtTime(1800, t);
+    filter.frequency.exponentialRampToValueAtTime(280, t + 0.16);
+    filter.Q.value = 0.7;
+    const gain = audioCtx.createGain();
+    gain.gain.setValueAtTime(0.28, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
+    src.connect(filter);
+    filter.connect(gain);
+    gain.connect(audioCtx.destination);
+    src.start(t);
+    playTone(260, 0.1, "triangle", 0.07, 90);
+  }
+
+  function playClash() {
+    if (!audioCtx) return;
+    playTone(980, 0.07, "square", 0.1, 420);
+    playTone(1460, 0.05, "square", 0.07, 640);
+    const t = audioCtx.currentTime;
+    const n = Math.max(1, Math.floor(audioCtx.sampleRate * 0.08));
+    const buf = audioCtx.createBuffer(1, n, audioCtx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < n; i += 1) data[i] = Math.random() * 2 - 1;
+    const src = audioCtx.createBufferSource();
+    src.buffer = buf;
+    const filter = audioCtx.createBiquadFilter();
+    filter.type = "highpass";
+    filter.frequency.value = 1400;
+    const gain = audioCtx.createGain();
+    gain.gain.setValueAtTime(0.32, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+    src.connect(filter);
+    filter.connect(gain);
+    gain.connect(audioCtx.destination);
+    src.start(t);
   }
 
   function playFuse() {
@@ -2131,9 +2255,22 @@
     }
     lavaLevel += 1;
   }
-  let roundLeft = 20;
+  let roundLeft = 60;
   let teleported = false;
+  let lobbyWait = 0;
+  let fade = 0;
+  let fadeDir = 0;
+  const lobbyX0 = 8000;
+  const lobbyZ0 = 8000;
+  const lobbyN = 17;
+  x = lobbyX0 + 8.5 * CELL;
+  z = lobbyZ0 + 12.5 * CELL;
   const clockEl = document.getElementById("clock");
+  const moneyEl = document.getElementById("money");
+  const lootEl = document.getElementById("loot");
+  const lootListEl = document.getElementById("loot-list");
+  const lootTotalEl = document.getElementById("loot-total");
+  const lobbyCountEl = document.getElementById("lobby-count");
   const voxGrid = new Uint8Array(VW * VH * VD);
   const voxRgb = [
     [176, 184, 190],
@@ -3667,39 +3804,48 @@
     launchKick = true;
     if (document.pointerLockElement !== canvas) canvas.requestPointerLock();
   }
-  const startBtn = document.getElementById("start");
-  if (startBtn) {
-    startBtn.addEventListener("click", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      unlockAudio();
-      const aim = forward(aimYaw, aimPitch);
-      const gap = spawnBallR * 2 + 3;
-      chaser = {
-        x: spawnX + aim[0] * gap,
-        y: spawnY + aim[1] * gap,
-        z: spawnZ + aim[2] * gap,
-        hurt: 0,
-      };
-    });
-  }
   canvas.addEventListener("contextmenu", (e) => e.preventDefault());
   window.addEventListener("contextmenu", (e) => e.preventDefault());
   document.addEventListener("mousedown", (e) => {
-    if (e.button === 2) pressRight(e);
+    if (e.button === 2) {
+      if (bag && !bag.hidden) return;
+      if (e.target.closest && (e.target.closest("#customize") || e.target.closest("#custom") || e.target.closest("#win-shade") || e.target.closest("#lobby-shop") || e.target.closest("#lobby-sell") || e.target.closest("#lobby-menu"))) return;
+      if (flat2D && inLobby) return;
+      if (flat2D) {
+        if (lightSide() === 1) {
+          lightOn = !lightOn;
+          paintGear();
+          return;
+        }
+        swingFist(e);
+        return;
+      }
+      pressRight(e);
+    }
   }, true);
   document.addEventListener("mouseup", (e) => {
     if (e.button === 2) releaseRight(e);
   }, true);
   document.addEventListener("pointerdown", (e) => {
-    if (e.button === 2) pressRight(e);
+    if (e.button === 2 && !flat2D) pressRight(e);
   }, true);
   document.addEventListener("pointerup", (e) => {
     if (e.button === 2) releaseRight(e);
   }, true);
   window.addEventListener("mousedown", (e) => {
     if (e.button !== 0) return;
-    if (e.target.closest && (e.target.closest("#cats") || e.target.closest("#fire") || e.target.closest("#shop") || e.target.closest("#start"))) return;
+    if (bag && !bag.hidden) return;
+    if (e.target.closest && (e.target.closest("#cats") || e.target.closest("#fire") || e.target.closest("#shop") || e.target.closest("#customize") || e.target.closest("#custom") || e.target.closest("#win-shade") || e.target.closest("#lobby-shop") || e.target.closest("#lobby-sell") || e.target.closest("#lobby-menu"))) return;
+    if (flat2D && inLobby) return;
+    if (flat2D) {
+      if (lightSide() === -1) {
+        lightOn = !lightOn;
+        paintGear();
+        return;
+      }
+      swingStick(e);
+      return;
+    }
     if (document.pointerLockElement !== canvas) {
       canvas.requestPointerLock();
       return;
@@ -3730,7 +3876,99 @@
     moveS = false;
     moveD = false;
     sprintHeld = false;
+    parryHeld = false;
     crouchHeld = false;
+  });
+  const customPanel = document.getElementById("custom");
+  const customEyes = document.getElementById("custom-eyes");
+  function readCustomForm() {
+    const eyeBtn = customEyes.querySelector("button.on");
+    const legs = Number(document.getElementById("custom-leg-count").value);
+    return {
+      eye: eyeBtn ? eyeBtn.dataset.eye : "none",
+      legs: Number.isFinite(legs) ? Math.max(0, Math.min(12, Math.floor(legs))) : 2,
+      front: document.getElementById("custom-front").checked,
+      long: document.getElementById("custom-long").checked,
+      grab: document.getElementById("custom-grab").checked,
+      sword: document.getElementById("custom-sword").checked,
+      guard: document.getElementById("custom-guard").checked,
+      combo: document.getElementById("custom-combo").checked,
+      cone: document.getElementById("custom-cone").checked,
+      pace: Number(document.getElementById("custom-paces").querySelector("button.on").dataset.pace) || 1,
+      hp: Number(document.getElementById("custom-hps").querySelector("button.on").dataset.hp) || 5,
+      color: document.getElementById("custom-color").value || "#3f6b32",
+    };
+  }
+  function summonCustom() {
+    const spec = readCustomForm();
+    const n = spec.legs;
+    const ang = armFace;
+    const spotX = x + Math.cos(ang) * spawnBallR * 8;
+    const spotZ = z + Math.sin(ang) * spawnBallR * 8;
+    const hands = [];
+    for (let i = 0; i < n; i += 1) hands.push({ x: spotX, z: spotZ, ready: false });
+    zombies.push({
+      x: spotX,
+      z: spotZ,
+      hp: spec.hp,
+      hpMax: spec.hp,
+      hitId: -1,
+      custom: true,
+      color: spec.color,
+      eyeKind: spec.eye,
+      frontJump: spec.front,
+      longLegs: spec.long,
+      armGrab: spec.grab,
+      sword: spec.sword,
+      guard: spec.guard,
+      combo: spec.combo,
+      cone: spec.cone,
+      paceMul: spec.pace,
+      eye: 1,
+      look: Math.atan2(z - spotZ, x - spotX),
+      face: Math.atan2(z - spotZ, x - spotX),
+      hands: hands,
+      phase: 0,
+      speed: 16 * 1.5,
+      prepT: 0,
+      jumpCool: 0,
+      stuck: false,
+      grab: false,
+      swing: 0,
+      swingCool: 0,
+      parrying: false,
+    });
+  }
+  document.getElementById("customize").addEventListener("click", function (e) {
+    e.preventDefault();
+    customPanel.hidden = false;
+    syncWinShade();
+  });
+  function pickOne(box, e) {
+    const btn = e.target.closest("button");
+    if (!btn || !box.contains(btn)) return;
+    const all = box.querySelectorAll("button");
+    for (let i = 0; i < all.length; i += 1) all[i].classList.toggle("on", all[i] === btn);
+  }
+  customEyes.addEventListener("click", function (e) { pickOne(customEyes, e); });
+  document.getElementById("custom-paces").addEventListener("click", function (e) { pickOne(document.getElementById("custom-paces"), e); });
+  document.getElementById("custom-hps").addEventListener("click", function (e) { pickOne(document.getElementById("custom-hps"), e); });
+  document.getElementById("custom-summon").addEventListener("click", function () {
+    summonCustom();
+    customPanel.hidden = true;
+    syncWinShade();
+  });
+  document.getElementById("custom-cancel").addEventListener("click", function () {
+    customPanel.hidden = true;
+    syncWinShade();
+  });
+  let monstersOff = false;
+  document.getElementById("custom-clear").addEventListener("click", function () {
+    monstersOff = true;
+    zombies.length = 0;
+  });
+  document.getElementById("custom-inf").addEventListener("click", function () {
+    money = Infinity;
   });
   if (fireBtn) {
     fireBtn.addEventListener("pointerdown", (e) => {
@@ -3830,8 +4068,11 @@
   let giveClock = 0;
   const hotEl = document.getElementById("hotbar");
   const hotSlots = [];
-  let hp = 20;
-  const hpMax = 20;
+  let hp = 15;
+  const hpMax = 15;
+  let purpleGlow = 0;
+  let purpleHurt = 0;
+  let purpleClock = 0;
   const hpFill = document.getElementById("hp-fill");
   function paintHp() {
     if (!hpFill) return;
@@ -4051,7 +4292,542 @@
     if (item.count <= 0) hotbar[hotSelect] = null;
     paintHotbar();
   }
+  const bagShade = document.getElementById("bag-shade");
+  const bag = document.getElementById("bag");
+  const bagGrid = document.getElementById("bag-grid");
+  const bagSlots = [];
+  if (bagGrid) {
+    for (let i = 0; i < 27; i += 1) {
+      const slot = document.createElement("div");
+      slot.className = "hot-slot";
+      slot.dataset.slot = String(i);
+      bagGrid.appendChild(slot);
+      bagSlots.push(slot);
+    }
+  }
+  const bagHands = document.getElementById("bag-hands");
+  const handLeft = document.getElementById("hand-left");
+  const handRight = document.getElementById("hand-right");
+  const screenEl = document.getElementById("screen");
+  const dragItem = document.getElementById("drag-item");
+  const swordIcon = handLeft ? handLeft.querySelector(".hand-sword") : null;
+  const lightIcon = handRight ? handRight.querySelector(".hand-light") : null;
+  if (handLeft) handLeft.dataset.slot = "left";
+  if (handRight) handRight.dataset.slot = "right";
+  const gear = { left: "sword", right: "light" };
+  const gearN = { left: 1, right: 1 };
+  let lightOn = true;
+  let aimX = 1;
+  let aimZ = 0;
+  const bagItems = Array(27).fill(null);
+  const bagN = Array(27).fill(0);
+  let cursorItem = null;
+  let cursorN = 0;
+  let cursorFrom = null;
+  let gearPress = false;
+  let gearMoved = false;
+  let gearX = 0;
+  let gearY = 0;
+  function meleeKind(kind) {
+    return kind === "sword" || kind === "longstick" || kind === "hardstick";
+  }
+  function lampKind(kind) {
+    return kind === "light" || kind === "bright";
+  }
+  function lightSide() {
+    if (lampKind(gear.left)) return -1;
+    if (lampKind(gear.right)) return 1;
+    return 0;
+  }
+  function heldLamp() {
+    if (lampKind(gear.left)) return gear.left;
+    if (lampKind(gear.right)) return gear.right;
+    return null;
+  }
+  function gearOf(side) {
+    return side < 0 ? gear.left : gear.right;
+  }
+  function bladeLook(kind) {
+    if (kind === "longstick") return { len: spawnBallR * 6.2, thick: 0.3, color: "#e2b56a" };
+    if (kind === "hardstick") return { len: spawnBallR * 2.7, thick: 2.05, color: "#5c5c64" };
+    return { len: spawnBallR * 3.05, thick: 0.42, color: "#8a5a2b" };
+  }
+  function bladeLen(kind) {
+    return bladeLook(kind).len;
+  }
+  function readCount(id) {
+    if (id === "left") return gearN.left;
+    if (id === "right") return gearN.right;
+    return bagN[Number(id)] || 0;
+  }
+  function readGear(id) {
+    if (id === "left") return gear.left;
+    if (id === "right") return gear.right;
+    return bagItems[Number(id)];
+  }
+  function writeGear(id, item, n) {
+    const count = item == null ? 0 : (n == null ? 1 : n);
+    if (id === "left") {
+      gear.left = item;
+      gearN.left = count;
+    } else if (id === "right") {
+      gear.right = item;
+      gearN.right = count;
+    } else {
+      const ix = Number(id);
+      bagItems[ix] = item;
+      bagN[ix] = count;
+    }
+  }
+  function paintGear() {
+    if (dragItem) dragItem.hidden = !cursorItem;
+    const hosts = [dragItem, handLeft, handRight].concat(bagSlots);
+    const kinds = [cursorItem, gear.left, gear.right].concat(bagItems);
+    const counts = [cursorN, gearN.left, gearN.right].concat(bagN);
+    for (let i = 0; i < hosts.length; i += 1) {
+      const host = hosts[i];
+      if (!host) continue;
+      const old = host.querySelectorAll(".gear-mark, .stack-num");
+      for (let k = 0; k < old.length; k += 1) old[k].remove();
+      const kind = kinds[i];
+      let mark = null;
+      if (meleeKind(kind) && swordIcon) mark = swordIcon.cloneNode(true);
+      else if (lampKind(kind) && lightIcon) mark = lightIcon.cloneNode(true);
+      if (mark) {
+        mark.classList.add("gear-mark");
+        mark.hidden = false;
+        if (meleeKind(kind)) {
+          mark.classList.toggle("long", kind === "longstick");
+          mark.classList.toggle("hard", kind === "hardstick");
+        }
+        if (lampKind(kind)) {
+          mark.classList.toggle("off", !lightOn);
+          mark.classList.toggle("wide", kind === "bright");
+        }
+        host.appendChild(mark);
+      }
+      if (kind && counts[i] > 1) {
+        const num = document.createElement("span");
+        num.className = "stack-num";
+        num.textContent = String(counts[i]);
+        host.appendChild(num);
+      }
+    }
+    if (swordIcon) swordIcon.hidden = true;
+    if (lightIcon) lightIcon.hidden = true;
+  }
+  function clashes(kind, other) {
+    return lampKind(kind) && lampKind(other);
+  }
+  function placeGear(id) {
+    if (!cursorItem || cursorN <= 0) return;
+    const prev = readGear(id);
+    if (!prev) {
+      if (id === "left" || id === "right") {
+        const other = id === "left" ? gear.right : gear.left;
+        if (clashes(cursorItem, other)) return;
+      }
+      writeGear(id, cursorItem, 1);
+      cursorN -= 1;
+      if (cursorN <= 0) {
+        cursorItem = null;
+        cursorN = 0;
+        cursorFrom = null;
+      }
+      paintGear();
+      return;
+    }
+    if (prev !== cursorItem && cursorN === 1) {
+      if (id === "left" || id === "right") {
+        const other = id === "left" ? gear.right : gear.left;
+        if (clashes(cursorItem, other)) return;
+      }
+      const prevN = readCount(id);
+      writeGear(id, cursorItem, 1);
+      cursorItem = prev;
+      cursorN = prevN > 0 ? prevN : 1;
+      cursorFrom = id;
+      paintGear();
+    }
+  }
+  function placeOne(id) {
+    placeGear(id);
+  }
+  function takeGear(id) {
+    const item = readGear(id);
+    if (!item) return;
+    cursorN = readCount(id);
+    writeGear(id, null);
+    cursorItem = item;
+    cursorFrom = id;
+    paintGear();
+  }
+  function stashGear() {
+    if (!cursorItem) return;
+    while (cursorN > 0 && putOneEmpty(cursorItem)) cursorN -= 1;
+    if (cursorN <= 0) {
+      cursorItem = null;
+      cursorN = 0;
+      cursorFrom = null;
+    }
+    gearPress = false;
+    paintGear();
+  }
+  function moveGear(e) {
+    if (!dragItem) return;
+    dragItem.style.left = e.clientX + "px";
+    dragItem.style.top = e.clientY + "px";
+  }
+  document.addEventListener("pointerdown", (e) => {
+    if (!bag || bag.hidden || (e.button !== 0 && e.button !== 2)) return;
+    const slot = e.target.closest && e.target.closest("[data-slot]");
+    if (!slot || !bag.contains(slot)) return;
+    e.preventDefault();
+    if (e.button === 2) {
+      if (cursorItem) placeOne(slot.dataset.slot);
+      return;
+    }
+    gearPress = true;
+    gearMoved = false;
+    gearX = e.clientX;
+    gearY = e.clientY;
+    if (cursorItem) placeGear(slot.dataset.slot);
+    else takeGear(slot.dataset.slot);
+    moveGear(e);
+  });
+  document.addEventListener("pointermove", (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const px = (e.clientX - rect.left) * (canvas.width / rect.width);
+    const py = (e.clientY - rect.top) * (canvas.height / rect.height);
+    const dx = px - canvas.width * 0.5;
+    const dz = py - canvas.height * 0.5;
+    if (dx * dx + dz * dz >= 9) {
+      aimX = dx;
+      aimZ = dz;
+    }
+    if (cursorItem) moveGear(e);
+    if (gearPress && Math.hypot(e.clientX - gearX, e.clientY - gearY) > 4) gearMoved = true;
+  });
+  document.addEventListener("pointerup", (e) => {
+    if (!gearPress) return;
+    gearPress = false;
+    if (!cursorItem || !gearMoved || !bag || bag.hidden) return;
+    const under = document.elementFromPoint(e.clientX, e.clientY);
+    const slot = under && under.closest && under.closest("[data-slot]");
+    if (!slot || !bag.contains(slot) || slot.dataset.slot === cursorFrom) return;
+    placeGear(slot.dataset.slot);
+  });
+  function toggleBag() {
+    if (!bag || !bagShade) return;
+    if (!bag.hidden) {
+      stashGear();
+      if (cursorItem) return;
+    }
+    const open = bag.hidden;
+    bag.hidden = !open;
+    bagShade.hidden = !open;
+    if (!bag.hidden && bagHands && handLeft && handRight) {
+      bagHands.appendChild(handLeft);
+      bagHands.appendChild(handRight);
+    } else if (screenEl && handLeft && handRight) {
+      screenEl.appendChild(handLeft);
+      screenEl.appendChild(handRight);
+    }
+  }
+  paintGear();
+  const lobbyShopEl = document.getElementById("lobby-shop");
+  const lobbySellEl = document.getElementById("lobby-sell");
+  const lobbyMenu = document.getElementById("lobby-menu");
+  const sellItemsEl = document.getElementById("sell-items");
+  const sellBinEl = document.getElementById("sell-bin");
+  const sellAllBtn = document.getElementById("sell-all");
+  const sellChosenBtn = document.getElementById("sell-chosen");
+  const sellBin = [];
+  let sellPresses = 0;
+  let sellPressAt = 0;
+  function itemPrice(kind) {
+    if (kind === "sword") return 10;
+    if (kind === "light") return 5;
+    if (kind === "longstick") return 30;
+    if (kind === "hardstick") return 45;
+    if (kind === "bright") return 20;
+    return 10;
+  }
+  function itemLabel(kind) {
+    if (kind === "sword") return "막대기";
+    if (kind === "longstick") return "긴 막대기";
+    if (kind === "hardstick") return "돌";
+    if (kind === "light") return "손전등";
+    if (kind === "bright") return "넓은 손전등";
+    return "아이템";
+  }
+  const shopCatalog = [
+    { kind: "sword", ability: "좀비를 때린다", limit: "쿨타임 0.1초" },
+    { kind: "light", ability: "앞을 비춘다", limit: "양손에 동시에 들 수 없음" },
+    { kind: "longstick", ability: "막대기보다 더 멀리 닿는다", limit: "없음" },
+    { kind: "hardstick", ability: "한 번에 2의 피해, 쿨타임 0.3초", limit: "전체 속도가 30% 느려짐" },
+    { kind: "bright", ability: "빛이 조금 더 넓고 멀다", limit: "손전등과 같이 들 수 없음" },
+  ];
+  const shopListEl = document.getElementById("lobby-shop-list");
+  if (shopListEl) {
+    for (let i = 0; i < shopCatalog.length; i += 1) {
+      const item = shopCatalog[i];
+      const card = document.createElement("div");
+      card.className = "shop-item";
+      const name = document.createElement("b");
+      name.textContent = itemLabel(item.kind);
+      const price = document.createElement("span");
+      price.textContent = "가격  " + itemPrice(item.kind) + "원";
+      const ability = document.createElement("span");
+      ability.textContent = "능력  " + item.ability;
+      const limit = document.createElement("span");
+      limit.textContent = "제약  " + item.limit;
+      const buy = document.createElement("button");
+      buy.type = "button";
+      buy.textContent = "구매";
+      buy.dataset.kind = item.kind;
+      card.appendChild(name);
+      card.appendChild(price);
+      card.appendChild(ability);
+      card.appendChild(limit);
+      card.appendChild(buy);
+      shopListEl.appendChild(card);
+    }
+    shopListEl.addEventListener("click", function (e) {
+      const btn = e.target.closest("button");
+      if (!btn || !shopListEl.contains(btn)) return;
+      const kind = btn.dataset.kind;
+      const price = itemPrice(kind);
+      if (money < price) return;
+      if (!equipBought(kind)) return;
+      money -= price;
+      paintGear();
+    });
+  }
+  function paintSell() {
+    if (!sellItemsEl || !sellBinEl || !sellAllBtn) return;
+    sellItemsEl.textContent = "";
+    sellBinEl.textContent = "";
+    const held = [];
+    if (gear.left) held.push({ id: "left", kind: gear.left, n: gearN.left });
+    if (gear.right) held.push({ id: "right", kind: gear.right, n: gearN.right });
+    for (let i = 0; i < bagItems.length; i += 1) {
+      if (bagItems[i]) held.push({ id: String(i), kind: bagItems[i], n: bagN[i] });
+    }
+    for (let i = 0; i < held.length; i += 1) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.textContent = itemLabel(held[i].kind) + (held[i].n > 1 ? " " + held[i].n : "");
+      btn.dataset.slot = held[i].id;
+      sellItemsEl.appendChild(btn);
+    }
+    for (let i = 0; i < sellBin.length; i += 1) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.textContent = itemLabel(sellBin[i].kind) + (sellBin[i].n > 1 ? " " + sellBin[i].n : "");
+      btn.dataset.bin = String(i);
+      sellBinEl.appendChild(btn);
+    }
+    sellAllBtn.textContent = "전체판매 " + sellPresses + "/5";
+  }
+  function giveBackSell() {
+    const left = [];
+    for (let i = 0; i < sellBin.length; i += 1) {
+      const stack = sellBin[i];
+      const placed = addItem(stack.kind, stack.n);
+      if (placed < stack.n) left.push({ kind: stack.kind, n: stack.n - placed });
+    }
+    sellBin.length = 0;
+    for (let i = 0; i < left.length; i += 1) sellBin.push(left[i]);
+    paintGear();
+  }
+  function sellChosen() {
+    if (!sellBin.length) return;
+    money += sellBin.reduce(function (sum, stack) { return sum + itemPrice(stack.kind) * stack.n; }, 0);
+    sellBin.length = 0;
+    paintGear();
+    paintSell();
+  }
+  function sellEverything() {
+    let n = 0;
+    for (let i = 0; i < sellBin.length; i += 1) n += itemPrice(sellBin[i].kind) * sellBin[i].n;
+    sellBin.length = 0;
+    if (gear.left) {
+      n += itemPrice(gear.left) * gearN.left;
+      writeGear("left", null);
+    }
+    if (gear.right) {
+      n += itemPrice(gear.right) * gearN.right;
+      writeGear("right", null);
+    }
+    for (let i = 0; i < bagItems.length; i += 1) {
+      if (!bagItems[i]) continue;
+      n += itemPrice(bagItems[i]) * bagN[i];
+      writeGear(String(i), null);
+    }
+    cursorItem = null;
+    cursorN = 0;
+    cursorFrom = null;
+    money += n;
+    paintGear();
+    paintSell();
+  }
+  if (sellItemsEl) {
+    sellItemsEl.addEventListener("click", function (e) {
+      const btn = e.target.closest("button");
+      if (!btn || !sellItemsEl.contains(btn)) return;
+      const id = btn.dataset.slot;
+      const kind = readGear(id);
+      if (!kind) return;
+      sellBin.push({ kind: kind, n: readCount(id) });
+      writeGear(id, null);
+      paintGear();
+      paintSell();
+    });
+  }
+  function putOneEmpty(kind) {
+    if (gear.left == null && !clashes(kind, gear.right)) {
+      writeGear("left", kind, 1);
+      return true;
+    }
+    if (gear.right == null && !clashes(kind, gear.left)) {
+      writeGear("right", kind, 1);
+      return true;
+    }
+    const ix = bagItems.indexOf(null);
+    if (ix < 0) return false;
+    writeGear(String(ix), kind, 1);
+    return true;
+  }
+  function addItem(kind, n) {
+    const add = n == null ? 1 : n;
+    let placed = 0;
+    for (let i = 0; i < add; i += 1) {
+      if (!putOneEmpty(kind)) break;
+      placed += 1;
+    }
+    return placed;
+  }
+  function equipBought(kind) {
+    return addItem(kind, 1) === 1;
+  }
+  function stashKind(kind, n) {
+    return addItem(kind, n == null ? 1 : n);
+  }
+  if (sellBinEl) {
+    sellBinEl.addEventListener("click", function (e) {
+      const btn = e.target.closest("button");
+      if (!btn || !sellBinEl.contains(btn)) return;
+      const index = Number(btn.dataset.bin);
+      const stack = sellBin[index];
+      if (!stack) return;
+      const placed = addItem(stack.kind, stack.n);
+      if (placed <= 0) return;
+      if (placed >= stack.n) sellBin.splice(index, 1);
+      else stack.n -= placed;
+      paintGear();
+      paintSell();
+    });
+  }
+  if (sellChosenBtn) {
+    sellChosenBtn.addEventListener("click", function () {
+      sellChosen();
+    });
+  }
+  if (sellAllBtn) {
+    sellAllBtn.addEventListener("click", function () {
+      const now = performance.now();
+      if (sellPresses > 0 && now - sellPressAt < 2000) return;
+      if (sellPresses > 0 && now - sellPressAt > 4000) sellPresses = 0;
+      sellPresses += 1;
+      sellPressAt = now;
+      if (sellPresses >= 5) {
+        sellPresses = 0;
+        sellEverything();
+        return;
+      }
+      paintSell();
+    });
+  }
+  function closeLobbyTrade() {
+    if (lobbySellEl && !lobbySellEl.hidden) {
+      giveBackSell();
+      sellPresses = 0;
+      sellPressAt = 0;
+    }
+    if (lobbyShopEl) lobbyShopEl.hidden = true;
+    if (lobbySellEl) lobbySellEl.hidden = true;
+    syncWinShade();
+  }
+  const lobbyShopBtn = document.getElementById("lobby-shop-btn");
+  const lobbySellBtn = document.getElementById("lobby-sell-btn");
+  if (lobbyShopBtn) {
+    lobbyShopBtn.addEventListener("click", function () {
+      const open = lobbyShopEl.hidden;
+      closeLobbyTrade();
+      if (open) lobbyShopEl.hidden = false;
+      syncWinShade();
+    });
+  }
+  if (lobbySellBtn) {
+    lobbySellBtn.addEventListener("click", function () {
+      const open = lobbySellEl.hidden;
+      closeLobbyTrade();
+      if (open) {
+        lobbySellEl.hidden = false;
+        paintSell();
+      }
+      syncWinShade();
+    });
+  }
+  const winShade = document.getElementById("win-shade");
+  if (winShade) {
+    winShade.addEventListener("click", function () {
+      if (customPanel) customPanel.hidden = true;
+      closeLobbyTrade();
+    });
+  }
+  if (bagShade) {
+    bagShade.addEventListener("click", function () {
+      if (bag && !bag.hidden) toggleBag();
+    });
+  }
+  const winXs = document.querySelectorAll(".win-x");
+  for (let i = 0; i < winXs.length; i += 1) {
+    winXs[i].addEventListener("click", function () {
+      const which = this.dataset.close;
+      if (which === "bag") {
+        if (bag && !bag.hidden) toggleBag();
+      } else if (which === "shop") {
+        if (lobbyShopEl) lobbyShopEl.hidden = true;
+        syncWinShade();
+      } else if (which === "sell") {
+        if (lobbySellEl && !lobbySellEl.hidden) {
+          giveBackSell();
+          sellPresses = 0;
+          sellPressAt = 0;
+          lobbySellEl.hidden = true;
+        }
+        syncWinShade();
+      } else if (which === "custom") {
+        if (customPanel) customPanel.hidden = true;
+        syncWinShade();
+      } else if (which === "loot" && lootEl) lootEl.hidden = true;
+    });
+  }
+  const lootOk = document.getElementById("loot-ok");
+  if (lootOk) {
+    lootOk.addEventListener("click", function () {
+      if (lootEl) lootEl.hidden = true;
+    });
+  }
   document.addEventListener("keydown", (e) => {
+    unlockAudio();
+    if (e.code === "Tab") {
+      e.preventDefault();
+      if (!e.repeat) toggleBag();
+      return;
+    }
     if (e.code === "KeyW") { moveW = true; e.preventDefault(); return; }
     if (e.code === "KeyA") { moveA = true; e.preventDefault(); return; }
     if (e.code === "KeyS") { moveS = true; e.preventDefault(); return; }
@@ -4078,7 +4854,8 @@
       return;
     }
     if (e.code === "ShiftLeft" || e.code === "ShiftRight") {
-      crouchHeld = true;
+      if (inLobby) return;
+      parryHeld = true;
       e.preventDefault();
       return;
     }
@@ -4092,7 +4869,7 @@
     else if (e.code === "KeyS") moveS = false;
     else if (e.code === "KeyD") moveD = false;
     else if (e.code === "Space") jumpHeld = false;
-    else if (e.code === "ShiftLeft" || e.code === "ShiftRight") crouchHeld = false;
+    else if (e.code === "ShiftLeft" || e.code === "ShiftRight") parryHeld = false;
     else if (e.code === "KeyE") sprintHeld = false;
   });
   document.addEventListener("pointerlockchange", showHud);
@@ -4107,10 +4884,2567 @@
   });
 
   let last = performance.now();
+  const flat2D = true;
+  let armFace = 0;
+  let parrying = false;
+  let parryHeld = false;
+  let parryTime = 0;
+  let parryCool = 0;
+  let parryId = 0;
+  let parryGlow = 0;
+  let parryHeat = 0;
+  let parryBreak = 0;
+  let parrySlow = 1;
+  let hitGlow = 0;
+  const parryRings = [];
+  function guardHand(ox, oz, face, side) {
+    const fx = Math.cos(face);
+    const fz = Math.sin(face);
+    const rx = -fz;
+    const rz = fx;
+    return {
+      x: ox + fx * spawnBallR * 1.25 + rx * spawnBallR * 0.32 * side,
+      z: oz + fz * spawnBallR * 1.25 + rz * spawnBallR * 0.32 * side,
+    };
+  }
+  function addParryRing(wx, wz) {
+    parryRings.push({ x: wx, z: wz, t: 0 });
+    playClash();
+  }
+  function stepParries(dt) {
+    if (parryCool > 0) parryCool = Math.max(0, parryCool - dt);
+    if (parryBreak > 0) {
+      parrying = false;
+      parryBreak = Math.max(0, parryBreak - dt);
+      parryHeat = 1;
+      parryGlow = parryBreak / 0.5;
+      if (parryBreak <= 0) {
+        hitGlow = 2;
+        parryGlow = 0;
+        parryTime = 0;
+        parryHeat = 0;
+        vx = 0;
+        vz = 0;
+      }
+    } else if (hitGlow > 0) {
+      parrying = false;
+      parryTime = 0;
+    } else if (parrying) {
+      if (!parryHeld) {
+        parrying = false;
+        parryCool = 0.5;
+        parryTime = 0;
+      } else {
+        parryTime += dt;
+        parryHeat = Math.min(1, parryTime / 5);
+        if (parryTime >= 5) {
+          parrying = false;
+          parryBreak = 0.5;
+          parryHeat = 1;
+          parryGlow = 1;
+        }
+      }
+    } else if (parryHeld && parryCool <= 0) {
+      parrying = true;
+      parryId += 1;
+      parryTime = 0;
+      parryHeat = 0;
+    }
+    if (parryBreak <= 0) {
+      if (parrying) parryGlow = 1;
+      else parryGlow = Math.max(0, parryGlow - dt / 0.5);
+    }
+    if (!parrying && parryBreak <= 0 && parryGlow <= 0) parryHeat = 0;
+    if (hitGlow > 0) hitGlow = Math.max(0, hitGlow - dt);
+    for (let i = 0; i < zombies.length; i += 1) {
+      const zombie = zombies[i];
+      if (!zombie.blue) continue;
+      if ((zombie.parryBreak || 0) > 0) {
+        zombie.parrying = false;
+        zombie.parryBreak = Math.max(0, zombie.parryBreak - dt);
+        zombie.parryHeat = 1;
+        zombie.parryGlow = zombie.parryBreak / 0.5;
+        if (zombie.parryBreak <= 0) {
+          zombie.hitGlow = 2;
+          zombie.parryGlow = 0;
+          zombie.parryHeat = 0;
+          zombie.parryTime = 0;
+          zombie.phase = 0;
+          zombie.react = 0;
+          zombie.parryReact = 0;
+        }
+        continue;
+      }
+      if (zombie.hitGlow > 0) {
+        zombie.parrying = false;
+        zombie.parryReact = 0;
+        zombie.parryTime = 0;
+        if (zombie.parryGlow > 0) zombie.parryGlow = Math.max(0, zombie.parryGlow - dt / 0.5);
+        if (!(zombie.parryGlow > 0)) zombie.parryHeat = 0;
+        continue;
+      }
+      if (zombie.parryCool > 0) zombie.parryCool = Math.max(0, zombie.parryCool - dt);
+      if (zombie.parrying) {
+        zombie.parryTime += dt;
+        zombie.parryHeat = Math.min(1, zombie.parryTime / 5);
+        zombie.parryGlow = 1;
+        if (zombie.parryTime >= 5) {
+          zombie.parrying = false;
+          zombie.parryBreak = 0.5;
+          zombie.parryHeat = 1;
+          zombie.phase = 0;
+          continue;
+        }
+        const dist = Math.hypot(x - zombie.x, z - zombie.z);
+        const swinging = stickPhase > 0 || fistPhase > 0;
+        const engaged = (swinging || hitGlow > 0) && dist < spawnBallR * 5.5;
+        if (engaged) zombie.idleParry = 0;
+        else zombie.idleParry = (zombie.idleParry || 0) + dt;
+        if (zombie.parryTime >= 0.5 && zombie.idleParry >= 0.5) {
+          zombie.parrying = false;
+          zombie.parryTime = 0;
+          zombie.idleParry = 0;
+          zombie.parryCool = 0.5;
+        }
+        continue;
+      }
+      if (zombie.parryGlow > 0) zombie.parryGlow = Math.max(0, zombie.parryGlow - dt / 0.5);
+      const dist = Math.hypot(x - zombie.x, z - zombie.z);
+      const threat = (stickPhase > 0 || fistPhase > 0) && dist < spawnBallR * 5.5;
+      if (zombie.parryCool <= 0 && threat) {
+        zombie.parryReact = (zombie.parryReact || 0) + dt;
+        if (zombie.parryReact >= 0.2) {
+          zombie.parrying = true;
+          zombie.parryTime = 0;
+          zombie.parryReact = 0;
+          zombie.parryGlow = 1;
+        }
+      } else {
+        zombie.parryReact = 0;
+      }
+    }
+    for (let i = 0; i < zombies.length; i += 1) {
+      const mark = zombies[i];
+      if (mark.hitGlow > 0) {
+        mark.hitGlow = Math.max(0, mark.hitGlow - dt);
+        if (mark.hitGlow <= 0) {
+          mark.cut = -1;
+          mark.grabParry = -1;
+        }
+      }
+    }
+    for (let i = parryRings.length - 1; i >= 0; i -= 1) {
+      parryRings[i].t += dt;
+      if (parryRings[i].t >= 0.5) parryRings.splice(i, 1);
+    }
+  }
+  let stickDir = 0;
+  let stickPhase = 0;
+  let stickPhaseT = 0;
+  let stickCool = 0;
+  let swingId = 0;
+  let fistDir = 0;
+  let fistPhase = 0;
+  let fistPhaseT = 0;
+  let fistCool = 0;
+  let fistId = 0;
+  const handPos = [
+    { x: 0, z: 0, ready: false },
+    { x: 0, z: 0, ready: false },
+  ];
+  function lerpAng(a, b, t) {
+    let d = b - a;
+    while (d > Math.PI) d -= Math.PI * 2;
+    while (d < -Math.PI) d += Math.PI * 2;
+    return a + d * t;
+  }
+  function swingStick(e) {
+    unlockAudio();
+    const rect = canvas.getBoundingClientRect();
+    const px = (e.clientX - rect.left) * (canvas.width / rect.width);
+    const py = (e.clientY - rect.top) * (canvas.height / rect.height);
+    const dx = px - canvas.width * 0.5;
+    const dz = py - canvas.height * 0.5;
+    if (dx * dx + dz * dz < 9) return;
+    if (hitGlow > 0) return;
+    const leftCool = gear.left === "hardstick" ? 0.3 : gear.left === "sword" ? 0.1 : 0;
+    if (leftCool > 0 && stickCool > 0) return;
+    stickDir = Math.atan2(dz, dx);
+    stickPhase = 1;
+    stickPhaseT = 0;
+    if (leftCool > 0) stickCool = leftCool;
+    swingId += 1;
+    playSwing();
+  }
+  function swingFist(e) {
+    unlockAudio();
+    const rect = canvas.getBoundingClientRect();
+    const px = (e.clientX - rect.left) * (canvas.width / rect.width);
+    const py = (e.clientY - rect.top) * (canvas.height / rect.height);
+    const dx = px - canvas.width * 0.5;
+    const dz = py - canvas.height * 0.5;
+    if (dx * dx + dz * dz < 9) return;
+    if (hitGlow > 0) return;
+    const rightCool = gear.right === "hardstick" ? 0.3 : gear.right === "sword" ? 0.1 : 0;
+    if (rightCool > 0 && fistCool > 0) return;
+    fistDir = Math.atan2(dz, dx);
+    fistPhase = 1;
+    fistPhaseT = 0;
+    if (rightCool > 0) fistCool = rightCool;
+    fistId += 1;
+    playSwing();
+  }
+  function stretchyLimb(sx, sz, tx, tz, lenA, lenB, bendSign) {
+    const dx = tx - sx;
+    const dz = tz - sz;
+    const raw = Math.hypot(dx, dz) || 0.001;
+    const rest = lenA + lenB;
+    const dist = Math.min(raw, rest * 2.6);
+    const ux = dx / raw;
+    const uz = dz / raw;
+    const hx = sx + ux * dist;
+    const hz = sz + uz * dist;
+    let a = lenA;
+    let b = lenB;
+    if (dist > rest) {
+      const scale = dist / rest;
+      a *= scale;
+      b *= scale;
+    }
+    const cosA = (a * a + dist * dist - b * b) / (2 * a * dist);
+    const elbow = Math.acos(Math.max(-1, Math.min(1, cosA)));
+    const ang = Math.atan2(uz, ux);
+    return {
+      ex: sx + Math.cos(ang + elbow * bendSign) * a,
+      ez: sz + Math.sin(ang + elbow * bendSign) * a,
+      hx: hx,
+      hz: hz,
+    };
+  }
+  function limb3(sx, sz, tx, tz, lenA, lenB, lenC, bendSign) {
+    const first = stretchyLimb(sx, sz, tx, tz, lenA, lenB + lenC, bendSign);
+    const second = stretchyLimb(first.ex, first.ez, tx, tz, lenB, lenC, bendSign);
+    return {
+      j1x: first.ex,
+      j1z: first.ez,
+      j2x: second.ex,
+      j2z: second.ez,
+      hx: second.hx,
+      hz: second.hz,
+    };
+  }
+  function pointSegDist(px, pz, ax, az, bx, bz) {
+    const abx = bx - ax;
+    const abz = bz - az;
+    const ab2 = abx * abx + abz * abz || 1;
+    let t = ((px - ax) * abx + (pz - az) * abz) / ab2;
+    if (t < 0) t = 0;
+    if (t > 1) t = 1;
+    return Math.hypot(px - (ax + abx * t), pz - (az + abz * t));
+  }
+  const swordRag = { ex: 0, ez: 0, hx: 0, hz: 0, pex: 0, pez: 0, phx: 0, phz: 0, ready: false };
+  const swordRagRight = { ex: 0, ez: 0, hx: 0, hz: 0, pex: 0, pez: 0, phx: 0, phz: 0, ready: false };
+  function pinSwordRag(rag, ex, ez, hx, hz) {
+    rag.pex = rag.ready ? rag.ex : ex;
+    rag.pez = rag.ready ? rag.ez : ez;
+    rag.phx = rag.ready ? rag.hx : hx;
+    rag.phz = rag.ready ? rag.hz : hz;
+    rag.ex = ex;
+    rag.ez = ez;
+    rag.hx = hx;
+    rag.hz = hz;
+    rag.ready = true;
+  }
+  function stepSwordRag(dt, sx, sz, rag) {
+    const upper = spawnBallR * 1.15;
+    const fore = spawnBallR * 1.05;
+    if (!rag.ready) {
+      rag.ex = sx + upper * 0.25;
+      rag.ez = sz + upper * 0.95;
+      rag.hx = rag.ex - fore * 0.35;
+      rag.hz = rag.ez + fore * 0.7;
+      rag.pex = rag.ex;
+      rag.pez = rag.ez;
+      rag.phx = rag.hx;
+      rag.phz = rag.hz;
+      rag.ready = true;
+    }
+    const damp = Math.pow(0.9, dt * 60);
+    let nex = rag.ex + (rag.ex - rag.pex) * damp;
+    let nez = rag.ez + (rag.ez - rag.pez) * damp;
+    let nhx = rag.hx + (rag.hx - rag.phx) * damp;
+    let nhz = rag.hz + (rag.hz - rag.phz) * damp;
+    for (let n = 0; n < 4; n += 1) {
+      let dx = nex - sx;
+      let dz = nez - sz;
+      let len = Math.hypot(dx, dz) || 1;
+      nex = sx + (dx / len) * upper;
+      nez = sz + (dz / len) * upper;
+      dx = nhx - nex;
+      dz = nhz - nez;
+      len = Math.hypot(dx, dz) || 1;
+      nhx = nex + (dx / len) * fore;
+      nhz = nez + (dz / len) * fore;
+    }
+    rag.pex = rag.ex;
+    rag.pez = rag.ez;
+    rag.phx = rag.hx;
+    rag.phz = rag.hz;
+    rag.ex = nex;
+    rag.ez = nez;
+    rag.hx = nhx;
+    rag.hz = nhz;
+  }
+  function swordArm(sx, sz, hx, hz, face) {
+    const arm = stretchyLimb(sx, sz, hx, hz, spawnBallR * 1.15, spawnBallR * 1.05, 1);
+    const fx = Math.cos(face);
+    const fz = Math.sin(face);
+    const handForward = (hx - sx) * fx + (hz - sz) * fz;
+    if (handForward >= 0) return arm;
+    const rx = -fz;
+    const rz = fx;
+    return {
+      ex: sx + rx * spawnBallR * 0.9,
+      ez: sz + rz * spawnBallR * 0.9,
+      hx: arm.hx,
+      hz: arm.hz,
+    };
+  }
+  function bodyBlade(ox, oz, face, hand, side, tip) {
+    const sign = side < 0 ? -1 : 1;
+    const fx = Math.cos(face);
+    const fz = Math.sin(face);
+    const sx0 = ox - fz * spawnBallR * sign;
+    const sz0 = oz + fx * spawnBallR * sign;
+    const arm = swordArm(sx0, sz0, hand.x, hand.z, face);
+    const dx = arm.hx - arm.ex;
+    const dz = arm.hz - arm.ez;
+    const len = Math.hypot(dx, dz) || 1;
+    const ux = dx / len;
+    const uz = dz / len;
+    const baseX = arm.hx;
+    const baseZ = arm.hz;
+    return {
+      x0: baseX,
+      z0: baseZ,
+      x1: baseX + ux * (tip == null ? spawnBallR * 2.4 : tip),
+      z1: baseZ + uz * (tip == null ? spawnBallR * 2.4 : tip),
+    };
+  }
+  function swingDist(zombie, side) {
+    const hand = handPos[side < 0 ? 0 : 1];
+    const kind = gearOf(side);
+    if (!meleeKind(kind)) return Math.hypot(zombie.x - hand.x, zombie.z - hand.z);
+    const blade = bodyBlade(x, z, armFace, hand, side, bladeLen(kind));
+    return pointSegDist(zombie.x, zombie.z, blade.x0, blade.z0, blade.x1, blade.z1);
+  }
+  function stepArms(dt) {
+    if (stickCool > 0) stickCool = Math.max(0, stickCool - dt);
+    if (fistCool > 0) fistCool = Math.max(0, fistCool - dt);
+    if (vx * vx + vz * vz > 4) {
+      armFace = lerpAng(armFace, Math.atan2(vz, vx), 1 - Math.pow(0.55, dt * 60));
+    }
+    const fx = Math.cos(armFace);
+    const fz = Math.sin(armFace);
+    const rx = -fz;
+    const rz = fx;
+    const lamp = lightSide();
+    if (lamp < 0) stickPhase = 0;
+    if (lamp > 0) fistPhase = 0;
+    const idle = [];
+    for (let s = 0; s < 2; s += 1) {
+      const side = s === 0 ? -1 : 1;
+      const armed = meleeKind(gearOf(side));
+      const forward = armed ? -0.65 : 0.85;
+      const aside = armed ? 1.05 : 0.75;
+      idle.push({
+        x: x + fx * spawnBallR * forward + rx * spawnBallR * aside * side,
+        z: z + fz * spawnBallR * forward + rz * spawnBallR * aside * side,
+      });
+    }
+    const reach = spawnBallR * 2.35;
+    const alen = Math.hypot(aimX, aimZ) || 1;
+    const aim = { x: x + (aimX / alen) * reach, z: z + (aimZ / alen) * reach };
+    let stickGoal = idle[0];
+    if (lamp < 0) stickGoal = aim;
+    else if (stickPhase === 1) {
+      stickGoal = { x: x + Math.cos(stickDir) * reach, z: z + Math.sin(stickDir) * reach };
+    } else if (stickPhase === 2) {
+      const left = stickDir - Math.PI / 2;
+      stickGoal = { x: x + Math.cos(left) * reach, z: z + Math.sin(left) * reach };
+    }
+    let fistGoal = idle[1];
+    if (lamp > 0) fistGoal = aim;
+    else if (fistPhase === 1) {
+      fistGoal = { x: x + Math.cos(fistDir) * reach, z: z + Math.sin(fistDir) * reach };
+    } else if (fistPhase === 2) {
+      const left = fistDir - Math.PI / 2;
+      fistGoal = { x: x + Math.cos(left) * reach, z: z + Math.sin(left) * reach };
+    }
+    const follow = 1 - Math.pow(0.74, dt * 60);
+    const stickFollow = 1 - Math.pow(0.58, dt * 60);
+    const parryFollow = 1 - Math.pow(0.35, dt * 60);
+    for (let s = 0; s < 2; s += 1) {
+      const side = s === 0 ? -1 : 1;
+      let goal = s === 0 ? stickGoal : fistGoal;
+      let rate = (s === 0 && stickPhase > 0) || (s === 1 && fistPhase > 0) ? stickFollow : follow;
+      if (side === lamp && lamp !== 0) rate = stickFollow;
+      if (parrying && side !== lamp) {
+        goal = guardHand(x, z, armFace, side);
+        rate = parryFollow;
+      }
+      const hand = handPos[s];
+      const phase = side < 0 ? stickPhase : fistPhase;
+      const armed = meleeKind(gearOf(side));
+      const limp = armed && phase === 0 && !parrying;
+      if (!limp) {
+        if (!hand.ready) {
+          hand.x = goal.x;
+          hand.z = goal.z;
+          hand.ready = true;
+        } else {
+          hand.x += (goal.x - hand.x) * rate;
+          hand.z += (goal.z - hand.z) * rate;
+        }
+      }
+    }
+    for (let s = 0; s < 2; s += 1) {
+      const side = s === 0 ? -1 : 1;
+      if (!meleeKind(gearOf(side))) continue;
+      const rag = s === 0 ? swordRag : swordRagRight;
+      const phase = side < 0 ? stickPhase : fistPhase;
+      const hx0 = x + rx * spawnBallR * side;
+      const hz0 = z + rz * spawnBallR * side;
+      if (phase > 0 || parrying) {
+        const arm = swordArm(hx0, hz0, handPos[s].x, handPos[s].z, armFace);
+        pinSwordRag(rag, arm.ex, arm.ez, arm.hx, arm.hz);
+      } else {
+        stepSwordRag(dt, hx0, hz0, rag);
+        handPos[s].x = rag.hx;
+        handPos[s].z = rag.hz;
+        handPos[s].ready = true;
+      }
+    }
+    if (stickPhase > 0) {
+      const reachHit = spawnBallR + 0.48;
+      for (let i = zombies.length - 1; i >= 0; i -= 1) {
+        const zombie = zombies[i];
+        if (zombie.hitId === swingId) continue;
+        const hitDist = swingDist(zombie, -1);
+        if (zombie.parrying) {
+          if (hitDist > spawnBallR) continue;
+          zombie.hitId = swingId;
+          addParryRing(zombie.x, zombie.z);
+          hitGlow = 2;
+          stickPhase = 0;
+          fistPhase = 0;
+          parrying = false;
+          vx = 0;
+          vz = 0;
+          continue;
+        }
+        if (hitDist > reachHit) continue;
+        zombie.hitId = swingId;
+        zombie.hp -= gear.left === "hardstick" ? 2 : 1;
+        if (zombie.hp <= 0) {
+          noteKill(zombie);
+          zombies.splice(i, 1);
+        }
+      }
+      stickPhaseT += dt;
+      if (hitGlow > 0) {
+        stickPhase = 0;
+        fistPhase = 0;
+      }
+      else {
+      const hand = handPos[0];
+      const dx = stickGoal.x - hand.x;
+      const dz = stickGoal.z - hand.z;
+      const near = dx * dx + dz * dz < spawnBallR * spawnBallR * 0.28;
+      const need = stickPhase === 3 ? 0.14 : 0.1;
+      if ((near && stickPhaseT > need) || stickPhaseT > 0.26) {
+        stickPhase += 1;
+        stickPhaseT = 0;
+        if (stickPhase > 2) stickPhase = 0;
+      }
+      }
+    }
+    if (fistPhase > 0) {
+      const hx = handPos[1].x;
+      const hz = handPos[1].z;
+      for (let i = zombies.length - 1; i >= 0; i -= 1) {
+        const zombie = zombies[i];
+        if (zombie.fistId === fistId) continue;
+        const hitDist = swingDist(zombie, 1);
+        if (zombie.parrying) {
+          if (hitDist > spawnBallR) continue;
+          zombie.fistId = fistId;
+          addParryRing(zombie.x, zombie.z);
+          hitGlow = 2;
+          stickPhase = 0;
+          fistPhase = 0;
+          parrying = false;
+          vx = 0;
+          vz = 0;
+          continue;
+        }
+        if (hitDist > spawnBallR + 0.48) continue;
+        zombie.fistId = fistId;
+        zombie.hp -= gear.right === "hardstick" ? 2 : 1;
+        if (zombie.hp <= 0) {
+          noteKill(zombie);
+          zombies.splice(i, 1);
+        }
+      }
+      fistPhaseT += dt;
+      if (hitGlow > 0) {
+        stickPhase = 0;
+        fistPhase = 0;
+      } else {
+        const dx = fistGoal.x - hx;
+        const dz = fistGoal.z - hz;
+        const near = dx * dx + dz * dz < spawnBallR * spawnBallR * 0.28;
+        if ((near && fistPhaseT > 0.1) || fistPhaseT > 0.26) {
+          fistPhase += 1;
+          fistPhaseT = 0;
+          if (fistPhase > 2) fistPhase = 0;
+        }
+      }
+    }
+  }
+  function stepBlueZombies(dt) {
+    const follow = 1 - Math.pow(0.74, dt * 60);
+    const stickFollow = 1 - Math.pow(0.58, dt * 60);
+    const faceFollow = 1 - Math.pow(0.55, dt * 60);
+    const reach = spawnBallR * 2.35;
+    const reachHit = spawnBallR + 0.48;
+    for (let i = 0; i < zombies.length; i += 1) {
+      const zombie = zombies[i];
+      if (!zombie.blue) continue;
+      const toX = x - zombie.x;
+      const toZ = z - zombie.z;
+      const dist = Math.hypot(toX, toZ) || 1;
+      zombie.face = lerpAng(zombie.face, Math.atan2(toZ, toX), faceFollow);
+      const fx = Math.cos(zombie.face);
+      const fz = Math.sin(zombie.face);
+      const rx = -fz;
+      const rz = fx;
+      const idle = [];
+      for (let s = 0; s < 2; s += 1) {
+        const side = s === 0 ? -1 : 1;
+        const forward = side < 0 ? 0.85 : -0.65;
+        const aside = side < 0 ? 0.75 : 1.05;
+        idle.push({
+          x: zombie.x + fx * spawnBallR * forward + rx * spawnBallR * aside * side,
+          z: zombie.z + fz * spawnBallR * forward + rz * spawnBallR * aside * side,
+        });
+      }
+      if (zombie.hitGlow > 0) {
+        zombie.phase = 0;
+        zombie.parrying = false;
+        zombie.react = 0;
+        zombie.parryReact = 0;
+      } else if (zombie.phase === 0 && !zombie.parrying) {
+        zombie.cool -= dt;
+        const threat = (stickPhase > 0 || fistPhase > 0) && dist < spawnBallR * 5.5;
+        if (!threat && zombie.cool <= 0 && dist < spawnBallR * 5.5) {
+          zombie.react = (zombie.react || 0) + dt;
+          if (zombie.react >= 0.2) {
+            zombie.dir = Math.atan2(toZ, toX);
+            zombie.phase = 1;
+            zombie.phaseT = 0;
+            zombie.swing += 1;
+            zombie.react = 0;
+            zombie.cool = 0.2;
+          }
+        } else if (!threat) {
+          zombie.react = 0;
+        }
+      }
+      let stickGoal = idle[1];
+      if (zombie.parrying) {
+        idle[0] = guardHand(zombie.x, zombie.z, zombie.face, -1);
+        idle[1] = guardHand(zombie.x, zombie.z, zombie.face, 1);
+        stickGoal = idle[1];
+      } else if (zombie.phase === 1) {
+        stickGoal = {
+          x: zombie.x + Math.cos(zombie.dir) * reach,
+          z: zombie.z + Math.sin(zombie.dir) * reach,
+        };
+      } else if (zombie.phase === 2) {
+        const left = zombie.dir - Math.PI / 2;
+        stickGoal = {
+          x: zombie.x + Math.cos(left) * reach,
+          z: zombie.z + Math.sin(left) * reach,
+        };
+      }
+      for (let s = 0; s < 2; s += 1) {
+        const goal = s === 1 ? stickGoal : idle[s];
+        const hand = zombie.hands[s];
+        const limp = s === 1 && zombie.phase === 0 && !zombie.parrying;
+        const rate = zombie.parrying ? 1 - Math.pow(0.35, dt * 60) : s === 1 && zombie.phase > 0 ? stickFollow : follow;
+        if (!limp) {
+          if (!hand.ready) {
+            hand.x = goal.x;
+            hand.z = goal.z;
+            hand.ready = true;
+          } else {
+            hand.x += (goal.x - hand.x) * rate;
+            hand.z += (goal.z - hand.z) * rate;
+          }
+        }
+      }
+      const sx0 = zombie.x + rx * spawnBallR;
+      const sz0 = zombie.z + rz * spawnBallR;
+      if (!zombie.rag) zombie.rag = { ex: 0, ez: 0, hx: 0, hz: 0, pex: 0, pez: 0, phx: 0, phz: 0, ready: false };
+      if (zombie.phase > 0 || zombie.parrying) {
+        const arm = swordArm(sx0, sz0, zombie.hands[1].x, zombie.hands[1].z, zombie.face);
+        pinSwordRag(zombie.rag, arm.ex, arm.ez, arm.hx, arm.hz);
+      } else {
+        stepSwordRag(dt, sx0, sz0, zombie.rag);
+        zombie.hands[1].x = zombie.rag.hx;
+        zombie.hands[1].z = zombie.rag.hz;
+        zombie.hands[1].ready = true;
+      }
+      if (zombie.phase === 0) continue;
+      const blade = bodyBlade(zombie.x, zombie.z, zombie.face, zombie.hands[1]);
+      const touch = pointSegDist(x, z, blade.x0, blade.z0, blade.x1, blade.z1);
+      if (touch <= spawnBallR && parrying) {
+        zombie.phase = 0;
+        if (zombie.cut !== zombie.swing) {
+          zombie.cut = zombie.swing;
+          addParryRing(x, z);
+          zombie.hitGlow = 2;
+          zombie.parrying = false;
+          zombie.react = 0;
+          zombie.parryReact = 0;
+        }
+        continue;
+      }
+      if (touch <= reachHit && !parrying && zombie.cut !== zombie.swing) {
+        zombie.cut = zombie.swing;
+        hp = Math.max(0, hp - 1);
+        paintHp();
+      }
+      zombie.phaseT += dt;
+      const hand = zombie.hands[1];
+      const dx = stickGoal.x - hand.x;
+      const dz = stickGoal.z - hand.z;
+      const near = dx * dx + dz * dz < spawnBallR * spawnBallR * 0.28;
+      const need = zombie.phase === 3 ? 0.14 : 0.1;
+      if ((near && zombie.phaseT > need) || zombie.phaseT > 0.26) {
+        zombie.phase += 1;
+        zombie.phaseT = 0;
+        if (zombie.phase > 2) {
+          zombie.phase = 0;
+          zombie.cool = 0.2;
+        }
+      }
+    }
+  }
+  function limbShade(hex) {
+    const n = parseInt(String(hex).slice(1), 16);
+    const r = (n >> 16) & 255;
+    const g = (n >> 8) & 255;
+    const b = n & 255;
+    return "rgb(" + ((r * 0.72) | 0) + "," + ((g * 0.72) | 0) + "," + ((b * 0.72) | 0) + ")";
+  }
+  function customLegLayout(i, n, frontJump, longLegs) {
+    const side = i % 2 === 0 ? -1 : 1;
+    const row = Math.floor(i / 2);
+    const rows = Math.max(1, Math.ceil(n / 2));
+    const along = rows === 1 ? 0.35 : 0.9 - row * (1.7 / (rows - 1));
+    const front = row === 0;
+    return {
+      along: along,
+      side: side * (front && longLegs ? 0.55 : 0.8),
+      bones: front && longLegs ? 3 : 2,
+      front: front,
+      footAlong: front && longLegs ? 2.15 : front && frontJump ? 1.45 : along + 0.9,
+      footSide: side * (front && longLegs ? 1.25 : 1.05),
+      bend: side < 0 ? -1 : 1,
+    };
+  }
+  function customBasis(zombie) {
+    const fx = Math.cos(zombie.face);
+    const fz = Math.sin(zombie.face);
+    return { fx: fx, fz: fz, rx: -fz, rz: fx };
+  }
+  function customShoulder(zombie, lay) {
+    const b = customBasis(zombie);
+    const ox = b.fx * lay.along + b.rx * lay.side;
+    const oz = b.fz * lay.along + b.rz * lay.side;
+    const ol = Math.hypot(ox, oz) || 1;
+    return {
+      x: zombie.x + (ox / ol) * spawnBallR,
+      z: zombie.z + (oz / ol) * spawnBallR,
+    };
+  }
+  function customFoot(zombie, lay) {
+    const b = customBasis(zombie);
+    return {
+      x: zombie.x + (b.fx * lay.footAlong + b.rx * lay.footSide) * spawnBallR,
+      z: zombie.z + (b.fz * lay.footAlong + b.rz * lay.footSide) * spawnBallR,
+    };
+  }
+  function seg2(ctx, ax, ay, bx, by, thick, color) {
+    const ang = Math.atan2(by - ay, bx - ax);
+    const len = Math.hypot(bx - ax, by - ay);
+    ctx.save();
+    ctx.translate(ax, ay);
+    ctx.rotate(ang);
+    ctx.fillStyle = color;
+    ctx.fillRect(0, -thick * 0.5, Math.max(1, len), thick);
+    ctx.beginPath();
+    ctx.arc(0, 0, thick * 0.55, 0, Math.PI * 2);
+    ctx.arc(Math.max(1, len), 0, thick * 0.55, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+  function drawCustomZombie(ctx, zombie, project, zoom, lookX, lookZ) {
+    const thick = 1.7 * zoom;
+    const upper = spawnBallR * 1.15;
+    const fore = spawnBallR * 1.05;
+    const arm = limbShade(zombie.color || "#3f6b32");
+    const n = zombie.hands.length;
+    for (let i = 0; i < n; i += 1) {
+      const lay = customLegLayout(i, n, zombie.frontJump, zombie.longLegs);
+      const sh = customShoulder(zombie, lay);
+      const hand = zombie.hands[i];
+      const a = project(sh.x, sh.z);
+      if (lay.bones === 3) {
+        const limb = limb3(sh.x, sh.z, hand.x, hand.z, upper, fore, fore, lay.bend);
+        const j1 = project(limb.j1x, limb.j1z);
+        const j2 = project(limb.j2x, limb.j2z);
+        const hh = project(limb.hx, limb.hz);
+        seg2(ctx, a.x, a.y, j1.x, j1.y, thick, arm);
+        seg2(ctx, j1.x, j1.y, j2.x, j2.y, thick, arm);
+        seg2(ctx, j2.x, j2.y, hh.x, hh.y, thick, arm);
+      } else {
+        const limb = stretchyLimb(sh.x, sh.z, hand.x, hand.z, upper, fore, lay.bend);
+        const el = project(limb.ex, limb.ez);
+        const hh = project(limb.hx, limb.hz);
+        seg2(ctx, a.x, a.y, el.x, el.y, thick, arm);
+        seg2(ctx, el.x, el.y, hh.x, hh.y, thick, arm);
+      }
+      if (i === 0 && zombie.sword) {
+        const hx = hand.x;
+        const hz = hand.z;
+        const dx = hx - sh.x;
+        const dz = hz - sh.z;
+        const len = Math.hypot(dx, dz) || 1;
+        const tip = project(hx + (dx / len) * spawnBallR * 2.4, hz + (dz / len) * spawnBallR * 2.4);
+        const hs = project(hx, hz);
+        seg2(ctx, hs.x, hs.y, tip.x, tip.y, thick * 0.45, "#111");
+      }
+    }
+    const body = project(zombie.x, zombie.z);
+    ctx.fillStyle = zombie.color || "#3f6b32";
+    ctx.beginPath();
+    ctx.arc(body.x, body.y, spawnBallR * zoom, 0, Math.PI * 2);
+    ctx.fill();
+    if (zombie.eyeKind && zombie.eyeKind !== "none") {
+      const open = zombie.cone ? (zombie.eye == null ? 1 : zombie.eye) : 1;
+      const aim = zombie.cone && zombie.look != null ? zombie.look : Math.atan2(lookZ - zombie.z, lookX - zombie.x);
+      const eyeR = spawnBallR * 0.8;
+      const pupilR = eyeR * 0.42;
+      const look = (eyeR - pupilR) * zoom;
+      ctx.save();
+      ctx.translate(body.x, body.y);
+      ctx.scale(1, 0.07 + 0.93 * open);
+      ctx.fillStyle = zombie.eyeKind === "yellow" ? "#f0d23a" : "#f4f4f6";
+      ctx.beginPath();
+      ctx.arc(0, 0, eyeR * zoom, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#111";
+      ctx.beginPath();
+      ctx.arc(Math.cos(aim) * look, Math.sin(aim) * look, pupilR * zoom, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+  function stepCustomZombies(dt) {
+    const faceFollow = 1 - Math.pow(0.55, dt * 60);
+    const handFollow = 1 - Math.pow(0.74, dt * 60);
+    const cruise = 16 * 1.5;
+    for (let i = 0; i < zombies.length; i += 1) {
+      const zombie = zombies[i];
+      if (!zombie.custom) continue;
+      if (zombie.hitGlow > 0) {
+        zombie.phase = 0;
+        zombie.grab = false;
+        zombie.stuck = false;
+        zombie.swing = 0;
+        zombie.parrying = false;
+        zombie.parryGlow = 0;
+        continue;
+      }
+      const toX = x - zombie.x;
+      const toZ = z - zombie.z;
+      const dist = Math.hypot(toX, toZ);
+      zombie.face = lerpAng(zombie.face, Math.atan2(toZ, toX), zombie.phase === 2 ? faceFollow * 0.5 : faceFollow);
+      if (zombie.sword && !zombie.stuck && zombie.phase === 0) {
+        if (zombie.swingCool > 0) zombie.swingCool -= dt;
+        if (!zombie.swing && zombie.swingCool <= 0 && huntsPlayer(zombie.x, zombie.z) && dist < spawnBallR * 5.5) {
+          zombie.swing = 1;
+          zombie.swingT = 0;
+          zombie.swingHit = false;
+        }
+        if (zombie.swing > 0) {
+          zombie.swingT = (zombie.swingT || 0) + dt;
+          if (zombie.swingT > 0.2) {
+            zombie.swingT = 0;
+            zombie.swing += 1;
+            if (zombie.swing > 2) {
+              zombie.swing = 0;
+              zombie.swingCool = 0.2;
+            }
+          }
+        }
+      } else if (!zombie.sword) zombie.swing = 0;
+      if (zombie.guard) {
+        const threat = (stickPhase > 0 || fistPhase > 0) && dist < spawnBallR * 5.5;
+        if (threat) {
+          zombie.react = (zombie.react || 0) + dt;
+          if (zombie.react >= 0.2) {
+            zombie.parrying = true;
+            zombie.parryGlow = 1;
+          }
+        } else {
+          zombie.react = 0;
+          zombie.parrying = false;
+          zombie.parryGlow = 0;
+        }
+      }
+      if (zombie.frontJump && !zombie.stuck) {
+        if (zombie.jumpCool > 0) zombie.jumpCool -= dt;
+        const fx = Math.cos(zombie.face);
+        const fz = Math.sin(zombie.face);
+        if (zombie.phase === 0 && zombie.jumpCool <= 0 && huntsPlayer(zombie.x, zombie.z) && dist <= spawnBallR * 6) {
+          zombie.phase = 1;
+          zombie.prepT = 0.4;
+        }
+        if (zombie.phase === 1) {
+          zombie.x -= fx * cruise * 0.5 * dt;
+          zombie.z -= fz * cruise * 0.5 * dt;
+          zombie.prepT -= dt;
+          if (zombie.prepT <= 0) {
+            zombie.phase = 2;
+            zombie.speed = cruise * 3;
+          }
+        } else if (zombie.phase === 2) {
+          const blend = 1 - Math.pow(0.93, dt * 60);
+          zombie.speed += (cruise - zombie.speed) * blend;
+          zombie.x += fx * zombie.speed * dt;
+          zombie.z += fz * zombie.speed * dt;
+          if (zombie.speed <= cruise * 1.08) {
+            zombie.phase = 0;
+            zombie.speed = cruise;
+            zombie.jumpCool = 1;
+          }
+        }
+      }
+      const n = zombie.hands.length;
+      for (let h = 0; h < n; h += 1) {
+        const lay = customLegLayout(h, n, zombie.frontJump, zombie.longLegs);
+        const sh = customShoulder(zombie, lay);
+        let gx;
+        let gz;
+        if (h === 0 && zombie.sword && zombie.swing > 0) {
+          const dir = zombie.swing === 1 ? Math.atan2(toZ, toX) : Math.atan2(toZ, toX) - Math.PI / 2;
+          gx = zombie.x + Math.cos(dir) * spawnBallR * 2.35;
+          gz = zombie.z + Math.sin(dir) * spawnBallR * 2.35;
+        } else if (lay.front && zombie.longLegs && zombie.phase !== 1) {
+          const maxR = (spawnBallR * 1.15 + spawnBallR * 1.05 + spawnBallR * 1.05) * 2.6;
+          const dx = x - sh.x;
+          const dz = z - sh.z;
+          const raw = Math.hypot(dx, dz) || 1;
+          const distR = Math.min(raw, maxR);
+          gx = sh.x + (dx / raw) * distR;
+          gz = sh.z + (dz / raw) * distR;
+        } else if (lay.front && zombie.frontJump && zombie.phase === 2) {
+          const aim = Math.atan2(z - zombie.z, x - zombie.x) + (h % 2 === 0 ? -0.55 : 0.55);
+          const maxR = (spawnBallR * 1.15 + spawnBallR * 1.05) * 2.6;
+          gx = sh.x + Math.cos(aim) * maxR * 0.85;
+          gz = sh.z + Math.sin(aim) * maxR * 0.85;
+        } else {
+          const foot = customFoot(zombie, lay);
+          gx = foot.x;
+          gz = foot.z;
+        }
+        const hand = zombie.hands[h];
+        if (!hand.ready) {
+          hand.x = gx;
+          hand.z = gz;
+          hand.ready = true;
+        } else {
+          hand.x += (gx - hand.x) * handFollow;
+          hand.z += (gz - hand.z) * handFollow;
+        }
+      }
+      if (zombie.sword && zombie.swing > 0 && !zombie.swingHit && n > 0) {
+        const blade = zombie.hands[0];
+        const sh0 = customShoulder(zombie, customLegLayout(0, n, zombie.frontJump, zombie.longLegs));
+        const bdx = blade.x - sh0.x;
+        const bdz = blade.z - sh0.z;
+        const blen = Math.hypot(bdx, bdz) || 1;
+        const tipX = blade.x + (bdx / blen) * spawnBallR * 2.4;
+        const tipZ = blade.z + (bdz / blen) * spawnBallR * 2.4;
+        if (pointSegDist(x, z, blade.x, blade.z, tipX, tipZ) <= spawnBallR) {
+          zombie.swingHit = true;
+          if (parrying) {
+            zombie.hitGlow = 2;
+            zombie.swing = 0;
+            addParryRing(x, z);
+          } else {
+            hp = Math.max(0, hp - 1);
+            paintHp();
+          }
+        }
+      }
+      if (zombie.longLegs && !zombie.stuck) {
+        let tip = false;
+        const grabN = Math.min(2, n);
+        for (let h = 0; h < grabN; h += 1) {
+          if (Math.hypot(zombie.hands[h].x - x, zombie.hands[h].z - z) <= spawnBallR) tip = true;
+        }
+        const gap = spawnBallR * 0.35;
+        if (tip && dist > gap) {
+          zombie.grab = true;
+          const len = dist || 1;
+          const step = Math.min(dist - gap, 16 * 0.6 * dt);
+          x -= (toX / len) * step;
+          z -= (toZ / len) * step;
+        } else zombie.grab = tip;
+      } else if (!zombie.longLegs) zombie.grab = false;
+      if (zombie.frontJump && zombie.phase === 2 && !zombie.stuck) {
+        let tip = false;
+        const grabN = Math.min(2, n);
+        for (let h = 0; h < grabN; h += 1) {
+          if (Math.hypot(zombie.hands[h].x - x, zombie.hands[h].z - z) <= spawnBallR) tip = true;
+        }
+        if (tip) {
+          if (parrying) {
+            zombie.hitGlow = 2;
+            zombie.phase = 0;
+            zombie.jumpCool = 1;
+            zombie.stuck = false;
+            addParryRing(x, z);
+            const len = dist || 1;
+            zombie.x = x + ((zombie.x - x) / len) * spawnBallR * 3.1;
+            zombie.z = z + ((zombie.z - z) / len) * spawnBallR * 3.1;
+          } else {
+            zombie.stuck = true;
+            zombie.bite = 0;
+            zombie.hits = 0;
+            zombie.rest = 0;
+          }
+        }
+      }
+      if (zombie.stuck) {
+        const len = Math.hypot(zombie.x - x, zombie.z - z) || 1;
+        const gap = spawnBallR * 2;
+        zombie.x = x + ((zombie.x - x) / len) * gap;
+        zombie.z = z + ((zombie.z - z) / len) * gap;
+        if (zombie.rest > 0) zombie.rest -= dt;
+        else {
+          zombie.bite = (zombie.bite || 0) + dt;
+          if (zombie.bite >= 0.2) {
+            zombie.bite = 0;
+            if (parrying) {
+              zombie.hitGlow = 2;
+              zombie.stuck = false;
+              zombie.phase = 0;
+              zombie.jumpCool = 1;
+              addParryRing(x, z);
+            } else {
+              hp = Math.max(0, hp - 1);
+              paintHp();
+              zombie.hits = (zombie.hits || 0) + 1;
+              if (zombie.hits >= 2) {
+                zombie.hits = 0;
+                zombie.rest = 1;
+              }
+            }
+          }
+        }
+      }
+      if (zombie.armGrab && !zombie.stuck) {
+        let handOn = false;
+        for (let h = 0; h < n; h += 1) {
+          if (Math.hypot(zombie.hands[h].x - x, zombie.hands[h].z - z) <= spawnBallR) handOn = true;
+        }
+        if (handOn && parrying) {
+          if (zombie.grabParry !== parryId) {
+            zombie.grabParry = parryId;
+            addParryRing(x, z);
+            zombie.hitGlow = 2;
+          }
+        } else if (handOn && dist > spawnBallR * 2) {
+          const step = Math.min(dist - spawnBallR * 2, 40 * dt);
+          x += ((zombie.x - x) / dist) * step;
+          z += ((zombie.z - z) / dist) * step;
+        }
+      }
+      if (zombie.combo) {
+        if (zombie.comboRest > 0) zombie.comboRest -= dt;
+        else if (dist <= spawnBallR * 0.35) {
+          zombie.comboT = (zombie.comboT || 0) + dt;
+          if (zombie.comboT >= 0.2) {
+            zombie.comboT = 0;
+            hp = Math.max(0, hp - 1);
+            paintHp();
+            zombie.comboN = (zombie.comboN || 0) + 1;
+            if (zombie.comboN >= Math.max(1, n)) {
+              zombie.comboN = 0;
+              zombie.comboRest = 0.5;
+            }
+          }
+        }
+      }
+    }
+  }
+  function stepGreenZombies(dt) {
+    const follow = 1 - Math.pow(0.74, dt * 60);
+    const faceFollow = 1 - Math.pow(0.55, dt * 60);
+    for (let i = 0; i < zombies.length; i += 1) {
+      const zombie = zombies[i];
+      if (zombie.blue || zombie.black || zombie.red || zombie.custom) continue;
+      if (zombie.hitGlow > 0) continue;
+      const toX = x - zombie.x;
+      const toZ = z - zombie.z;
+      zombie.face = lerpAng(zombie.face, Math.atan2(toZ, toX), faceFollow);
+      const fx = Math.cos(zombie.face);
+      const fz = Math.sin(zombie.face);
+      const rx = -fz;
+      const rz = fx;
+      const grabbing = !zombie.purple && (armGoal(zombie, -1).grab || armGoal(zombie, 1).grab);
+      for (let s = 0; s < 2; s += 1) {
+        const side = s === 0 ? -1 : 1;
+        let gx = zombie.x + fx * spawnBallR * 0.85 + rx * spawnBallR * 0.75 * side;
+        let gz = zombie.z + fz * spawnBallR * 0.85 + rz * spawnBallR * 0.75 * side;
+        if (grabbing) {
+          const goal = armGoal(zombie, side);
+          gx = goal.tx;
+          gz = goal.tz;
+        }
+        const hand = zombie.hands[s];
+        const rate = grabbing ? 1 - Math.pow(0.5, dt * 60) : follow;
+        if (!hand.ready) {
+          hand.x = gx;
+          hand.z = gz;
+          hand.ready = true;
+        } else {
+          hand.x += (gx - hand.x) * rate;
+          hand.z += (gz - hand.z) * rate;
+        }
+      }
+    }
+  }
+  const flatCells = new Map();
+  const zombies = [];
+  let flatOpened = false;
+  function inLightCone(dx, dz, cone) {
+    const dist = Math.hypot(dx, dz);
+    if (dist > cone.reach) return false;
+    let ang = Math.atan2(dz, dx) - cone.ang;
+    while (ang > Math.PI) ang -= Math.PI * 2;
+    while (ang < -Math.PI) ang += Math.PI * 2;
+    return Math.abs(ang) <= cone.half;
+  }
+  function flashConeShape() {
+    const view = flatMetrics();
+    const baseR = view.fogRpx / view.zoom;
+    return { half: 0.42, reach: baseR * 1.12 + baseR * 0.4 };
+  }
+  function huntsPlayer(zx, zz) {
+    return Math.hypot(zx - x, zz - z) < flashConeShape().reach * 0.9;
+  }
+  function purpleBeam(zombie) {
+    const shape = flashConeShape();
+    const open = zombie.eye == null ? 1 : zombie.eye;
+    const dx = x - zombie.x;
+    const dz = z - zombie.z;
+    const ang = zombie.look == null ? Math.atan2(dz, dx) : zombie.look;
+    return { ang: ang, half: shape.half * open, reach: shape.reach };
+  }
+  function purpleHitsPlayer(zombie) {
+    if (zombie.hitGlow > 0 || !(zombie.eye > 0.85)) return false;
+    if (!huntsPlayer(zombie.x, zombie.z)) return false;
+    const beam = purpleBeam(zombie);
+    const dx = x - zombie.x;
+    const dz = z - zombie.z;
+    if (inLightCone(dx, dz, beam)) return true;
+    const dist = Math.hypot(dx, dz);
+    if (dist > beam.reach + spawnBallR) return false;
+    let ang = Math.atan2(dz, dx) - beam.ang;
+    while (ang > Math.PI) ang -= Math.PI * 2;
+    while (ang < -Math.PI) ang += Math.PI * 2;
+    return Math.abs(ang) <= beam.half;
+  }
+  function flatVision() {
+    const view = flatMetrics();
+    const held = lightSide() !== 0;
+    const fogRpx = view.fogRpx * (held ? 1.12 : 1);
+    const fogR = fogRpx / view.zoom;
+    let cone = null;
+    if (held && lightOn) {
+      const shape = flashConeShape();
+      const wide = heldLamp() === "bright";
+      cone = {
+        ang: Math.atan2(aimZ, aimX),
+        half: shape.half * (wide ? 1.2 : 1),
+        reach: shape.reach * (wide ? 1.15 : 1),
+      };
+    }
+    return {
+      viewW: view.viewW,
+      viewH: view.viewH,
+      cellPx: view.cellPx,
+      zoom: view.zoom,
+      fogRpx: fogRpx,
+      fogR: fogR,
+      cone: cone,
+    };
+  }
+  function revealFlat(ix0, ix1, iz0, iz1, fogR, cone) {
+    for (let iz = iz0; iz <= iz1; iz += 1) {
+      for (let ix = ix0; ix <= ix1; ix += 1) {
+        const dx = (ix + 0.5) * CELL - x;
+        const dz = (iz + 0.5) * CELL - z;
+        if (dx * dx + dz * dz > fogR * fogR && !(cone && inLightCone(dx, dz, cone))) continue;
+        const key = ix + "," + iz;
+        if (flatCells.has(key)) continue;
+        flatCells.set(key, "cell");
+        if (flatOpened && !monstersOff) {
+          const roll = Math.random();
+          const blue = roll < 1 / 110;
+          const green = !blue && roll < 1 / 110 + 1 / 100;
+          const black = !blue && !green && roll < 1 / 110 + 1 / 100 + 1 / 170;
+          const red = !blue && !green && !black && roll < 1 / 110 + 1 / 100 + 1 / 170 + 1 / 250;
+          const purple = !blue && !green && !black && !red && roll < 1 / 110 + 1 / 100 + 1 / 170 + 1 / 250 + 1 / 220;
+          if (blue || green || black || red || purple) {
+            const spotX = (ix + 0.5) * CELL;
+            const spotZ = (iz + 0.5) * CELL;
+            const hands = [];
+            const handCount = black ? 6 : red ? 4 : 2;
+            for (let h = 0; h < handCount; h += 1) hands.push({ x: spotX, z: spotZ, ready: false });
+            const zombie = {
+              x: spotX,
+              z: spotZ,
+              hp: blue || black ? 3 : 5,
+              hpMax: blue || black ? 3 : 5,
+              hitId: -1,
+              blue: blue,
+              black: black,
+              red: red,
+              purple: purple,
+              eye: purple ? 1 : 0,
+              face: 0,
+              hands: hands,
+            };
+            if (black) {
+              zombie.swing = 0;
+              zombie.cool = 0;
+              zombie.wait = 0;
+            }
+            if (red) {
+              zombie.phase = 0;
+              zombie.speed = 16 * 1.5;
+              zombie.prepT = 0;
+              zombie.stepCool = 0;
+              zombie.jumpCool = 0;
+            }
+            if (blue) {
+              zombie.phase = 0;
+              zombie.phaseT = 0;
+              zombie.dir = 0;
+              zombie.swing = 0;
+              zombie.cut = -1;
+              zombie.cool = 0;
+              zombie.parrying = false;
+              zombie.parryTime = 0;
+              zombie.parryCool = 0;
+            zombie.parryGlow = 0;
+            zombie.parryHeat = 0;
+            zombie.parryBreak = 0;
+            zombie.parryReact = 0;
+            zombie.react = 0;
+            }
+            zombies.push(zombie);
+          }
+        }
+      }
+    }
+    flatOpened = true;
+  }
+  function flatMetrics() {
+    const viewW = Math.max(1, stage ? stage.clientWidth : window.innerWidth);
+    const viewH = Math.max(1, stage ? stage.clientHeight : window.innerHeight);
+    const cellPx = 64;
+    const zoom = cellPx / CELL;
+    const fogRpx = Math.min(viewW, viewH) * 0.48;
+    return { viewW: viewW, viewH: viewH, cellPx: cellPx, zoom: zoom, fogRpx: fogRpx, fogR: fogRpx / zoom };
+  }
+  const flowField = new Map();
+  function buildFlow(fogR) {
+    flowField.clear();
+    const pix = Math.floor(x / CELL);
+    const piz = Math.floor(z / CELL);
+    const reach = Math.ceil(fogR / CELL) + 1;
+    const reach2 = reach * reach;
+    const dist = new Map();
+    const qx = [pix];
+    const qz = [piz];
+    dist.set(pix + "," + piz, 0);
+    const dirs = [[1, 0, 10], [-1, 0, 10], [0, 1, 10], [0, -1, 10], [1, 1, 14], [1, -1, 14], [-1, 1, 14], [-1, -1, 14]];
+    for (let head = 0; head < qx.length; head += 1) {
+      const ix = qx[head];
+      const iz = qz[head];
+      const base = dist.get(ix + "," + iz);
+      for (let n = 0; n < dirs.length; n += 1) {
+        const jx = ix + dirs[n][0];
+        const jz = iz + dirs[n][1];
+        const ddx = jx - pix;
+        const ddz = jz - piz;
+        if (ddx * ddx + ddz * ddz > reach2) continue;
+        const key = jx + "," + jz;
+        if (!flatCells.has(key)) continue;
+        const next = base + dirs[n][2];
+        const prev = dist.get(key);
+        if (prev != null && prev <= next) continue;
+        dist.set(key, next);
+        qx.push(jx);
+        qz.push(jz);
+      }
+    }
+    dist.forEach(function (cost, key) {
+      const comma = key.indexOf(",");
+      const ix = Number(key.slice(0, comma));
+      const iz = Number(key.slice(comma + 1));
+      let best = cost;
+      let bx = 0;
+      let bz = 0;
+      for (let n = 0; n < dirs.length; n += 1) {
+        const nk = (ix + dirs[n][0]) + "," + (iz + dirs[n][1]);
+        const nd = dist.get(nk);
+        if (nd == null || nd >= best) continue;
+        best = nd;
+        bx = dirs[n][0];
+        bz = dirs[n][1];
+      }
+      const len = Math.hypot(bx, bz) || 1;
+      flowField.set(key, { x: bx / len, z: bz / len });
+    });
+  }
+  function armGoal(zombie, side) {
+    const dx = x - zombie.x;
+    const dz = z - zombie.z;
+    const len = Math.hypot(dx, dz) || 1;
+    const rx = -dz / len;
+    const rz = dx / len;
+    const sx0 = zombie.x + rx * spawnBallR * side;
+    const sz0 = zombie.z + rz * spawnBallR * side;
+    const face = Math.atan2(-dz, -dx);
+    const slot = zombies.indexOf(zombie) * 0.4;
+    const handAng = face + side * 0.9 + slot;
+    const tx = x + Math.cos(handAng) * spawnBallR;
+    const tz = z + Math.sin(handAng) * spawnBallR;
+    const reach = Math.hypot(tx - sx0, tz - sz0);
+    const maxReach = (spawnBallR * 1.15 + spawnBallR * 1.05) * 2.6;
+    return { sx0: sx0, sz0: sz0, tx: tx, tz: tz, grab: reach <= maxReach };
+  }
+  const blackLegs = [
+    { along: 0.85, side: -0.55, bones: 3 },
+    { along: 0.85, side: 0.55, bones: 3 },
+    { along: 0.05, side: -1, bones: 2 },
+    { along: 0.05, side: 1, bones: 2 },
+    { along: -0.8, side: -0.6, bones: 2 },
+    { along: -0.8, side: 0.6, bones: 2 },
+  ];
+  const blackFeet = [
+    { along: 2.15, side: -1.25 },
+    { along: 2.15, side: 1.25 },
+    { along: 0.2, side: -2.05 },
+    { along: 0.2, side: 2.05 },
+    { along: -1.85, side: -1.15 },
+    { along: -1.85, side: 1.15 },
+  ];
+  function blackBasis(zombie) {
+    const fx = Math.cos(zombie.face);
+    const fz = Math.sin(zombie.face);
+    return { fx: fx, fz: fz, rx: -fz, rz: fx };
+  }
+  function blackShoulder(zombie, i) {
+    const b = blackBasis(zombie);
+    const leg = blackLegs[i];
+    const ox = b.fx * leg.along + b.rx * leg.side;
+    const oz = b.fz * leg.along + b.rz * leg.side;
+    const ol = Math.hypot(ox, oz) || 1;
+    return {
+      x: zombie.x + (ox / ol) * spawnBallR,
+      z: zombie.z + (oz / ol) * spawnBallR,
+      bend: leg.side < 0 ? -1 : 1,
+      bones: leg.bones,
+    };
+  }
+  function blackFoot(zombie, i) {
+    const b = blackBasis(zombie);
+    const foot = blackFeet[i];
+    return {
+      x: zombie.x + (b.fx * foot.along + b.rx * foot.side) * spawnBallR,
+      z: zombie.z + (b.fz * foot.along + b.rz * foot.side) * spawnBallR,
+    };
+  }
+  function blackFrontGrab(zombie) {
+    const reach = (spawnBallR * 1.15 + spawnBallR * 1.05 + spawnBallR * 1.05) * 2.6;
+    for (let i = 0; i < 2; i += 1) {
+      const sh = blackShoulder(zombie, i);
+      if (Math.hypot(x - sh.x, z - sh.z) <= reach) return true;
+    }
+    return false;
+  }
+  function blackOverlap() {
+    return spawnBallR * 0.35;
+  }
+  const redLegs = [
+    { along: 0.55, side: -0.8 },
+    { along: 0.55, side: 0.8 },
+    { along: -0.55, side: -0.75 },
+    { along: -0.55, side: 0.75 },
+  ];
+  const redFeet = [
+    { along: 1.45, side: -1.2 },
+    { along: 1.45, side: 1.2 },
+    { along: -1.25, side: -1.05 },
+    { along: -1.25, side: 1.05 },
+  ];
+  function redBasis(zombie) {
+    const fx = Math.cos(zombie.face);
+    const fz = Math.sin(zombie.face);
+    return { fx: fx, fz: fz, rx: -fz, rz: fx };
+  }
+  function redShoulder(zombie, i) {
+    const b = redBasis(zombie);
+    const leg = redLegs[i];
+    const ox = b.fx * leg.along + b.rx * leg.side;
+    const oz = b.fz * leg.along + b.rz * leg.side;
+    const ol = Math.hypot(ox, oz) || 1;
+    return {
+      x: zombie.x + (ox / ol) * spawnBallR,
+      z: zombie.z + (oz / ol) * spawnBallR,
+      bend: leg.side < 0 ? -1 : 1,
+    };
+  }
+  function redFoot(zombie, i) {
+    const b = redBasis(zombie);
+    const foot = redFeet[i];
+    return {
+      x: zombie.x + (b.fx * foot.along + b.rx * foot.side) * spawnBallR,
+      z: zombie.z + (b.fz * foot.along + b.rz * foot.side) * spawnBallR,
+    };
+  }
+  function moveRedZombies(dt) {
+    const cruise = 16 * 1.5;
+    const faceFollow = 1 - Math.pow(0.55, dt * 60);
+    for (let i = 0; i < zombies.length; i += 1) {
+      const zombie = zombies[i];
+      if (!zombie.red) continue;
+      zombie.ox = zombie.x;
+      zombie.oz = zombie.z;
+      if (zombie.stuck) continue;
+      if (zombie.hitGlow > 0) {
+        zombie.phase = 0;
+        zombie.speed = cruise;
+        continue;
+      }
+      if (zombie.jumpCool > 0) zombie.jumpCool -= dt;
+      const toX = x - zombie.x;
+      const toZ = z - zombie.z;
+      const dist = Math.hypot(toX, toZ);
+      const turn = zombie.phase === 2 ? faceFollow * 0.5 : faceFollow;
+      zombie.face = lerpAng(zombie.face, Math.atan2(toZ, toX), turn);
+      const fx = Math.cos(zombie.face);
+      const fz = Math.sin(zombie.face);
+      if (zombie.phase === 0 && zombie.jumpCool <= 0 && dist <= spawnBallR * 6) {
+        zombie.phase = 1;
+        zombie.prepT = 0.4;
+      }
+      if (zombie.phase === 1) {
+        zombie.x -= fx * cruise * 0.5 * dt;
+        zombie.z -= fz * cruise * 0.5 * dt;
+        zombie.prepT -= dt;
+        if (zombie.prepT <= 0) {
+          zombie.phase = 2;
+          zombie.speed = cruise * 3;
+        }
+      } else if (zombie.phase === 2) {
+        const blend = 1 - Math.pow(0.93, dt * 60);
+        zombie.speed += (cruise - zombie.speed) * blend;
+        zombie.x += fx * zombie.speed * dt;
+        zombie.z += fz * zombie.speed * dt;
+        if (zombie.speed <= cruise * 1.08) {
+          zombie.phase = 0;
+          zombie.speed = cruise;
+          zombie.jumpCool = 1;
+        }
+      } else if (huntsPlayer(zombie.x, zombie.z)) {
+        const ix = Math.floor(zombie.x / CELL);
+        const iz = Math.floor(zombie.z / CELL);
+        const flow = flowField.get(ix + "," + iz);
+        let mx = 0;
+        let mz = 0;
+        if (flow && (flow.x !== 0 || flow.z !== 0)) {
+          mx = flow.x;
+          mz = flow.z;
+        } else {
+          const len = dist || 1;
+          mx = toX / len;
+          mz = toZ / len;
+        }
+        zombie.x += mx * cruise * dt;
+        zombie.z += mz * cruise * dt;
+      }
+    }
+  }
+  function redReach(zombie, i) {
+    const aim = Math.atan2(z - zombie.z, x - zombie.x);
+    const ang = aim + (i === 0 ? -0.55 : 0.55);
+    return {
+      x: x + Math.cos(ang) * spawnBallR,
+      z: z + Math.sin(ang) * spawnBallR,
+    };
+  }
+  function stepRedFeet(dt) {
+    const rate = 1 - Math.pow(0.42, dt * 60);
+    const idle = 1 - Math.pow(0.74, dt * 60);
+    const maxR = (spawnBallR * 1.15 + spawnBallR * 1.05) * 2.6;
+    for (let i = 0; i < zombies.length; i += 1) {
+      const zombie = zombies[i];
+      if (!zombie.red) continue;
+      for (let h = 0; h < 4; h += 1) {
+        const hand = zombie.hands[h];
+        let gx;
+        let gz;
+        let follow = idle;
+        if (h < 2) {
+          const sh = redShoulder(zombie, h);
+          const goal = redReach(zombie, h);
+          gx = goal.x - sh.x;
+          gz = goal.z - sh.z;
+          const raw = Math.hypot(gx, gz) || 1;
+          if (raw > maxR) {
+            gx = gx / raw * maxR;
+            gz = gz / raw * maxR;
+          }
+          gx += sh.x;
+          gz += sh.z;
+          follow = rate;
+        } else {
+          const foot = redFoot(zombie, h);
+          gx = foot.x;
+          gz = foot.z;
+        }
+        if (!hand.ready) {
+          hand.x = gx;
+          hand.z = gz;
+          hand.ready = true;
+        } else {
+          hand.x += (gx - hand.x) * follow;
+          hand.z += (gz - hand.z) * follow;
+        }
+      }
+    }
+  }
+  function stickRedZombies(dt) {
+    const gap = spawnBallR * 2;
+    for (let i = 0; i < zombies.length; i += 1) {
+      const zombie = zombies[i];
+      if (!zombie.red) continue;
+      if (!zombie.stuck) {
+        if (zombie.phase !== 2) continue;
+        let tip = false;
+        for (let h = 0; h < 2; h += 1) {
+          const hand = zombie.hands[h];
+          if (Math.hypot(hand.x - x, hand.z - z) <= spawnBallR) tip = true;
+        }
+        if (!tip) continue;
+        if (parrying) {
+          rejectRed(zombie);
+          continue;
+        }
+        const dx = zombie.x - x;
+        const dz = zombie.z - z;
+        const dist = Math.hypot(dx, dz);
+        let sx = dx;
+        let sz = dz;
+        let len = dist;
+        if (len < 0.001) {
+          sx = Math.cos(zombie.face);
+          sz = Math.sin(zombie.face);
+          len = 1;
+        }
+        zombie.stuck = true;
+        zombie.stickX = (sx / len) * gap;
+        zombie.stickZ = (sz / len) * gap;
+        zombie.bite = 0;
+        zombie.hits = 0;
+        zombie.rest = 0;
+      }
+      zombie.x = x + zombie.stickX;
+      zombie.z = z + zombie.stickZ;
+      if (zombie.rest > 0) {
+        zombie.rest -= dt;
+        continue;
+      }
+      zombie.bite += dt;
+      if (zombie.bite < 0.2) continue;
+      zombie.bite = 0;
+      if (parrying) {
+        rejectRed(zombie);
+        continue;
+      }
+      hp = Math.max(0, hp - 1);
+      paintHp();
+      zombie.hits += 1;
+      if (zombie.hits >= 2) {
+        zombie.hits = 0;
+        zombie.rest = 1;
+      }
+    }
+  }
+  function rejectRed(zombie) {
+    zombie.grabParry = parryId;
+    addParryRing(x, z);
+    zombie.hitGlow = 2;
+    zombie.stuck = false;
+    zombie.phase = 0;
+    zombie.speed = 16 * 1.5;
+    zombie.jumpCool = 1;
+    zombie.bite = 0;
+    zombie.hits = 0;
+    zombie.rest = 0;
+    const dx = zombie.x - x;
+    const dz = zombie.z - z;
+    let len = Math.hypot(dx, dz);
+    let sx = dx;
+    let sz = dz;
+    if (len < 0.001) {
+      sx = -Math.cos(zombie.face);
+      sz = -Math.sin(zombie.face);
+      len = 1;
+    }
+    const back = spawnBallR * 3.1;
+    zombie.x = x + (sx / len) * back;
+    zombie.z = z + (sz / len) * back;
+  }
+  function lobbyCell(px, pz) {
+    return {
+      ix: Math.floor((px - lobbyX0) / CELL),
+      iz: Math.floor((pz - lobbyZ0) / CELL),
+    };
+  }
+  function lobbyBlocked(px, pz) {
+    const cell = lobbyCell(px, pz);
+    if (cell.ix < 0 || cell.iz < 0 || cell.ix >= lobbyN || cell.iz >= lobbyN) return true;
+    if (cell.ix === 0 || cell.iz === 0 || cell.ix === lobbyN - 1 || cell.iz === lobbyN - 1) return true;
+    return false;
+  }
+  function lobbyHits(px, pz) {
+    const r = spawnBallR * 0.9;
+    if (lobbyBlocked(px, pz)) return true;
+    for (let i = 0; i < 8; i += 1) {
+      const ang = (i / 8) * Math.PI * 2;
+      if (lobbyBlocked(px + Math.cos(ang) * r, pz + Math.sin(ang) * r)) return true;
+    }
+    return false;
+  }
+  function syncLobbyMenu() {
+    if (lobbyMenu) lobbyMenu.hidden = !inLobby;
+  }
+  function syncWinShade() {
+    const shade = document.getElementById("win-shade");
+    if (!shade) return;
+    const customOn = customPanel && !customPanel.hidden;
+    const shopOn = lobbyShopEl && !lobbyShopEl.hidden;
+    const sellOn = lobbySellEl && !lobbySellEl.hidden;
+    shade.hidden = !(customOn || shopOn || sellOn);
+  }
+  function lobbyInGate() {
+    const r = spawnBallR * 0.55;
+    const spots = [[0, 0], [r, 0], [-r, 0], [0, r], [0, -r]];
+    for (let i = 0; i < spots.length; i += 1) {
+      const cell = lobbyCell(x + spots[i][0], z + spots[i][1]);
+      if (cell.ix >= 7 && cell.ix <= 9 && cell.iz >= 2 && cell.iz <= 4) return true;
+    }
+    return false;
+  }
+  function zombieKind(zombie) {
+    if (zombie.custom) return "custom";
+    if (zombie.blue) return "blue";
+    if (zombie.black) return "black";
+    if (zombie.red) return "red";
+    if (zombie.purple) return "purple";
+    return "green";
+  }
+  function noteKill(zombie) {
+    if (inLobby) return;
+    const kind = zombieKind(zombie);
+    for (let i = 0; i < roundKills.length; i += 1) {
+      if (roundKills[i].kind !== kind) continue;
+      roundKills[i].n += 1;
+      return;
+    }
+    roundKills.push({ kind: kind, n: 1 });
+  }
+  function openLoot() {
+    lootLines = [];
+    lootSum = 0;
+    for (let i = 0; i < roundKills.length; i += 1) {
+      const row = roundKills[i];
+      const pay = (killWorth[row.kind] != null ? killWorth[row.kind] : 10) * row.n;
+      lootSum += pay;
+      lootLines.push(killName[row.kind] + "  " + row.n + "마리  " + pay + "원");
+    }
+    roundKills.length = 0;
+    lootShown = 0;
+    lootTimer = 0;
+    lootPaid = false;
+    if (lootListEl) lootListEl.textContent = "";
+    if (lootTotalEl) {
+      lootTotalEl.hidden = true;
+      lootTotalEl.textContent = "";
+    }
+    if (lootEl) lootEl.hidden = false;
+    lootPhase = 1;
+  }
+  function stepLoot(dt) {
+    if (moneyEl && money === Infinity) {
+      moneyShown = Infinity;
+      moneyEl.textContent = "무한";
+    } else if (moneyEl && moneyShown !== money) {
+      const step = Math.max(1, Math.ceil(Math.abs(money - moneyShown) / 12));
+      if (moneyShown < money) moneyShown = Math.min(money, moneyShown + step);
+      else moneyShown = Math.max(money, moneyShown - step);
+      moneyEl.textContent = moneyShown + "원";
+    }
+    if (lootPhase === 0) return;
+    lootTimer += dt;
+    if (lootPhase === 1 && lootTimer >= 0.4) {
+      lootTimer = 0;
+      if (lootShown < lootLines.length && lootListEl) {
+        const line = document.createElement("p");
+        line.textContent = lootLines[lootShown];
+        lootListEl.appendChild(line);
+        lootShown += 1;
+      }
+      if (lootShown >= lootLines.length) lootPhase = 2;
+    } else if (lootPhase === 2 && lootTimer >= 0.4) {
+      if (lootTotalEl) {
+        lootTotalEl.hidden = false;
+        lootTotalEl.textContent = "총합  " + lootSum + "원";
+      }
+      if (!lootPaid) {
+        lootPaid = true;
+        money += lootSum;
+      }
+      lootPhase = 0;
+    }
+  }
+  function goLobby() {
+    inLobby = true;
+    lobbyWait = 0;
+    roundLeft = 60;
+    vx = 0;
+    vz = 0;
+    parryHeld = false;
+    parrying = false;
+    stickPhase = 0;
+    fistPhase = 0;
+    x = lobbyX0 + 8.5 * CELL;
+    z = lobbyZ0 + 12.5 * CELL;
+    openLoot();
+  }
+  function beginMatch() {
+    inLobby = false;
+    lobbyWait = 0;
+    roundLeft = 60;
+    vx = 0;
+    vz = 0;
+    x = 0;
+    z = 0;
+    if (lobbyShopEl) lobbyShopEl.hidden = true;
+    if (lobbySellEl && !lobbySellEl.hidden) {
+      giveBackSell();
+      sellPresses = 0;
+      sellPressAt = 0;
+    }
+    if (lobbySellEl) lobbySellEl.hidden = true;
+    if (lobbyMenu) lobbyMenu.hidden = true;
+    if (!lootPaid && lootPhase !== 0) {
+      lootPaid = true;
+      money += lootSum;
+    }
+    lootPhase = 0;
+    roundKills.length = 0;
+    if (lootEl) lootEl.hidden = true;
+    syncWinShade();
+  }
+  function stepFade(dt) {
+    if (fadeDir === 0) return;
+    fade += fadeDir * (dt / 0.6);
+    if (fadeDir > 0 && fade >= 1) {
+      fade = 1;
+      beginMatch();
+      fadeDir = -1;
+    } else if (fadeDir < 0 && fade <= 0) {
+      fade = 0;
+      fadeDir = 0;
+    }
+  }
+  function drawLobbyFloor(cx, cy, zoom, cellPx) {
+    const edge = 3;
+    for (let iz = 0; iz < lobbyN; iz += 1) {
+      for (let ix = 0; ix < lobbyN; ix += 1) {
+        const sx = cx + (lobbyX0 + ix * CELL - x) * zoom;
+        const sy = cy + (lobbyZ0 + iz * CELL - z) * zoom;
+        const wall = ix === 0 || iz === 0 || ix === lobbyN - 1 || iz === lobbyN - 1;
+        const gate = ix >= 7 && ix <= 9 && iz >= 2 && iz <= 4;
+        if (wall) {
+          ctx.fillStyle = "#2a261f";
+          ctx.fillRect(sx, sy, cellPx, cellPx);
+          ctx.fillStyle = "#5c5348";
+          ctx.fillRect(sx + edge, sy + edge, cellPx - edge * 2, cellPx - edge * 2);
+        } else if (gate) {
+          ctx.fillStyle = "#1d4e73";
+          ctx.fillRect(sx, sy, cellPx, cellPx);
+          ctx.fillStyle = "#3d8ec4";
+          ctx.fillRect(sx + edge, sy + edge, cellPx - edge * 2, cellPx - edge * 2);
+        } else {
+          ctx.fillStyle = "#8a7044";
+          ctx.fillRect(sx, sy, cellPx, cellPx);
+          ctx.fillStyle = "#d8c48a";
+          ctx.fillRect(sx + edge, sy + edge, cellPx - edge * 2, cellPx - edge * 2);
+        }
+      }
+    }
+  }
+  function stepFlat(dt) {
+    const speed = crouchHeld ? 8 : sprintHeld ? 38 : 24;
+    let ax = 0;
+    let az = 0;
+    if (moveD) ax += 1;
+    if (moveA) ax -= 1;
+    if (moveS) az += 1;
+    if (moveW) az -= 1;
+    const wishLen = Math.hypot(ax, az);
+    const hardSlow = gear.left === "hardstick" || gear.right === "hardstick" ? 0.7 : 1;
+    const pace = speed * Math.SQRT2 * hardSlow;
+    let wishX = 0;
+    let wishZ = 0;
+    if (wishLen > 0) {
+      wishX = (ax / wishLen) * pace;
+      wishZ = (az / wishLen) * pace;
+    }
+    if (parryHeld) parrySlow = 0.8;
+    else parrySlow = 1;
+    wishX *= parrySlow;
+    wishZ *= parrySlow;
+    let purpleLit = false;
+    let purpleTouch = false;
+    for (let i = 0; i < zombies.length; i += 1) {
+      const zombie = zombies[i];
+      if (!zombie.purple && !(zombie.custom && zombie.cone)) continue;
+      if (zombie.eye == null) zombie.eye = 1;
+      if (zombie.look == null) zombie.look = zombie.face || 0;
+      const seen = huntsPlayer(zombie.x, zombie.z);
+      if (seen) {
+        const aim = Math.atan2(z - zombie.z, x - zombie.x);
+        const dist = Math.hypot(x - zombie.x, z - zombie.z);
+        const reach = flashConeShape().reach || 1;
+        const closeness = 1 - Math.min(1, dist / reach);
+        const drag = 0.988 + closeness * 0.008;
+        zombie.look = lerpAng(zombie.look, aim, 1 - Math.pow(drag, dt * 60));
+      }
+      if (seen && parrying && zombie.eyeParry !== parryId && purpleHitsPlayer(zombie)) {
+        zombie.eyeParry = parryId;
+        addParryRing(x, z);
+        zombie.hitGlow = 2;
+      }
+      if (zombie.hitGlow > 0) zombie.eye = Math.max(0, zombie.eye - dt / 0.4);
+      else zombie.eye = Math.min(1, zombie.eye + dt / 0.4);
+      if (zombie.hitGlow > 0 || zombie.eye < 0.98) continue;
+      if (purpleHitsPlayer(zombie)) purpleLit = true;
+      else if (Math.hypot(zombie.x - x, zombie.z - z) <= spawnBallR * 2) purpleTouch = true;
+    }
+    if (purpleLit) {
+      wishX *= 0.5;
+      wishZ *= 0.5;
+      purpleHurt += dt;
+      if (purpleHurt >= 2) {
+        purpleHurt -= 2;
+        hp = Math.max(0, hp - 1);
+        paintHp();
+      }
+      purpleClock += dt;
+    } else {
+      if (purpleTouch) {
+        wishX *= 0.7;
+        wishZ *= 0.7;
+      }
+      purpleHurt = 0;
+    }
+    const purpleWave = purpleLit ? 0.5 + 0.5 * Math.sin(purpleClock * 3.2) : 0;
+    purpleGlow += (purpleWave - purpleGlow) * (1 - Math.pow(0.08, dt));
+    if (hitGlow > 0) {
+      wishX = 0;
+      wishZ = 0;
+      vx = 0;
+      vz = 0;
+    }
+    const gain = 1 - Math.pow(0.3, dt * 60);
+    vx += (wishX - vx) * gain;
+    vz += (wishZ - vz) * gain;
+    vy = 0;
+    if (inLobby) {
+      if (fadeDir !== 0) {
+        vx = 0;
+        vz = 0;
+      }
+      const prevX = x;
+      const prevZ = z;
+      x += vx * dt;
+      if (lobbyHits(x, z)) {
+        x = prevX;
+        vx = 0;
+      }
+      z += vz * dt;
+      if (lobbyHits(x, z)) {
+        z = prevZ;
+        vz = 0;
+      }
+      if (fadeDir === 0 && lobbyInGate()) lobbyWait += dt;
+      else if (fadeDir === 0) lobbyWait = 0;
+      if (lobbyWait >= 3 && fadeDir === 0) {
+        lobbyWait = 0;
+        fade = 0;
+        fadeDir = 1;
+      }
+      stepFade(dt);
+      syncLobbyMenu();
+      stepParries(dt);
+      stepArms(dt);
+      return;
+    }
+    x += vx * dt;
+    z += vz * dt;
+    if (fadeDir === 0 && roundLeft > 0) {
+      roundLeft -= dt;
+      if (roundLeft <= 0) goLobby();
+    }
+    stepFade(dt);
+    if (inLobby) return;
+    const vision = flatVision();
+    const seeR = vision.cone ? vision.cone.reach : vision.fogR;
+    revealFlat(
+      Math.floor((x - seeR) / CELL),
+      Math.floor((x + seeR) / CELL),
+      Math.floor((z - seeR) / CELL),
+      Math.floor((z + seeR) / CELL),
+      vision.fogR,
+      vision.cone
+    );
+    buildFlow(vision.fogR);
+    const chase = 16;
+    for (let i = 0; i < zombies.length; i += 1) {
+      const zombie = zombies[i];
+      const ix = Math.floor(zombie.x / CELL);
+      const iz = Math.floor(zombie.z / CELL);
+      const flow = flowField.get(ix + "," + iz);
+      let fx = 0;
+      let fz = 0;
+      if (flow && (flow.x !== 0 || flow.z !== 0) && huntsPlayer(zombie.x, zombie.z)) {
+        fx = flow.x;
+        fz = flow.z;
+      } else if (huntsPlayer(zombie.x, zombie.z)) {
+        const dx = x - zombie.x;
+        const dz = z - zombie.z;
+        const len = Math.hypot(dx, dz) || 1;
+        fx = dx / len;
+        fz = dz / len;
+      }
+      if (zombie.hitGlow > 0) continue;
+      if (zombie.red) continue;
+      if (zombie.custom && (zombie.grab || zombie.stuck || (zombie.frontJump && zombie.phase > 0))) continue;
+      const pace = zombie.black ? chase * 0.6 : chase * (zombie.paceMul || 1);
+      if (!(zombie.black && blackFrontGrab(zombie))) {
+        zombie.x += fx * pace * dt;
+        zombie.z += fz * pace * dt;
+      }
+    }
+    moveRedZombies(dt);
+    const bodyGap = spawnBallR * 2;
+    for (let i = 0; i < zombies.length; i += 1) {
+      for (let j = i + 1; j < zombies.length; j += 1) {
+        const dx = zombies[j].x - zombies[i].x;
+        const dz = zombies[j].z - zombies[i].z;
+        const dist = Math.hypot(dx, dz);
+        if (dist >= bodyGap || dist < 0.001) continue;
+        const push = (bodyGap - dist) * 0.5 / dist;
+        zombies[i].x -= dx * push;
+        zombies[i].z -= dz * push;
+        zombies[j].x += dx * push;
+        zombies[j].z += dz * push;
+      }
+      const dx = zombies[i].x - x;
+      const dz = zombies[i].z - z;
+      const dist = Math.hypot(dx, dz);
+      if (zombies[i].black && !(zombies[i].hitGlow > 0) && blackFrontGrab(zombies[i])) continue;
+      if (zombies[i].red && (zombies[i].stuck || zombies[i].phase === 2)) continue;
+      if (zombies[i].custom && (zombies[i].grab || zombies[i].stuck || (zombies[i].frontJump && zombies[i].phase === 2))) continue;
+      if (dist < bodyGap && dist > 0.001) {
+        zombies[i].x = x + (dx / dist) * bodyGap;
+        zombies[i].z = z + (dz / dist) * bodyGap;
+      }
+    }
+    stepRedFeet(dt);
+    stickRedZombies(dt);
+    let held = false;
+    stepParries(dt);
+    for (let i = 0; i < zombies.length; i += 1) {
+      const zombie = zombies[i];
+      if (zombie.blue || zombie.black || zombie.red || zombie.purple || zombie.custom) continue;
+      if (zombie.hitGlow > 0 || hitGlow > 0) continue;
+      if (!armGoal(zombie, -1).grab && !armGoal(zombie, 1).grab) continue;
+      let handOn = false;
+      for (let h = 0; h < zombie.hands.length; h += 1) {
+        const hand = zombie.hands[h];
+        if (Math.hypot(hand.x - x, hand.z - z) <= spawnBallR) handOn = true;
+      }
+      if (parrying && handOn) {
+        if (zombie.grabParry !== parryId) {
+          zombie.grabParry = parryId;
+          addParryRing(x, z);
+          zombie.hitGlow = 2;
+        }
+        continue;
+      }
+      held = true;
+      const dx = zombie.x - x;
+      const dz = zombie.z - z;
+      const dist = Math.hypot(dx, dz);
+      if (dist <= bodyGap) continue;
+      const step = Math.min(dist - bodyGap, 40 * dt);
+      x += (dx / dist) * step;
+      z += (dz / dist) * step;
+    }
+    for (let i = 0; i < zombies.length; i += 1) {
+      const zombie = zombies[i];
+      if (!zombie.black) continue;
+      if (zombie.hitGlow > 0 || hitGlow > 0) continue;
+      if (!blackFrontGrab(zombie)) continue;
+      held = true;
+      const dx = zombie.x - x;
+      const dz = zombie.z - z;
+      const dist = Math.hypot(dx, dz) || 1;
+      if (dist <= blackOverlap()) continue;
+      const step = Math.min(dist - blackOverlap(), 40 * dt);
+      x += (dx / dist) * step;
+      z += (dz / dist) * step;
+    }
+    if (held) {
+      vx *= 0.35;
+      vz *= 0.35;
+    }
+    stepArms(dt);
+    stepBlueZombies(dt);
+    stepGreenZombies(dt);
+    stepCustomZombies(dt);
+    stepBlackZombies(dt);
+    jumpEdge = false;
+  }
+  function stepBlackZombies(dt) {
+    const follow = 1 - Math.pow(0.74, dt * 60);
+    const faceFollow = 1 - Math.pow(0.55, dt * 60);
+    const grabRate = 1 - Math.pow(0.5, dt * 60);
+    for (let i = 0; i < zombies.length; i += 1) {
+      const zombie = zombies[i];
+      if (!zombie.black) continue;
+      if (!(zombie.hitGlow > 0)) {
+        const toX = x - zombie.x;
+        const toZ = z - zombie.z;
+        zombie.face = lerpAng(zombie.face, Math.atan2(toZ, toX), faceFollow);
+      }
+      const grabbing = !(zombie.hitGlow > 0) && blackFrontGrab(zombie);
+      const dist = Math.hypot(x - zombie.x, z - zombie.z);
+      const overlapped = grabbing && dist <= blackOverlap();
+      const striking = overlapped && !(zombie.wait > 0) && !(hitGlow > 0);
+      for (let h = 0; h < 6; h += 1) {
+        let goal = blackFoot(zombie, h);
+        if (grabbing && h < 2) {
+          const side = h === 0 ? -1 : 1;
+          const ang = Math.atan2(z - zombie.z, x - zombie.x) + side * 0.55;
+          goal = { x: x + Math.cos(ang) * spawnBallR * 0.2, z: z + Math.sin(ang) * spawnBallR * 0.2 };
+        }
+        if (striking && h === zombie.swing) goal = { x: x, z: z };
+        const hand = zombie.hands[h];
+        const rate = (grabbing && h < 2) || (striking && h === zombie.swing) ? grabRate : follow;
+        if (!hand.ready) {
+          hand.x = goal.x;
+          hand.z = goal.z;
+          hand.ready = true;
+        } else {
+          hand.x += (goal.x - hand.x) * rate;
+          hand.z += (goal.z - hand.z) * rate;
+        }
+      }
+      if (!grabbing) {
+        zombie.swing = 0;
+        zombie.cool = 0;
+        zombie.wait = 0;
+        continue;
+      }
+      if (zombie.hitGlow > 0 || hitGlow > 0 || !overlapped) continue;
+      if (zombie.wait > 0) {
+        zombie.wait -= dt;
+        continue;
+      }
+      zombie.cool += dt;
+      if (zombie.cool < 0.2) continue;
+      zombie.cool = 0;
+      hp = Math.max(0, hp - 1);
+      paintHp();
+      zombie.swing += 1;
+      if (zombie.swing >= 6) {
+        zombie.swing = 0;
+        zombie.wait = 0.5;
+      }
+    }
+  }
+  function drawFlat() {
+    const view = flatVision();
+    const viewW = view.viewW;
+    const viewH = view.viewH;
+    const cellPx = view.cellPx;
+    const zoom = view.zoom;
+    const fogRpx = view.fogRpx;
+    const fogR = view.fogR;
+    const cone = view.cone;
+    if (canvas.width !== viewW || canvas.height !== viewH) {
+      canvas.width = viewW;
+      canvas.height = viewH;
+      ctx.imageSmoothingEnabled = false;
+    }
+    const cx = viewW * 0.5;
+    const cy = viewH * 0.5;
+    ctx.fillStyle = "#000";
+    ctx.fillRect(0, 0, viewW, viewH);
+    ctx.save();
+    if (inLobby) {
+      drawLobbyFloor(cx, cy, zoom, cellPx);
+    } else {
+    ctx.beginPath();
+    ctx.arc(cx, cy, fogRpx, 0, Math.PI * 2);
+    if (cone) {
+      const tip = cone.reach * zoom;
+      const a0 = cone.ang - cone.half;
+      const a1 = cone.ang + cone.half;
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx + Math.cos(a0) * tip, cy + Math.sin(a0) * tip);
+      ctx.lineTo(cx + Math.cos(a1) * tip, cy + Math.sin(a1) * tip);
+      ctx.closePath();
+    }
+    ctx.clip();
+    ctx.fillStyle = "#12141a";
+    ctx.fillRect(0, 0, viewW, viewH);
+    const seeR = cone ? cone.reach : fogR;
+    const ix0 = Math.floor((x - seeR) / CELL);
+    const ix1 = Math.floor((x + seeR) / CELL);
+    const iz0 = Math.floor((z - seeR) / CELL);
+    const iz1 = Math.floor((z + seeR) / CELL);
+    revealFlat(ix0, ix1, iz0, iz1, fogR, cone);
+    for (let iz = iz0; iz <= iz1; iz += 1) {
+      for (let ix = ix0; ix <= ix1; ix += 1) {
+        const dx = (ix + 0.5) * CELL - x;
+        const dz = (iz + 0.5) * CELL - z;
+        if (dx * dx + dz * dz > fogR * fogR && !(cone && inLightCone(dx, dz, cone))) continue;
+        const kind = flatCells.get(ix + "," + iz);
+        if (!kind) continue;
+        const sx = cx + (ix * CELL - x) * zoom;
+        const sy = cy + (iz * CELL - z) * zoom;
+        const edge = 3;
+        ctx.fillStyle = "#3a4048";
+        ctx.fillRect(sx, sy, cellPx, cellPx);
+        ctx.fillStyle = "#b0b8be";
+        ctx.fillRect(sx + edge, sy + edge, cellPx - edge * 2, cellPx - edge * 2);
+      }
+    }
+    }
+    if (!inLobby && cone) {
+      const tip = cone.reach * zoom;
+      const aimx = cx + Math.cos(cone.ang) * tip;
+      const aimy = cy + Math.sin(cone.ang) * tip;
+      const wash = ctx.createLinearGradient(cx, cy, aimx, aimy);
+      wash.addColorStop(0, "rgba(255,236,180,0.05)");
+      wash.addColorStop(1, "rgba(255,214,120,0.2)");
+      ctx.fillStyle = wash;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx + Math.cos(cone.ang - cone.half) * tip, cy + Math.sin(cone.ang - cone.half) * tip);
+      ctx.lineTo(cx + Math.cos(cone.ang + cone.half) * tip, cy + Math.sin(cone.ang + cone.half) * tip);
+      ctx.closePath();
+      ctx.fill();
+    }
+    for (let i = 0; i < zombies.length; i += 1) {
+      const zombie = zombies[i];
+      if ((!zombie.purple && !(zombie.custom && zombie.cone)) || !(zombie.eye > 0.02) || !huntsPlayer(zombie.x, zombie.z)) continue;
+      const beam = purpleBeam(zombie);
+      const zx = cx + (zombie.x - x) * zoom;
+      const zy = cy + (zombie.z - z) * zoom;
+      const tip = beam.reach * zoom;
+      const aimx = zx + Math.cos(beam.ang) * tip;
+      const aimy = zy + Math.sin(beam.ang) * tip;
+      const fade = zombie.eye;
+      const red = ctx.createLinearGradient(zx, zy, aimx, aimy);
+      red.addColorStop(0, "rgba(255,48,48," + (0.42 * fade) + ")");
+      red.addColorStop(1, "rgba(160,0,0," + (0.05 * fade) + ")");
+      ctx.fillStyle = red;
+      ctx.beginPath();
+      ctx.moveTo(zx, zy);
+      ctx.lineTo(zx + Math.cos(beam.ang - beam.half) * tip, zy + Math.sin(beam.ang - beam.half) * tip);
+      ctx.lineTo(zx + Math.cos(beam.ang + beam.half) * tip, zy + Math.sin(beam.ang + beam.half) * tip);
+      ctx.closePath();
+      ctx.fill();
+    }
+    function flatSeg(ax, az, bx, bz, thick, color, joint) {
+      const asx = cx + (ax - x) * zoom;
+      const asy = cy + (az - z) * zoom;
+      const bsx = cx + (bx - x) * zoom;
+      const bsy = cy + (bz - z) * zoom;
+      const ang = Math.atan2(bsy - asy, bsx - asx);
+      const len = Math.hypot(bsx - asx, bsy - asy);
+      ctx.save();
+      ctx.translate(asx, asy);
+      ctx.rotate(ang);
+      ctx.fillStyle = color || "#4e7a3c";
+      ctx.fillRect(0, -thick * 0.5, len, thick);
+      ctx.beginPath();
+      ctx.arc(0, 0, thick * 0.55, 0, Math.PI * 2);
+      ctx.arc(len, 0, thick * 0.55, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+    const limb = 1.7 * zoom;
+    const upper = spawnBallR * 1.15;
+    const fore = spawnBallR * 1.05;
+    for (let i = 0; i < zombies.length; i += 1) {
+      const zombie = zombies[i];
+      const zx = cx + (zombie.x - x) * zoom;
+      const zy = cy + (zombie.z - z) * zoom;
+      if (zombie.black || zombie.custom) continue;
+      ctx.fillStyle = zombie.purple ? "#6d28b0" : zombie.red ? "#c41e1e" : zombie.blue ? "#2a5bd7" : "#3f6b32";
+      ctx.beginPath();
+      ctx.arc(zx, zy, spawnBallR * zoom, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = "#dc2424";
+    ctx.beginPath();
+    ctx.arc(cx, cy, spawnBallR * zoom, 0, Math.PI * 2);
+    ctx.fill();
+    for (let i = 0; i < zombies.length; i += 1) {
+      const zombie = zombies[i];
+      if (zombie.blue || zombie.black || zombie.red || zombie.custom) continue;
+      const gfx = Math.cos(zombie.face);
+      const gfz = Math.sin(zombie.face);
+      const grx = -gfz;
+      const grz = gfx;
+      for (let s = 0; s < 2; s += 1) {
+        const side = s === 0 ? -1 : 1;
+        const sx0 = zombie.x + grx * spawnBallR * side;
+        const sz0 = zombie.z + grz * spawnBallR * side;
+        const hand = zombie.hands[s];
+        const arm = stretchyLimb(sx0, sz0, hand.x, hand.z, upper, fore, side);
+        const armColor = zombie.purple ? "#541c8c" : "#4e7a3c";
+        flatSeg(sx0, sz0, arm.ex, arm.ez, limb, armColor);
+        flatSeg(arm.ex, arm.ez, arm.hx, arm.hz, limb, armColor);
+      }
+    }
+    for (let i = 0; i < zombies.length; i += 1) {
+      const zombie = zombies[i];
+      if (!zombie.custom) continue;
+      drawCustomZombie(ctx, zombie, function (wx, wz) {
+        return { x: cx + (wx - x) * zoom, y: cy + (wz - z) * zoom };
+      }, zoom, x, z);
+    }
+    for (let i = 0; i < zombies.length; i += 1) {
+      const zombie = zombies[i];
+      if (!zombie.purple) continue;
+      const zx = cx + (zombie.x - x) * zoom;
+      const zy = cy + (zombie.z - z) * zoom;
+      const dx = x - zombie.x;
+      const dz = z - zombie.z;
+      const open = zombie.eye == null ? 1 : zombie.eye;
+      const seen = huntsPlayer(zombie.x, zombie.z);
+      const eyeR = spawnBallR * 0.8;
+      const pupilR = eyeR * 0.42;
+      const look = (eyeR - pupilR) * zoom;
+      const aim = zombie.look == null ? Math.atan2(dz, dx) : zombie.look;
+      ctx.save();
+      ctx.translate(zx, zy);
+      ctx.scale(1, 0.07 + 0.93 * open);
+      ctx.fillStyle = "#f0d23a";
+      ctx.beginPath();
+      ctx.arc(0, 0, eyeR * zoom, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = open;
+      ctx.fillStyle = "#111";
+      ctx.beginPath();
+      ctx.arc(seen ? Math.cos(aim) * look : 0, seen ? Math.sin(aim) * look : 0, pupilR * zoom, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+    for (let i = 0; i < zombies.length; i += 1) {
+      const zombie = zombies[i];
+      if (!zombie.red) continue;
+      for (let h = 0; h < 4; h += 1) {
+        const sh = redShoulder(zombie, h);
+        const hand = zombie.hands[h];
+        const arm = stretchyLimb(sh.x, sh.z, hand.x, hand.z, upper, fore, sh.bend);
+        flatSeg(sh.x, sh.z, arm.ex, arm.ez, limb, "#9e1818");
+        flatSeg(arm.ex, arm.ez, arm.hx, arm.hz, limb, "#9e1818");
+      }
+    }
+    const fx = Math.cos(armFace);
+    const fz = Math.sin(armFace);
+    const rx = -fz;
+    const rz = fx;
+    for (let s = 0; s < 2; s += 1) {
+      const side = s === 0 ? -1 : 1;
+      const sx0 = x + rx * spawnBallR * side;
+      const sz0 = z + rz * spawnBallR * side;
+      const hand = handPos[s];
+      const kind = gearOf(side);
+      const armed = meleeKind(kind);
+      const phase = side < 0 ? stickPhase : fistPhase;
+      const rag = side < 0 ? swordRag : swordRagRight;
+      const limp = armed && phase === 0 && !parrying && rag.ready;
+      const arm = armed
+        ? (limp
+          ? { ex: rag.ex, ez: rag.ez, hx: rag.hx, hz: rag.hz }
+          : swordArm(sx0, sz0, hand.x, hand.z, armFace))
+        : stretchyLimb(sx0, sz0, hand.x, hand.z, upper, fore, side);
+      flatSeg(sx0, sz0, arm.ex, arm.ez, limb, "#b42323", "#7a1414");
+      flatSeg(arm.ex, arm.ez, arm.hx, arm.hz, limb, "#b42323", "#7a1414");
+      if (armed) {
+      const bdx = arm.hx - arm.ex;
+      const bdz = arm.hz - arm.ez;
+      const blen = Math.hypot(bdx, bdz) || 1;
+      const look = bladeLook(kind);
+      const tipX = arm.hx + (bdx / blen) * look.len;
+      const tipZ = arm.hz + (bdz / blen) * look.len;
+      const asx = cx + (arm.hx - x) * zoom;
+      const asy = cy + (arm.hz - z) * zoom;
+      const bsx = cx + (tipX - x) * zoom;
+      const bsy = cy + (tipZ - z) * zoom;
+      ctx.save();
+      ctx.translate(asx, asy);
+      ctx.rotate(Math.atan2(bsy - asy, bsx - asx));
+      ctx.fillStyle = look.color;
+      const thick = limb * look.thick;
+      ctx.fillRect(0, -thick * 0.5, Math.hypot(bsx - asx, bsy - asy), thick);
+      ctx.restore();
+      }
+      if (side !== lightSide() || lightSide() === 0) continue;
+      const ldx = arm.hx - arm.ex;
+      const ldz = arm.hz - arm.ez;
+      const llen = Math.hypot(ldx, ldz) || 1;
+      const ux = ldx / llen;
+      const uz = ldz / llen;
+      const tailX = arm.hx - ux * spawnBallR * 0.2;
+      const tailZ = arm.hz - uz * spawnBallR * 0.2;
+      const headX = arm.hx + ux * spawnBallR * 1.35;
+      const headZ = arm.hz + uz * spawnBallR * 1.35;
+      const tsx = cx + (tailX - x) * zoom;
+      const tsy = cy + (tailZ - z) * zoom;
+      const hsx = cx + (headX - x) * zoom;
+      const hsy = cy + (headZ - z) * zoom;
+      const lang = Math.atan2(hsy - tsy, hsx - tsx);
+      const flashLen = Math.hypot(hsx - tsx, hsy - tsy);
+      const thick = limb * 0.9;
+      ctx.save();
+      ctx.translate(tsx, tsy);
+      ctx.rotate(lang);
+      if (gearOf(side) === "bright") {
+        const bodyH = thick * 1.7;
+        ctx.fillStyle = "#141418";
+        ctx.fillRect(flashLen * 0.34, -bodyH * 0.38, flashLen * 0.64, bodyH * 0.76);
+        ctx.fillRect(flashLen * 0.46, -bodyH * 0.38 - thick * 0.85, flashLen * 0.3, thick * 0.85);
+        ctx.fillStyle = "#2c2c30";
+        ctx.fillRect(flashLen * 0.54, -bodyH * 0.38 - thick * 0.55, flashLen * 0.14, thick * 0.24);
+        ctx.fillStyle = "#111";
+        ctx.beginPath();
+        ctx.arc(flashLen * 0.34, 0, bodyH * 0.58, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = lightOn ? "#c5ccd2" : "#3a3a3e";
+        ctx.beginPath();
+        ctx.arc(flashLen * 0.34, 0, bodyH * 0.42, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = lightOn ? "#f7f7f2" : "#2a2a2e";
+        ctx.beginPath();
+        ctx.arc(flashLen * 0.3, 0, bodyH * 0.2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#d4b15e";
+        ctx.fillRect(flashLen * 0.52, -bodyH * 0.14, flashLen * 0.22, bodyH * 0.26);
+      } else {
+      ctx.fillStyle = "#c8c8cc";
+      ctx.fillRect(0, -thick * 0.42, flashLen * 0.7, thick * 0.84);
+      ctx.fillStyle = "#2a2a2e";
+      ctx.fillRect(flashLen * 0.52, -thick * 0.55, flashLen * 0.2, thick * 1.1);
+      ctx.fillStyle = lightOn ? "#eeeef2" : "#5c5c60";
+      ctx.fillRect(flashLen * 0.7, -thick * 0.48, flashLen * 0.14, thick * 0.96);
+      ctx.fillStyle = lightOn ? "#fff6d0" : "#4a4a4e";
+      ctx.beginPath();
+      ctx.arc(flashLen * 0.9, 0, thick * 0.72, 0, Math.PI * 2);
+      ctx.fill();
+      if (lightOn) {
+      ctx.fillStyle = "#fff";
+      ctx.beginPath();
+      ctx.arc(flashLen * 0.9, 0, thick * 0.32, 0, Math.PI * 2);
+      ctx.fill();
+      }
+      }
+      ctx.restore();
+      if (!lightOn) continue;
+      let gx = hsx;
+      let gy = hsy;
+      let glowR = thick * 2.8;
+      if (gearOf(side) === "bright") {
+        gx = tsx + Math.cos(lang) * flashLen * 0.34;
+        gy = tsy + Math.sin(lang) * flashLen * 0.34;
+        glowR = thick * 3.6;
+      }
+      const glow = ctx.createRadialGradient(gx, gy, thick * 0.2, gx, gy, glowR);
+      glow.addColorStop(0, "rgba(255,246,214,0.95)");
+      glow.addColorStop(0.4, "rgba(255,214,120,0.28)");
+      glow.addColorStop(1, "rgba(255,214,120,0)");
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(gx, gy, glowR, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    for (let i = 0; i < zombies.length; i += 1) {
+      const zombie = zombies[i];
+      if (!zombie.blue) continue;
+      const zfx = Math.cos(zombie.face);
+      const zfz = Math.sin(zombie.face);
+      const zrx = -zfz;
+      const zrz = zfx;
+      for (let s = 0; s < 2; s += 1) {
+        const side = s === 0 ? -1 : 1;
+        const sx0 = zombie.x + zrx * spawnBallR * side;
+        const sz0 = zombie.z + zrz * spawnBallR * side;
+        const hand = zombie.hands[s];
+        const limp = side === 1 && zombie.phase === 0 && !zombie.parrying && zombie.rag && zombie.rag.ready;
+        const arm = side === 1
+          ? (limp
+            ? { ex: zombie.rag.ex, ez: zombie.rag.ez, hx: zombie.rag.hx, hz: zombie.rag.hz }
+            : swordArm(sx0, sz0, hand.x, hand.z, zombie.face))
+          : stretchyLimb(sx0, sz0, hand.x, hand.z, upper, fore, side);
+        flatSeg(sx0, sz0, arm.ex, arm.ez, limb, "#2450c0");
+        flatSeg(arm.ex, arm.ez, arm.hx, arm.hz, limb, "#2450c0");
+        if (side !== 1) continue;
+        const bdx = arm.hx - arm.ex;
+        const bdz = arm.hz - arm.ez;
+        const blen = Math.hypot(bdx, bdz) || 1;
+        const tipX = arm.hx + (bdx / blen) * spawnBallR * 2.4;
+        const tipZ = arm.hz + (bdz / blen) * spawnBallR * 2.4;
+        const asx = cx + (arm.hx - x) * zoom;
+        const asy = cy + (arm.hz - z) * zoom;
+        const bsx = cx + (tipX - x) * zoom;
+        const bsy = cy + (tipZ - z) * zoom;
+        ctx.save();
+        ctx.translate(asx, asy);
+        ctx.rotate(Math.atan2(bsy - asy, bsx - asx));
+        ctx.fillStyle = "#111";
+        ctx.fillRect(0, -limb * 0.28, Math.hypot(bsx - asx, bsy - asy), limb * 0.56);
+        ctx.restore();
+      }
+    }
+    const blackLimb = "#2a2a30";
+    for (let i = 0; i < zombies.length; i += 1) {
+      const zombie = zombies[i];
+      if (!zombie.black) continue;
+      for (let h = 0; h < 6; h += 1) {
+        const sh = blackShoulder(zombie, h);
+        const hand = zombie.hands[h];
+        if (sh.bones === 3) {
+          const arm = limb3(sh.x, sh.z, hand.x, hand.z, upper, fore, fore, sh.bend);
+          flatSeg(sh.x, sh.z, arm.j1x, arm.j1z, limb, blackLimb);
+          flatSeg(arm.j1x, arm.j1z, arm.j2x, arm.j2z, limb, blackLimb);
+          flatSeg(arm.j2x, arm.j2z, arm.hx, arm.hz, limb, blackLimb);
+        } else {
+          const arm = stretchyLimb(sh.x, sh.z, hand.x, hand.z, upper, fore, sh.bend);
+          flatSeg(sh.x, sh.z, arm.ex, arm.ez, limb, blackLimb);
+          flatSeg(arm.ex, arm.ez, arm.hx, arm.hz, limb, blackLimb);
+        }
+      }
+      const zx = cx + (zombie.x - x) * zoom;
+      const zy = cy + (zombie.z - z) * zoom;
+      ctx.fillStyle = "#111";
+      ctx.beginPath();
+      ctx.arc(zx, zy, spawnBallR * zoom, 0, Math.PI * 2);
+      ctx.fill();
+      const dx = x - zombie.x;
+      const dz = z - zombie.z;
+      const len = Math.hypot(dx, dz) || 1;
+      const eyeR = spawnBallR * 0.8;
+      const pupilR = eyeR * 0.42;
+      const look = eyeR - pupilR;
+      ctx.fillStyle = "#f4f4f6";
+      ctx.beginPath();
+      ctx.arc(zx, zy, eyeR * zoom, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#111";
+      ctx.beginPath();
+      ctx.arc(zx + (dx / len) * look * zoom, zy + (dz / len) * look * zoom, pupilR * zoom, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    for (let i = 0; i < zombies.length; i += 1) {
+      const zombie = zombies[i];
+      if (zombie.hp >= zombie.hpMax) continue;
+      const zx = cx + (zombie.x - x) * zoom;
+      const zy = cy + (zombie.z - z) * zoom;
+      const bw = spawnBallR * 2 * zoom;
+      const bh = 7;
+      const bx = zx - bw * 0.5;
+      const by = zy - spawnBallR * zoom - 16;
+      ctx.fillStyle = "#1a1a1a";
+      ctx.fillRect(bx - 2, by - 2, bw + 4, bh + 4);
+      ctx.fillStyle = "#d23a3a";
+      ctx.fillRect(bx, by, bw * Math.max(0, zombie.hp) / zombie.hpMax, bh);
+    }
+    function drawParryAura(wx, wz, glow, heat) {
+      if (glow <= 0) return;
+      const t = heat || 0;
+      const mix = (a, b) => Math.round(a + (b - a) * t);
+      const rgba = (ar, ag, ab, br, bg, bb, alpha) => {
+        return "rgba(" + mix(ar, br) + "," + mix(ag, bg) + "," + mix(ab, bb) + "," + alpha + ")";
+      };
+      const sx = cx + (wx - x) * zoom;
+      const sy = cy + (wz - z) * zoom;
+      const inner = spawnBallR * 0.85 * zoom;
+      const outer = spawnBallR * 2.55 * zoom;
+      const aura = ctx.createRadialGradient(sx, sy, inner, sx, sy, outer);
+      aura.addColorStop(0, rgba(120, 255, 220, 255, 70, 60, 0));
+      aura.addColorStop(0.42, rgba(70, 230, 190, 220, 40, 35, 0.12 * glow));
+      aura.addColorStop(0.78, rgba(40, 210, 175, 180, 20, 20, 0.42 * glow));
+      aura.addColorStop(1, rgba(190, 255, 235, 255, 150, 130, 0.92 * glow));
+      ctx.fillStyle = aura;
+      ctx.beginPath();
+      ctx.arc(sx, sy, outer, 0, Math.PI * 2);
+      ctx.fill();
+      const spin = performance.now() * 0.003;
+      for (let i = 0; i < 22; i += 1) {
+        const edge = 0.72 + (i % 6) * 0.045;
+        const ang = spin + i * 2.399;
+        const rad = outer * edge;
+        const tw = 0.35 + 0.65 * Math.abs(Math.sin(spin * 4 + i * 1.7));
+        ctx.fillStyle = rgba(220, 255, 245, 255, 190, 170, glow * tw * edge);
+        ctx.fillRect(sx + Math.cos(ang) * rad, sy + Math.sin(ang) * rad, 3, 3);
+      }
+    }
+    function drawHitRim(wx, wz, glow) {
+      if (!(glow > 0)) return;
+      const sx = cx + (wx - x) * zoom;
+      const sy = cy + (wz - z) * zoom;
+      const rim = spawnBallR * zoom;
+      const edge = ctx.createRadialGradient(sx, sy, rim * 0.62, sx, sy, rim * 1.55);
+      edge.addColorStop(0, "rgba(150, 40, 255, 0)");
+      edge.addColorStop(0.58, "rgba(168, 60, 255, " + (0.2 * glow) + ")");
+      edge.addColorStop(0.78, "rgba(186, 70, 255, " + (0.95 * glow) + ")");
+      edge.addColorStop(1, "rgba(210, 150, 255, 0)");
+      ctx.fillStyle = edge;
+      ctx.beginPath();
+      ctx.arc(sx, sy, rim * 1.55, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    if (hitGlow > 0) drawHitRim(x, z, 1);
+    for (let i = 0; i < zombies.length; i += 1) {
+      const zombie = zombies[i];
+      if (zombie.hitGlow > 0) drawHitRim(zombie.x, zombie.z, 1);
+    }
+    if (parryGlow > 0) drawParryAura(x, z, parryGlow, parryHeat);
+    for (let i = 0; i < zombies.length; i += 1) {
+      const zombie = zombies[i];
+      if (!(zombie.blue || (zombie.custom && zombie.guard)) || !(zombie.parryGlow > 0)) continue;
+      drawParryAura(zombie.x, zombie.z, zombie.parryGlow, zombie.parryHeat || 0);
+    }
+    for (let i = 0; i < parryRings.length; i += 1) {
+      const ring = parryRings[i];
+      const u = ring.t / 0.5;
+      const sx = cx + (ring.x - x) * zoom;
+      const sy = cy + (ring.z - z) * zoom;
+      ctx.beginPath();
+      ctx.arc(sx, sy, (spawnBallR * (1.1 + u * 3.2)) * zoom, 0, Math.PI * 2);
+      ctx.strokeStyle = "rgba(255,255,255," + (1 - u) + ")";
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    }
+    ctx.restore();
+    if (!inLobby) {
+    const fog = ctx.createRadialGradient(cx, cy, fogRpx * 0.15, cx, cy, fogRpx);
+    fog.addColorStop(0, "rgba(0,0,0,0)");
+    fog.addColorStop(0.5, "rgba(0,0,0,0.12)");
+    fog.addColorStop(0.78, "rgba(0,0,0,0.62)");
+    fog.addColorStop(1, "rgba(0,0,0,1)");
+    ctx.fillStyle = fog;
+    ctx.beginPath();
+    if (cone) {
+      ctx.moveTo(cx, cy);
+      ctx.arc(cx, cy, fogRpx, cone.ang + cone.half, cone.ang - cone.half + Math.PI * 2);
+      ctx.closePath();
+    } else {
+      ctx.arc(cx, cy, fogRpx, 0, Math.PI * 2);
+    }
+    ctx.fill();
+    }
+    if (purpleGlow > 0.02) {
+      const edge = Math.hypot(viewW, viewH) * 0.5;
+      const vig = ctx.createRadialGradient(cx, cy, edge * 0.35, cx, cy, edge);
+      vig.addColorStop(0, "rgba(170,0,0,0)");
+      vig.addColorStop(0.62, "rgba(160,0,0,0)");
+      vig.addColorStop(1, "rgba(190,18,18," + purpleGlow + ")");
+      ctx.fillStyle = vig;
+      ctx.fillRect(0, 0, viewW, viewH);
+    }
+    if (fade > 0.001) {
+      ctx.fillStyle = "rgba(0,0,0," + Math.max(0, Math.min(1, fade)) + ")";
+      ctx.fillRect(0, 0, viewW, viewH);
+    }
+    if (lobbyCountEl) {
+      if (inLobby && lobbyWait > 0 && fadeDir === 0) {
+        const wx = lobbyX0 + 8.5 * CELL;
+        const wz = lobbyZ0 + 3.5 * CELL;
+        lobbyCountEl.hidden = false;
+        lobbyCountEl.textContent = String(Math.ceil(3 - lobbyWait));
+        lobbyCountEl.style.left = (cx + (wx - x) * zoom) + "px";
+        lobbyCountEl.style.top = (cy + (wz - z) * zoom) + "px";
+      } else lobbyCountEl.hidden = true;
+    }
+  }
   function loop(now) {
     requestAnimationFrame(loop);
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
+    if (flat2D) {
+      if (document.pointerLockElement === canvas) document.exitPointerLock();
+      stepFlat(dt);
+      drawFlat();
+      if (clockEl) clockEl.textContent = String(Math.ceil(Math.max(0, roundLeft)));
+      stepLoot(dt);
+      barStep();
+      return;
+    }
     dying = false;
     if (downTime > 0) {
       downTime -= dt;
