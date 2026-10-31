@@ -2015,13 +2015,17 @@
     for (let i = 0; i < mapBoxes.length; i += 1) {
       const m = mapBoxes[i];
       if (m[6] === 5 || m[6] === 7) continue;
-      if (x < m[0] - pad || x > m[3] + pad || y1 < m[1] || y0 > m[4] || z < m[2] - pad || z > m[5] + pad) continue;
-      const left = x - (m[0] - pad);
-      const right = (m[3] + pad) - x;
+      const bx0 = m[6] === 4 ? m[0] + blockInset : m[0];
+      const bx1 = m[6] === 4 ? m[3] - blockInset : m[3];
+      const bz0 = m[6] === 4 ? m[2] + blockInset : m[2];
+      const bz1 = m[6] === 4 ? m[5] - blockInset : m[5];
+      if (x < bx0 - pad || x > bx1 + pad || y1 < m[1] || y0 > m[4] || z < bz0 - pad || z > bz1 + pad) continue;
+      const left = x - (bx0 - pad);
+      const right = (bx1 + pad) - x;
       const below = y1 - m[1];
       const above = m[4] - y0;
-      const near = z - (m[2] - pad);
-      const far = (m[5] + pad) - z;
+      const near = z - (bz0 - pad);
+      const far = (bz1 + pad) - z;
       const min = Math.min(left, right, below, above, near, far);
       if (min === above) {
         y = m[4] + spawnBallR;
@@ -2031,22 +2035,29 @@
         y = m[1] - (y1 - y);
         if (vy > 0) vy = 0;
       } else if (min === left) {
-        x = m[0] - pad;
+        x = bx0 - pad;
         if (vx > 0) vx = 0;
       } else if (min === right) {
-        x = m[3] + pad;
+        x = bx1 + pad;
         if (vx < 0) vx = 0;
       } else if (min === near) {
-        z = m[2] - pad;
+        z = bz0 - pad;
         if (vz > 0) vz = 0;
     } else {
-        z = m[5] + pad;
+        z = bz1 + pad;
         if (vz < 0) vz = 0;
       }
     }
   }
 
   const CELL = 8;
+  const blockInset = 1.25;
+  function blockX0(origin, i) {
+    return origin + i * CELL + blockInset;
+  }
+  function blockX1(origin, i) {
+    return origin + (i + 1) * CELL - blockInset;
+  }
   const VW = 16;
   const VH = 16;
   const VD = 16;
@@ -2070,12 +2081,22 @@
   const lavaY = mapGroundY0 - CELL;
   const lavaZ = plateZ1;
   const lavaMid = 14;
+  const lavaCx = lavaX + 15 * CELL;
+  const lavaCz = lavaZ + 15 * CELL;
+  const lavaOuter = 14.5 * CELL;
+  const lavaInner = lavaOuter - CELL;
+  function lavaInside(ix, iz) {
+    const dx = lavaX + (ix + 0.5) * CELL - lavaCx;
+    const dz = lavaZ + (iz + 0.5) * CELL - lavaCz;
+    return dx * dx + dz * dz <= lavaInner * lavaInner;
+  }
   const lavaGrid = new Uint8Array(LAVA_N * LAVA_H * LAVA_N);
   const lavaRgb = [[176, 184, 190], [255, 78, 18]];
   let lavaLevel = 1;
   let lavaClock = 0;
+  const lavaRiseSec = 8;
   function lavaSheetY() {
-    return lavaY + (lavaLevel - 1 + lavaClock / 6) * CELL;
+    return lavaY + (lavaLevel - 1 + lavaClock / lavaRiseSec) * CELL;
   }
   function lavaAt(ix, iy, iz) {
     if (ix < 0 || iy < 0 || iz < 0 || ix >= LAVA_N || iy >= LAVA_H || iz >= LAVA_N) return 0;
@@ -2088,6 +2109,7 @@
   for (let iz = 0; iz < LAVA_N; iz += 1) {
     for (let ix = 0; ix < LAVA_N; ix += 1) {
       if (ix === lavaMid && iz === lavaMid) continue;
+      if (!lavaInside(ix, iz)) continue;
       setLava(ix, 0, iz, 2);
     }
   }
@@ -2103,6 +2125,7 @@
     for (let iz = 0; iz < LAVA_N; iz += 1) {
       for (let ix = 0; ix < LAVA_N; ix += 1) {
         if (lavaAt(ix, iy, iz)) continue;
+        if (!lavaInside(ix, iz)) continue;
         setLava(ix, iy, iz, 2);
       }
     }
@@ -2674,6 +2697,50 @@
     });
   }
 
+  function ringHit(ox, oy, oz, dx, dy, dz, far) {
+    const y0 = lavaSheetY();
+    const y1 = y0 + CELL;
+    let best = far || 360;
+    let hit = false;
+    if (Math.abs(dy) > 1e-8) {
+      const caps = [y0, y1];
+      for (let i = 0; i < caps.length; i += 1) {
+        const t = (caps[i] - oy) / dy;
+        if (t <= 0.05 || t >= best) continue;
+        const hx = ox + dx * t - lavaCx;
+        const hz = oz + dz * t - lavaCz;
+        const d2 = hx * hx + hz * hz;
+        if (d2 <= lavaOuter * lavaOuter && d2 >= lavaInner * lavaInner) {
+          best = t;
+          hit = true;
+        }
+      }
+    }
+    const a = dx * dx + dz * dz;
+    if (a > 1e-8) {
+      const px = ox - lavaCx;
+      const pz = oz - lavaCz;
+      const b = 2 * (px * dx + pz * dz);
+      const radii = [lavaOuter, lavaInner];
+      for (let i = 0; i < radii.length; i += 1) {
+        const c = px * px + pz * pz - radii[i] * radii[i];
+        const disc = b * b - 4 * a * c;
+        if (disc < 0) continue;
+        const s = Math.sqrt(disc);
+        const ts = [(-b - s) / (2 * a), (-b + s) / (2 * a)];
+        for (let k = 0; k < ts.length; k += 1) {
+          const t = ts[k];
+          if (t <= 0.05 || t >= best) continue;
+          const hy = oy + dy * t;
+          if (hy < y0 || hy > y1) continue;
+          best = t;
+          hit = true;
+        }
+      }
+    }
+    return hit ? { t: best } : null;
+  }
+
   function pillarHit(ox, oy, oz, dx, dy, dz, far) {
     return gridHit(ox, oy, oz, dx, dy, dz, far, lavaX + lavaMid * CELL, lavaY, lavaZ + lavaMid * CELL, 1, PILLAR, 1, function (ix, iy) {
       return lavaAt(lavaMid, iy, lavaMid) === 1 ? 1 : 0;
@@ -2768,12 +2835,12 @@
       for (let iz = iz0; iz <= iz1; iz += 1) {
         for (let ix = ix0; ix <= ix1; ix += 1) {
           if (!voxAt(ix, iy, iz)) continue;
-          const a0 = voxX + ix * CELL;
-          const a1 = a0 + CELL;
+          const a0 = blockX0(voxX, ix);
+          const a1 = blockX1(voxX, ix);
           const b0 = voxY + iy * CELL;
           const b1 = b0 + CELL;
-          const c0 = voxZ + iz * CELL;
-          const c1 = c0 + CELL;
+          const c0 = blockX0(voxZ, iz);
+          const c1 = blockX1(voxZ, iz);
           if (px > a0 - pad && px < a1 + pad && y1 > b0 && y0 < b1 && pz > c0 - pad && pz < c1 + pad) return true;
         }
       }
@@ -2804,11 +2871,11 @@
           if (at(ix, iy, iz) !== 1) continue;
           const b1 = oy + (iy + 1) * CELL;
           if (side && b1 <= feet + 0.4) continue;
-          const a0 = ox + ix * CELL;
-          const a1 = a0 + CELL;
+          const a0 = blockX0(ox, ix);
+          const a1 = blockX1(ox, ix);
           const b0 = oy + iy * CELL;
-          const c0 = oz + iz * CELL;
-          const c1 = c0 + CELL;
+          const c0 = blockX0(oz, iz);
+          const c1 = blockX1(oz, iz);
           if (px > a0 - pad && px < a1 + pad && y1 > b0 && y0 < b1 && pz > c0 - pad && pz < c1 + pad) return true;
         }
       }
@@ -2824,6 +2891,7 @@
     const y0 = bodyY0(py);
     const y1 = bodyY1(py);
     if (y1 <= b0 || y0 >= b1) return false;
+    if (Math.hypot(px - lavaCx, pz - lavaCz) - pad > lavaInner) return false;
     const ix0 = Math.floor((px - pad - lavaX) / CELL);
     const ix1 = Math.floor((px + pad - lavaX) / CELL);
     const iz0 = Math.floor((pz - pad - lavaZ) / CELL);
@@ -2858,11 +2926,11 @@
           if (!voxAt(ix, iy, iz)) continue;
           const b1 = voxY + (iy + 1) * CELL;
           if (b1 <= feet + 0.4) continue;
-          const a0 = voxX + ix * CELL;
-          const a1 = a0 + CELL;
+          const a0 = blockX0(voxX, ix);
+          const a1 = blockX1(voxX, ix);
           const b0 = voxY + iy * CELL;
-          const c0 = voxZ + iz * CELL;
-          const c1 = c0 + CELL;
+          const c0 = blockX0(voxZ, iz);
+          const c1 = blockX1(voxZ, iz);
           if (px > a0 - pad && px < a1 + pad && y1 > b0 && y0 < b1 && pz > c0 - pad && pz < c1 + pad) return true;
         }
       }
@@ -2936,9 +3004,38 @@
     x = cx;
     y = cy;
     z = cz;
+    separateRing();
     moveX = x;
     moveY = y;
     moveZ = z;
+  }
+
+  function separateRing() {
+    const b0 = lavaSheetY();
+    const b1 = b0 + CELL;
+    const y0 = bodyY0(y);
+    const y1 = bodyY1(y);
+    if (y1 <= b0 || y0 >= b1) return;
+    const dx = x - lavaCx;
+    const dz = z - lavaCz;
+    const dist = Math.hypot(dx, dz);
+    const pad = spawnBallR;
+    if (dist + pad <= lavaInner || dist - pad >= lavaOuter) return;
+    const nx = dist > 1e-4 ? dx / dist : 1;
+    const nz = dist > 1e-4 ? dz / dist : 0;
+    const fromOut = dist >= (lavaInner + lavaOuter) * 0.5;
+    if (fromOut) {
+      x = lavaCx + nx * (lavaOuter + pad);
+      z = lavaCz + nz * (lavaOuter + pad);
+    } else {
+      x = lavaCx + nx * (lavaInner - pad);
+      z = lavaCz + nz * (lavaInner - pad);
+    }
+    const vn = vx * nx + vz * nz;
+    if ((fromOut && vn < 0) || (!fromOut && vn > 0)) {
+      vx -= vn * nx;
+      vz -= vn * nz;
+    }
   }
 
   function collideMap() {
@@ -3681,6 +3778,7 @@
       for (let ix = ix0; ix <= ix1; ix += 1) {
         for (let iy = VH - 1; iy >= 0; iy -= 1) {
           if (!voxAt(ix, iy, iz)) continue;
+          if (px + spawnBallR <= blockX0(voxX, ix) || px - spawnBallR >= blockX1(voxX, ix) || pz + spawnBallR <= blockX0(voxZ, iz) || pz - spawnBallR >= blockX1(voxZ, iz)) break;
           const top = voxY + (iy + 1) * CELL;
           if (top > limit) continue;
           if (top > stand) stand = top;
@@ -3696,6 +3794,7 @@
       for (let ix = lax0; ix <= lax1; ix += 1) {
         for (let iy = LAVA_H - 1; iy >= 0; iy -= 1) {
           if (lavaAt(ix, iy, iz) !== 1) continue;
+          if (px + spawnBallR <= blockX0(lavaX, ix) || px - spawnBallR >= blockX1(lavaX, ix) || pz + spawnBallR <= blockX0(lavaZ, iz) || pz - spawnBallR >= blockX1(lavaZ, iz)) break;
           const top = lavaY + (iy + 1) * CELL;
           if (top > limit) continue;
           if (top > stand) stand = top;
@@ -3705,9 +3804,20 @@
     }
     for (let i = 0; i < mapBoxes.length; i += 1) {
       const m = mapBoxes[i];
-      if (px + spawnBallR <= m[0] || px - spawnBallR >= m[3] || pz + spawnBallR <= m[2] || pz - spawnBallR >= m[5]) continue;
+      const bx0 = m[6] === 4 ? m[0] + blockInset : m[0];
+      const bx1 = m[6] === 4 ? m[3] - blockInset : m[3];
+      const bz0 = m[6] === 4 ? m[2] + blockInset : m[2];
+      const bz1 = m[6] === 4 ? m[5] - blockInset : m[5];
+      if (px + spawnBallR <= bx0 || px - spawnBallR >= bx1 || pz + spawnBallR <= bz0 || pz - spawnBallR >= bz1) continue;
       if (m[4] > limit) continue;
       if (m[4] > stand) stand = m[4];
+    }
+    const ringTop = lavaSheetY() + CELL;
+    if (ringTop <= limit) {
+      const dx = px - lavaCx;
+      const dz = pz - lavaCz;
+      const dist = Math.hypot(dx, dz);
+      if (dist + spawnBallR > lavaInner && dist - spawnBallR < lavaOuter && ringTop > stand) stand = ringTop;
     }
     return stand;
   }
@@ -4287,8 +4397,8 @@
     }
     if (overSheet(lavaX, lavaZ) && lavaLevel < LAVA_H) {
       lavaClock += dt;
-      if (lavaClock >= 6) {
-        lavaClock -= 6;
+      if (lavaClock >= lavaRiseSec) {
+        lavaClock -= lavaRiseSec;
         riseLava();
       }
     }
@@ -4803,14 +4913,23 @@
           }
         }
         if (lavaBox && sx >= lavaBox.x0 && sx <= lavaBox.x1 && sy >= lavaBox.y0 && sy <= lavaBox.y1) {
+          const rh = ringHit(camX, camY, camZ, dx, dy, dz, best);
+          if (rh && rh.t < best) {
+            best = rh.t;
+            r = 0;
+            g = 0;
+            b = 0;
+          }
           const lh = lavaHit(camX, camY, camZ, dx, dy, dz, best);
           if (lh && lh.t < best) {
-            best = lh.t;
-            const tint = lavaRgb[lh.id - 1];
-            const shade = mineShade(lavaEdge(camX, camY, camZ, dx, dy, dz, lh.t, lavaBottom) ? 0.72 : 1, camX + dx * lh.t, camY + dy * lh.t, camZ + dz * lh.t);
-            r = Math.round(tint[0] * shade);
-            g = Math.round(tint[1] * shade);
-            b = Math.round(tint[2] * shade);
+            const hx = camX + dx * lh.t - lavaCx;
+            const hz = camZ + dz * lh.t - lavaCz;
+            if (hx * hx + hz * hz <= lavaInner * lavaInner) {
+              best = lh.t;
+              r = 255;
+              g = 78;
+              b = 18;
+            }
           }
         }
         if (pillarBox && sx >= pillarBox.x0 && sx <= pillarBox.x1 && sy >= pillarBox.y0 && sy <= pillarBox.y1) {
@@ -4847,6 +4966,37 @@
       }
     }
     ctx.putImageData(frame, 0, 0);
+    const lavaGap = (y - spawnBallR - lavaSheetY()) / CELL;
+    const lavaNear = inGameArea() && lavaGap < 5 ? Math.max(0, Math.min(1, (5 - lavaGap) / 5)) : 0;
+    if (lavaNear > 0) {
+      const toX = lavaX + LAVA_N * CELL * 0.5 - camX;
+      const toY = lavaSheetY() - camY;
+      const toZ = lavaZ + LAVA_N * CELL * 0.5 - camZ;
+      const toL = Math.hypot(toX, toY, toZ) || 1;
+      const look = Math.max(0, (lx * toX + ly * toY + lz * toZ) / toL);
+      const heat = lavaNear * look;
+      if (heat > 0.02) {
+        const edge = ctx.createRadialGradient(
+          bw * 0.5,
+          bh * (0.46 - heat * 0.1),
+          Math.min(bw, bh) * (0.62 - heat * 0.46),
+          bw * 0.5,
+          bh * 0.55,
+          Math.hypot(bw, bh) * 0.62
+        );
+        const alpha = 0.18 + heat * 0.72;
+        edge.addColorStop(0, "rgba(255,78,18,0)");
+        edge.addColorStop(0.5, "rgba(255,96,20," + (alpha * 0.22) + ")");
+        edge.addColorStop(1, "rgba(255,58,8," + alpha + ")");
+        ctx.fillStyle = edge;
+        ctx.fillRect(0, 0, bw, bh);
+        const rise = ctx.createLinearGradient(0, bh, 0, bh * (1 - heat * 0.92));
+        rise.addColorStop(0, "rgba(255,72,12," + (0.12 + heat * 0.5) + ")");
+        rise.addColorStop(1, "rgba(255,72,12,0)");
+        ctx.fillStyle = rise;
+        ctx.fillRect(0, 0, bw, bh);
+      }
+    }
     if (downTime > 0) {
       ctx.fillStyle = "rgba(255,255,255,0.92)";
       ctx.font = "700 " + Math.max(20, Math.floor(bh * 0.09)) + "px sans-serif";
