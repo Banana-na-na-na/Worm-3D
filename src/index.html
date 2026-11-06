@@ -22,7 +22,7 @@
       margin: 0;
       transform: translateX(-50%);
       color: #fff;
-      font: 700 28px/1 "Segoe UI", sans-serif;
+      font: 700 28px/1 Gulim, "굴림", sans-serif;
       pointer-events: none;
     }
     #money {
@@ -31,8 +31,8 @@
       right: 18px;
       z-index: 30;
       margin: 0;
-      color: #f0d23a;
-      font: 700 28px/1 "Segoe UI", sans-serif;
+      color: #fff;
+      font: 700 28px/1 Gulim, "굴림", sans-serif;
       pointer-events: none;
     }
     #loot {
@@ -51,7 +51,7 @@
       border: 4px solid #111;
       background: #16161c;
       color: #f4f4f6;
-      font: 700 22px/1.3 "Segoe UI", sans-serif;
+      font: 700 22px/1.3 Gulim, "굴림", sans-serif;
       overflow: hidden;
     }
     #loot[hidden] {
@@ -80,7 +80,7 @@
       border: 4px solid #111;
       background: #2a2a32;
       color: #f4f4f6;
-      font: 700 22px/1 "Segoe UI", sans-serif;
+      font: 700 22px/1 Gulim, "굴림", sans-serif;
       padding: 12px 16px;
       cursor: pointer;
     }
@@ -90,7 +90,7 @@
       margin: 0;
       transform: translate(-50%, -50%);
       color: #fff;
-      font: 700 72px/1 "Segoe UI", sans-serif;
+      font: 700 72px/1 Gulim, "굴림", sans-serif;
       text-shadow: 0 4px 0 #111;
       pointer-events: none;
     }
@@ -110,7 +110,7 @@
       border: 4px solid #111;
       background: #2a2a32;
       color: #f4f4f6;
-      font: 700 20px/1 "Segoe UI", sans-serif;
+      font: 700 20px/1 Gulim, "굴림", sans-serif;
       cursor: pointer;
     }
     #win-shade {
@@ -137,7 +137,7 @@
       background: #3a3a42;
       box-shadow: inset 0 0 0 4px #6a6a74;
       color: #f4f4f6;
-      font: 700 20px/1.2 "Segoe UI", sans-serif;
+      font: 700 20px/1.2 Gulim, "굴림", sans-serif;
     }
     #lobby-shop[hidden],
     #lobby-sell[hidden] {
@@ -152,6 +152,17 @@
       width: min(520px, calc(100% - 48px));
       height: min(640px, calc(100% - 48px));
       box-sizing: border-box;
+    }
+    #lobby-shop-cats {
+      display: flex;
+      gap: 8px;
+    }
+    #lobby-shop-cats button {
+      flex: 1;
+      padding: 10px 8px;
+    }
+    .shop-item[hidden] {
+      display: none;
     }
     #lobby-shop-list {
       flex: 1;
@@ -174,7 +185,7 @@
       font-size: 22px;
     }
     .shop-item span {
-      font: 700 16px/1.3 "Segoe UI", sans-serif;
+      font: 700 16px/1.3 Gulim, "굴림", sans-serif;
       color: #d8d8de;
     }
     #sell-items,
@@ -203,7 +214,7 @@
       border: 4px solid #111;
       background: #2a2a32;
       color: #f4f4f6;
-      font: 700 22px/1 "Segoe UI", sans-serif;
+      font: 700 22px/1 Gulim, "굴림", sans-serif;
       padding: 12px 16px;
       cursor: pointer;
     }
@@ -211,8 +222,132 @@
       display: flex;
       gap: 8px;
     }
-    #lobby-shop button.on {
+    #lobby-sell {
+      gap: 16px;
+      padding: 26px 22px 18px;
+      border: 6px solid #140e0a;
+      background: #6a4428;
+      box-shadow: inset 0 0 0 6px #e2c27a, inset 0 0 0 12px #3a2616, 0 10px 0 #140e0a;
+    }
+    #lobby-sell h2 {
+      align-self: center;
+      margin-top: 6px;
+      padding: 8px 26px;
+      border: 4px solid #111;
+      background: #9d1c1c;
+      box-shadow: inset 0 0 0 4px #e2c27a;
+      color: #fff6d4;
+      letter-spacing: 3px;
+    }
+    #lobby-sell-body > div {
+      position: relative;
+      min-height: 210px;
+      padding: 36px 12px 12px;
+      border: 4px solid #140e0a;
+      background: #24180f;
+      box-shadow: inset 0 0 0 4px #8d6840;
+    }
+    #lobby-sell-body > div:last-child {
+      background: #1a120c;
+      box-shadow: inset 0 0 0 4px #e2c27a, inset 0 14px 0 #3a2a16;
+    }
+    #lobby-sell p {
+      position: absolute;
+      top: 8px;
+      left: 12px;
+      color: #e2c27a;
+      font-size: 16px;
+      letter-spacing: 1px;
+    }
+    #sell-items button,
+    #sell-bin button {
+      background: #4a301c;
+      color: #fff6d4;
+      box-shadow: inset 0 -4px 0 #140e0a;
+    }
+    #sell-bin button {
+      background: #6a4a12;
+    }
+    #sell-chosen {
+      flex: 1.4;
+      background: #1f8a3b;
+      box-shadow: inset 0 -6px 0 #0d4a1e;
+    }
+    #sell-all {
+      flex: 1;
       background: #d42020;
+      box-shadow: inset 0 -6px 0 #6e1010;
+    }
+    #lobby-shop button.on {
+      background: #9d1c1c;
+      color: #fff6d4;
+      box-shadow: inset 0 0 0 4px #e2c27a;
+    }
+    #lobby-shop-list button.can {
+      background: #1f8a3b;
+      box-shadow: inset 0 -6px 0 #0d4a1e;
+    }
+    #lobby-shop-list button.cant {
+      background: #d42020;
+      box-shadow: inset 0 -6px 0 #6e1010;
+    }
+    @keyframes shop-shake {
+      0% { transform: translateX(0); }
+      25% { transform: translateX(-7px); }
+      50% { transform: translateX(7px); }
+      75% { transform: translateX(-5px); }
+      100% { transform: translateX(5px); }
+    }
+    #lobby-shop-list button.shake {
+      animation: shop-shake 0.1s linear infinite;
+    }
+    #lobby-shop {
+      gap: 14px;
+      padding: 26px 22px 18px;
+      border: 6px solid #140e0a;
+      background: #6a4428;
+      box-shadow: inset 0 0 0 6px #e2c27a, inset 0 0 0 12px #3a2616, 0 10px 0 #140e0a;
+      color: #fff6d4;
+    }
+    #lobby-shop h2 {
+      align-self: center;
+      margin-top: 6px;
+      padding: 8px 26px;
+      border: 4px solid #111;
+      background: #9d1c1c;
+      box-shadow: inset 0 0 0 4px #e2c27a;
+      color: #fff6d4;
+      letter-spacing: 3px;
+    }
+    #lobby-shop-cats button {
+      background: #4a301c;
+      color: #fff6d4;
+      box-shadow: inset 0 -4px 0 #140e0a;
+    }
+    #lobby-shop-list {
+      padding: 10px;
+      border: 4px solid #140e0a;
+      background: #1a120c;
+      box-shadow: inset 0 0 0 4px #8d6840;
+    }
+    .shop-item {
+      gap: 8px;
+      padding: 14px;
+      border: 4px solid #140e0a;
+      background: #24180f;
+      box-shadow: inset 0 0 0 4px #8d6840;
+    }
+    .shop-item b {
+      color: #fff6d4;
+      letter-spacing: 1px;
+    }
+    .shop-item span {
+      color: #e2c27a;
+    }
+    #lobby-shop-list button {
+      background: #4a301c;
+      color: #fff6d4;
+      box-shadow: inset 0 -4px 0 #140e0a;
     }
     #lobby-menu {
       position: absolute;
@@ -233,7 +368,7 @@
       border: none;
       background: transparent;
       color: #f4f4f6;
-      font: 700 28px/1 "Segoe UI", sans-serif;
+      font: 700 28px/1 Gulim, "굴림", sans-serif;
       cursor: pointer;
     }
     #customize {
@@ -247,7 +382,7 @@
       border: none;
       background: transparent;
       color: #f4f4f6;
-      font: 700 28px/1 "Segoe UI", sans-serif;
+      font: 700 28px/1 Gulim, "굴림", sans-serif;
       cursor: pointer;
     }
     #custom {
@@ -260,7 +395,7 @@
       width: min(560px, calc(100% - 48px));
       max-height: calc(100% - 48px);
       color: #f4f4f6;
-      font: 700 22px/1.3 "Segoe UI", sans-serif;
+      font: 700 22px/1.3 Gulim, "굴림", sans-serif;
     }
     #custom[hidden] {
       display: none;
@@ -281,7 +416,7 @@
     }
     #custom h2 {
       margin: 0;
-      font: 700 32px/1 "Segoe UI", sans-serif;
+      font: 700 32px/1 Gulim, "굴림", sans-serif;
     }
     #custom p {
       margin: 0;
@@ -302,7 +437,7 @@
       border: 4px solid #111;
       background: #2a2a32;
       color: #f4f4f6;
-      font: 700 22px/1 "Segoe UI", sans-serif;
+      font: 700 22px/1 Gulim, "굴림", sans-serif;
       cursor: pointer;
     }
     #custom button {
@@ -383,7 +518,7 @@
       bottom: 14px;
       margin: 0;
       color: #f4f4f6;
-      font: 700 18px/1.4 "Segoe UI", sans-serif;
+      font: 700 18px/1.4 Gulim, "굴림", sans-serif;
       text-shadow: 0 2px 0 #111;
       pointer-events: none;
     }
@@ -394,7 +529,7 @@
       z-index: 7;
       margin: 0;
       color: rgba(255, 255, 255, 0.55);
-      font: 600 32px/1 "Segoe UI", sans-serif;
+      font: 600 32px/1 Gulim, "굴림", sans-serif;
       pointer-events: none;
     }
     #fire {
@@ -410,7 +545,7 @@
       border-radius: 50%;
       background: rgba(220, 36, 36, 0.94);
       color: #fff;
-      font: 700 20px/1 "Segoe UI", sans-serif;
+      font: 700 20px/1 Gulim, "굴림", sans-serif;
       cursor: pointer;
       touch-action: none;
       user-select: none;
@@ -580,20 +715,29 @@
       position: absolute;
       left: 50%;
       top: 50%;
-      width: 12px;
+      width: 14px;
       height: 74px;
       background: #8a5a2b;
+      box-shadow: 0 0 0 3px #2a160c, inset 4px 0 0 #d8a060, inset -4px 0 0 #4a2c12;
       transform: translate(-50%, -50%) rotate(45deg);
     }
     .hand-sword.long {
-      width: 7px;
-      height: 100px;
+      width: 8px;
+      height: 108px;
       background: #e2b56a;
+      box-shadow: 0 0 0 3px #6a4a18, inset 3px 0 0 #fff0c0, inset -3px 0 0 #a07830;
     }
     .hand-sword.hard {
-      width: 32px;
-      height: 50px;
-      background: #5c5c64;
+      width: 36px;
+      height: 48px;
+      background: #6a6a74;
+      box-shadow: 0 0 0 4px #1c1c22, inset 8px 8px 0 #b4b4be, inset -10px -10px 0 #2e2e36;
+    }
+    .hand-sword.pipe {
+      width: 20px;
+      height: 80px;
+      background: #e8eef2;
+      box-shadow: 0 0 0 3px #14181c, inset 0 0 0 6px #2a3138, inset 5px 0 0 #ffffff;
     }
     #bag-grid .hand-sword.long {
       width: 4px;
@@ -603,6 +747,11 @@
       width: 16px;
       height: 24px;
     }
+    #bag-grid .hand-sword.pipe {
+      width: 10px;
+      height: 40px;
+      box-shadow: 0 0 0 2px #14181c, inset 0 0 0 3px #2a3138, inset 2px 0 0 #ffffff;
+    }
     #drag-item .hand-sword.long {
       width: 5px;
       height: 68px;
@@ -611,13 +760,18 @@
       width: 20px;
       height: 34px;
     }
+    #drag-item .hand-sword.pipe {
+      width: 12px;
+      height: 56px;
+      box-shadow: 0 0 0 2px #14181c, inset 0 0 0 4px #2a3138, inset 3px 0 0 #ffffff;
+    }
     .stack-num {
       position: absolute;
       right: 3px;
       bottom: 2px;
       z-index: 3;
       color: #fff;
-      font: 700 18px/1 "Segoe UI", sans-serif;
+      font: 700 18px/1 Gulim, "굴림", sans-serif;
       text-shadow: 2px 2px 0 #111, -1px -1px 0 #111, 1px -1px 0 #111, -1px 1px 0 #111;
       pointer-events: none;
     }
@@ -641,7 +795,8 @@
       right: 3px;
       top: 22px;
       bottom: 6px;
-      background: #c8c8cc;
+      background: #d0d0d6;
+      box-shadow: inset 4px 0 0 #ffffff, inset -4px 0 0 #6e6e76, 0 0 0 2px #111;
     }
     .hand-light .grip {
       position: absolute;
@@ -649,7 +804,8 @@
       right: 0;
       top: 30px;
       height: 22px;
-      background: #2a2a2e;
+      background: #1a1a1e;
+      box-shadow: inset 0 4px 0 #3a3a42;
     }
     .hand-light .lens {
       position: absolute;
@@ -657,9 +813,9 @@
       right: -4px;
       top: 0;
       height: 26px;
-      border-radius: 50%;
+      border-radius: 0;
       background: #fff6d0;
-      box-shadow: 0 0 10px 4px rgba(255, 226, 140, 0.9);
+      box-shadow: 0 0 0 3px #111, inset 5px 5px 0 #ffffff, inset -5px -5px 0 #c8a040;
     }
     #bag-grid .hand-light {
       width: 14px;
@@ -667,15 +823,15 @@
     }
     #bag-grid .hand-light .lens {
       height: 14px;
-      box-shadow: 0 0 6px 2px rgba(255, 226, 140, 0.9);
+      box-shadow: 0 0 0 2px #111, inset 3px 3px 0 #ffffff, inset -3px -3px 0 #c8a040;
     }
     #drag-item .hand-light {
       width: 16px;
       height: 52px;
     }
     .hand-light.off .lens {
-      background: #6e6e72;
-      box-shadow: none;
+      background: #5a5a60;
+      box-shadow: 0 0 0 3px #111, inset 5px 5px 0 #8a8a90, inset -5px -5px 0 #2a2a2e;
     }
     .hand-light.wide {
       width: 72px;
@@ -688,7 +844,8 @@
       top: 16px;
       bottom: 8px;
       background: #16161a;
-      border-radius: 3px;
+      border-radius: 0;
+      box-shadow: inset 0 4px 0 #3a3a42, 0 0 0 2px #111;
     }
     .hand-light.wide .tube::after {
       content: "";
@@ -697,7 +854,8 @@
       top: 5px;
       width: 16px;
       height: 8px;
-      background: #d4b15e;
+      background: #e2c27a;
+      box-shadow: inset 2px 2px 0 #fff6d4;
     }
     .hand-light.wide .grip {
       left: 32px;
@@ -706,7 +864,8 @@
       width: 24px;
       height: 14px;
       background: #16161a;
-      border-radius: 4px 4px 0 0;
+      border-radius: 0;
+      box-shadow: 0 0 0 2px #111;
     }
     .hand-light.wide .lens {
       left: 0;
@@ -714,12 +873,115 @@
       top: 4px;
       width: 36px;
       height: 36px;
+      border-radius: 0;
       background: #f4f4f0;
-      box-shadow: 0 0 0 5px #111, inset 0 0 0 9px #c5ccd2;
+      box-shadow: 0 0 0 4px #111, inset 6px 6px 0 #ffffff, inset -8px -8px 0 #9aa0a8;
     }
     .hand-light.wide.off .lens {
-      background: #5c5c60;
-      box-shadow: 0 0 0 5px #111, inset 0 0 0 9px #3a3a3e;
+      background: #4a4a50;
+      box-shadow: 0 0 0 4px #111, inset 6px 6px 0 #7a7a80, inset -8px -8px 0 #222;
+    }
+    .hand-light.lantern {
+      width: 36px;
+      height: 48px;
+      transform: translate(-50%, -50%);
+    }
+    .hand-light.lantern .tube {
+      left: 4px;
+      right: 4px;
+      top: 12px;
+      bottom: 4px;
+      background: #1c1c22;
+      box-shadow: 0 0 0 2px #111, inset 0 0 0 4px #3a3a42;
+    }
+    .hand-light.lantern .grip {
+      left: 10px;
+      right: 10px;
+      top: 18px;
+      height: 16px;
+      background: #ffd56a;
+      box-shadow: inset 3px 3px 0 #fff6d0, inset -3px -3px 0 #c48820;
+    }
+    .hand-light.lantern .lens {
+      left: 8px;
+      right: 8px;
+      top: 2px;
+      height: 12px;
+      border-radius: 0;
+      background: #1c1c22;
+      box-shadow: 0 0 0 2px #e2c27a;
+    }
+    #bag-grid .hand-light.lantern,
+    #drag-item .hand-light.lantern {
+      width: 36px;
+      height: 48px;
+    }
+    #bag-grid .hand-light.lantern {
+      transform: translate(-50%, -50%) scale(0.55);
+    }
+    #drag-item .hand-light.lantern {
+      transform: translate(-50%, -50%) scale(0.72);
+    }
+    #bag-grid .hand-light.lantern .lens,
+    #drag-item .hand-light.lantern .lens {
+      height: 12px;
+      border-radius: 0;
+      box-shadow: none;
+    }
+    .hand-light.siren {
+      width: 78px;
+      height: 40px;
+      transform: translate(-50%, -50%);
+    }
+    .hand-light.siren .tube {
+      left: 16px;
+      right: 16px;
+      top: 8px;
+      bottom: 8px;
+      background: #1a1a1e;
+    }
+    .hand-light.siren .grip {
+      left: 2px;
+      right: auto;
+      top: 4px;
+      width: 32px;
+      height: 32px;
+      border-radius: 0;
+      background: #ff2a2a;
+      box-shadow: 0 0 0 3px #111, inset 6px 6px 0 #ffd0d0, inset -6px -6px 0 #8a1010;
+    }
+    .hand-light.siren .lens {
+      left: auto;
+      right: 2px;
+      top: 4px;
+      width: 32px;
+      height: 32px;
+      border-radius: 0;
+      background: #2f6bff;
+      box-shadow: 0 0 0 3px #111, inset 6px 6px 0 #d0e0ff, inset -6px -6px 0 #102880;
+    }
+    .hand-light.siren.off .grip,
+    .hand-light.siren.off .lens {
+      background: #3a3a3e;
+      box-shadow: 0 0 0 3px #111, inset 6px 6px 0 #6a6a70, inset -6px -6px 0 #1a1a1e;
+    }
+    #bag-grid .hand-light.siren,
+    #drag-item .hand-light.siren {
+      width: 78px;
+      height: 40px;
+    }
+    #bag-grid .hand-light.siren {
+      transform: translate(-50%, -50%) scale(0.55);
+    }
+    #drag-item .hand-light.siren {
+      transform: translate(-50%, -50%) scale(0.72);
+    }
+    #bag-grid .hand-light.siren .lens,
+    #drag-item .hand-light.siren .lens {
+      left: auto;
+      width: 32px;
+      height: 32px;
+      border-radius: 0;
     }
     #bag-grid .hand-light.wide {
       transform: translate(-50%, -50%) rotate(-24deg) scale(0.52);
@@ -752,11 +1014,13 @@
       width: 52px;
       height: 52px;
       box-sizing: border-box;
-      border: 4px solid #1c1c20;
-      background: rgba(20, 20, 24, 0.88);
+      border: 4px solid #140e0a;
+      background: #c4a06a;
+      box-shadow: inset 0 0 0 4px #3a2616, inset 0 5px 0 #e2c27a;
     }
     .hot-slot.on {
-      border-color: #f4f4f6;
+      border-color: #e2c27a;
+      box-shadow: inset 0 0 0 4px #e2c27a, inset 0 5px 0 #fff6d4;
     }
     .hot-cube {
       position: absolute;
@@ -774,11 +1038,118 @@
       right: 4px;
       bottom: 2px;
       color: #fff;
-      font: 700 16px/1 "Segoe UI", sans-serif;
+      font: 700 16px/1 Gulim, "굴림", sans-serif;
       text-shadow: 1px 1px 0 #111, -1px 0 0 #111;
     }
     .hot-num[hidden] {
       display: none;
+    }
+    #loot {
+      padding: 26px 22px 18px;
+      border: 6px solid #140e0a;
+      background: #6a4428;
+      box-shadow: inset 0 0 0 6px #e2c27a, inset 0 0 0 12px #3a2616, 0 10px 0 #140e0a;
+      color: #fff6d4;
+    }
+    #loot h2,
+    #custom h2 {
+      align-self: center;
+      margin-top: 6px;
+      padding: 8px 26px;
+      border: 4px solid #111;
+      background: #9d1c1c;
+      box-shadow: inset 0 0 0 4px #e2c27a;
+      color: #fff6d4;
+      font: 700 28px/1 Gulim, "굴림", sans-serif;
+      letter-spacing: 3px;
+    }
+    #loot-list {
+      padding: 12px;
+      border: 4px solid #140e0a;
+      background: #1a120c;
+      box-shadow: inset 0 0 0 4px #8d6840;
+    }
+    #loot-line {
+      background: #e2c27a;
+    }
+    #loot-total {
+      color: #e2c27a;
+    }
+    #loot #loot-ok {
+      background: #1f8a3b;
+      color: #fff6d4;
+      box-shadow: inset 0 -6px 0 #0d4a1e;
+    }
+    #custom-set {
+      gap: 14px;
+      padding: 26px 22px 18px;
+      border: 6px solid #140e0a;
+      background: #6a4428;
+      box-shadow: inset 0 0 0 6px #e2c27a, inset 0 0 0 12px #3a2616, 0 10px 0 #140e0a;
+      color: #fff6d4;
+    }
+    #custom p {
+      color: #e2c27a;
+      letter-spacing: 1px;
+    }
+    #custom button,
+    #custom input[type="number"] {
+      background: #4a301c;
+      color: #fff6d4;
+      border-color: #140e0a;
+      box-shadow: inset 0 -4px 0 #140e0a;
+    }
+    #custom button.on {
+      background: #9d1c1c;
+      color: #fff6d4;
+      box-shadow: inset 0 0 0 4px #e2c27a;
+    }
+    #custom-set #custom-summon {
+      background: #1f8a3b;
+      box-shadow: inset 0 -6px 0 #0d4a1e;
+    }
+    #custom-set #custom-clear {
+      background: #d42020;
+      box-shadow: inset 0 -6px 0 #6e1010;
+    }
+    #custom-set #custom-inf {
+      background: #e2c27a;
+      color: #140e0a;
+      box-shadow: inset 0 -6px 0 #8a6a28;
+    }
+    #bag {
+      padding: 52px 18px 18px;
+      border: 6px solid #140e0a;
+      background: #6a4428;
+      box-shadow: inset 0 0 0 6px #e2c27a, inset 0 0 0 12px #3a2616, 0 10px 0 #140e0a;
+    }
+    #bag .hot-slot,
+    #bag-hands #hand-left,
+    #bag-hands #hand-right {
+      background: #c4a06a;
+      border-color: #140e0a;
+      box-shadow: inset 0 0 0 4px #3a2616, inset 0 6px 0 #e2c27a;
+    }
+    #bag .hot-slot.on {
+      border-color: #e2c27a;
+      box-shadow: inset 0 0 0 3px #e2c27a;
+    }
+    .win-x {
+      border-color: #140e0a;
+      background: #9d1c1c;
+      color: #fff6d4;
+      box-shadow: inset 0 0 0 3px #e2c27a;
+    }
+    #lobby-menu button,
+    #customize {
+      padding: 12px 18px;
+      border: 4px solid #140e0a;
+      background: #6a4428;
+      color: #fff6d4;
+      box-shadow: inset 0 0 0 4px #e2c27a, 0 6px 0 #140e0a;
+    }
+    #screen, #screen * {
+      text-shadow: 2px 2px 0 #140e0a;
     }
   </style>
 </head>
@@ -800,18 +1171,24 @@
     <div id="lobby-shop" hidden>
       <button type="button" class="win-x" data-close="shop">X</button>
       <h2>상점</h2>
+      <div id="lobby-shop-cats">
+        <button type="button" data-cat="all" class="on">전체</button>
+        <button type="button" data-cat="light">빛</button>
+        <button type="button" data-cat="weapon">무기</button>
+        <button type="button" data-cat="misc">기타</button>
+      </div>
       <div id="lobby-shop-list"></div>
     </div>
     <div id="lobby-sell" hidden>
       <button type="button" class="win-x" data-close="sell">X</button>
-      <h2>판매</h2>
+      <h2>판매대</h2>
       <div id="lobby-sell-body">
         <div>
-          <p>아이템</p>
+          <p>가방</p>
           <div id="sell-items"></div>
-    </div>
+        </div>
         <div>
-          <p>판매</p>
+          <p>판매대</p>
           <div id="sell-bin"></div>
         </div>
       </div>
@@ -819,7 +1196,7 @@
         <button type="button" id="sell-chosen">판매</button>
         <button type="button" id="sell-all">전체판매</button>
       </div>
-          </div>
+    </div>
     <button type="button" id="customize">커스터마이징</button>
     <div id="lobby-menu" hidden>
       <button type="button" id="lobby-shop-btn">상점</button>
@@ -884,6 +1261,6 @@
     <div id="drag-item" hidden></div>
     <button type="button" id="fire" hidden>발사</button>
   </div>
-  <script src="./game.js?v=386"></script>
+  <script src="./game.js?v=454"></script>
 </body>
 </html>
