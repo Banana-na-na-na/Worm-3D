@@ -1,1266 +1,692 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>로켓</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TABS</title>
   <style>
-    html, body {
-      margin: 0;
-      height: 100%;
-      background: #000;
-      overflow: hidden;
-    }
-    body {
-      height: 100%;
-    }
-    #clock {
-      position: absolute;
-      left: 50%;
-      top: 8px;
-      z-index: 6;
-      margin: 0;
-      transform: translateX(-50%);
-      color: #fff;
-      font: 700 28px/1 Gulim, "굴림", sans-serif;
-      pointer-events: none;
-    }
-    #money {
-      position: absolute;
-      top: 8px;
-      right: 18px;
-      z-index: 30;
-      margin: 0;
-      color: #fff;
-      font: 700 28px/1 Gulim, "굴림", sans-serif;
-      pointer-events: none;
-    }
-    #loot {
-      position: absolute;
-      left: 50%;
-      top: 50%;
-      z-index: 24;
-      transform: translate(-50%, -50%);
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      width: 420px;
-      height: 520px;
-      box-sizing: border-box;
-      padding: 22px 26px;
-      border: 4px solid #111;
-      background: #16161c;
-      color: #f4f4f6;
-      font: 700 22px/1.3 Gulim, "굴림", sans-serif;
-      overflow: hidden;
-    }
-    #loot[hidden] {
-      display: none;
-    }
-    #loot h2,
-    #loot p {
-      margin: 0;
-    }
-    #loot-list {
-      flex: 1;
-      min-height: 0;
-      overflow: auto;
-    }
-    #loot-line {
-      height: 4px;
-      background: #fff;
-      flex: none;
-    }
-    #loot-total {
-      color: #f0d23a;
-      flex: none;
-    }
-    #loot button {
-      margin: 8px 0 0;
-      border: 4px solid #111;
-      background: #2a2a32;
-      color: #f4f4f6;
-      font: 700 22px/1 Gulim, "굴림", sans-serif;
-      padding: 12px 16px;
-      cursor: pointer;
-    }
-    #lobby-count {
-      position: absolute;
-      z-index: 50;
-      margin: 0;
-      transform: translate(-50%, -50%);
-      color: #fff;
-      font: 700 72px/1 Gulim, "굴림", sans-serif;
-      text-shadow: 0 4px 0 #111;
-      pointer-events: none;
-    }
-    .win-x {
-      position: absolute;
-      top: 8px;
-      right: 8px;
-      z-index: 3;
-      box-sizing: border-box;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 36px;
-      height: 36px;
-      margin: 0;
-      padding: 0;
-      border: 4px solid #111;
-      background: #2a2a32;
-      color: #f4f4f6;
-      font: 700 20px/1 Gulim, "굴림", sans-serif;
-      cursor: pointer;
-    }
-    #win-shade {
-      position: absolute;
-      inset: 0;
-      z-index: 18;
-      background: rgba(0, 0, 0, 0.55);
-    }
-    #win-shade[hidden] {
-      display: none;
-    }
-    #lobby-shop,
-    #lobby-sell {
-      position: absolute;
-      left: 50%;
-      top: 50%;
-      z-index: 20;
-      transform: translate(-50%, -50%);
-      display: flex;
-      flex-direction: column;
-      gap: 14px;
-      padding: 18px;
-      border: 4px solid #1c1c20;
-      background: #3a3a42;
-      box-shadow: inset 0 0 0 4px #6a6a74;
-      color: #f4f4f6;
-      font: 700 20px/1.2 Gulim, "굴림", sans-serif;
-    }
-    #lobby-shop[hidden],
-    #lobby-sell[hidden] {
-      display: none;
-    }
-    #lobby-shop h2,
-    #lobby-sell h2,
-    #lobby-sell p {
-      margin: 0;
-    }
-    #lobby-shop {
-      width: min(520px, calc(100% - 48px));
-      height: min(640px, calc(100% - 48px));
-      box-sizing: border-box;
-    }
-    #lobby-shop-cats {
-      display: flex;
-      gap: 8px;
-    }
-    #lobby-shop-cats button {
-      flex: 1;
-      padding: 10px 8px;
-    }
-    .shop-item[hidden] {
-      display: none;
-    }
-    #lobby-shop-list {
-      flex: 1;
-      min-height: 0;
-      overflow-y: auto;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-    .shop-item {
-      flex: none;
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      padding: 12px;
-      border: 4px solid #111;
-      background: #2a2a32;
-    }
-    .shop-item b {
-      font-size: 22px;
-    }
-    .shop-item span {
-      font: 700 16px/1.3 Gulim, "굴림", sans-serif;
-      color: #d8d8de;
-    }
-    #sell-items,
-    #sell-bin {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-    }
-    #lobby-sell {
-      width: min(720px, calc(100% - 32px));
-    }
-    #lobby-sell-body {
-      display: flex;
-      gap: 12px;
-    }
-    #lobby-sell-body > div {
-      flex: 1;
-      min-height: 160px;
-      padding: 10px;
-      border: 4px solid #111;
-      background: #101014;
-    }
-    #lobby-shop button,
-    #lobby-sell button {
-      margin: 0;
-      border: 4px solid #111;
-      background: #2a2a32;
-      color: #f4f4f6;
-      font: 700 22px/1 Gulim, "굴림", sans-serif;
-      padding: 12px 16px;
-      cursor: pointer;
-    }
-    #sell-actions {
-      display: flex;
-      gap: 8px;
-    }
-    #lobby-sell {
-      gap: 16px;
-      padding: 26px 22px 18px;
-      border: 6px solid #140e0a;
-      background: #6a4428;
-      box-shadow: inset 0 0 0 6px #e2c27a, inset 0 0 0 12px #3a2616, 0 10px 0 #140e0a;
-    }
-    #lobby-sell h2 {
-      align-self: center;
-      margin-top: 6px;
-      padding: 8px 26px;
-      border: 4px solid #111;
-      background: #9d1c1c;
-      box-shadow: inset 0 0 0 4px #e2c27a;
-      color: #fff6d4;
-      letter-spacing: 3px;
-    }
-    #lobby-sell-body > div {
-      position: relative;
-      min-height: 210px;
-      padding: 36px 12px 12px;
-      border: 4px solid #140e0a;
-      background: #24180f;
-      box-shadow: inset 0 0 0 4px #8d6840;
-    }
-    #lobby-sell-body > div:last-child {
-      background: #1a120c;
-      box-shadow: inset 0 0 0 4px #e2c27a, inset 0 14px 0 #3a2a16;
-    }
-    #lobby-sell p {
-      position: absolute;
-      top: 8px;
-      left: 12px;
-      color: #e2c27a;
-      font-size: 16px;
-      letter-spacing: 1px;
-    }
-    #sell-items button,
-    #sell-bin button {
-      background: #4a301c;
-      color: #fff6d4;
-      box-shadow: inset 0 -4px 0 #140e0a;
-    }
-    #sell-bin button {
-      background: #6a4a12;
-    }
-    #sell-chosen {
-      flex: 1.4;
-      background: #1f8a3b;
-      box-shadow: inset 0 -6px 0 #0d4a1e;
-    }
-    #sell-all {
-      flex: 1;
-      background: #d42020;
-      box-shadow: inset 0 -6px 0 #6e1010;
-    }
-    #lobby-shop button.on {
-      background: #9d1c1c;
-      color: #fff6d4;
-      box-shadow: inset 0 0 0 4px #e2c27a;
-    }
-    #lobby-shop-list button.can {
-      background: #1f8a3b;
-      box-shadow: inset 0 -6px 0 #0d4a1e;
-    }
-    #lobby-shop-list button.cant {
-      background: #d42020;
-      box-shadow: inset 0 -6px 0 #6e1010;
-    }
-    @keyframes shop-shake {
-      0% { transform: translateX(0); }
-      25% { transform: translateX(-7px); }
-      50% { transform: translateX(7px); }
-      75% { transform: translateX(-5px); }
-      100% { transform: translateX(5px); }
-    }
-    #lobby-shop-list button.shake {
-      animation: shop-shake 0.1s linear infinite;
-    }
-    #lobby-shop {
-      gap: 14px;
-      padding: 26px 22px 18px;
-      border: 6px solid #140e0a;
-      background: #6a4428;
-      box-shadow: inset 0 0 0 6px #e2c27a, inset 0 0 0 12px #3a2616, 0 10px 0 #140e0a;
-      color: #fff6d4;
-    }
-    #lobby-shop h2 {
-      align-self: center;
-      margin-top: 6px;
-      padding: 8px 26px;
-      border: 4px solid #111;
-      background: #9d1c1c;
-      box-shadow: inset 0 0 0 4px #e2c27a;
-      color: #fff6d4;
-      letter-spacing: 3px;
-    }
-    #lobby-shop-cats button {
-      background: #4a301c;
-      color: #fff6d4;
-      box-shadow: inset 0 -4px 0 #140e0a;
-    }
-    #lobby-shop-list {
-      padding: 10px;
-      border: 4px solid #140e0a;
-      background: #1a120c;
-      box-shadow: inset 0 0 0 4px #8d6840;
-    }
-    .shop-item {
-      gap: 8px;
-      padding: 14px;
-      border: 4px solid #140e0a;
-      background: #24180f;
-      box-shadow: inset 0 0 0 4px #8d6840;
-    }
-    .shop-item b {
-      color: #fff6d4;
-      letter-spacing: 1px;
-    }
-    .shop-item span {
-      color: #e2c27a;
-    }
-    #lobby-shop-list button {
-      background: #4a301c;
-      color: #fff6d4;
-      box-shadow: inset 0 -4px 0 #140e0a;
-    }
-    #lobby-menu {
-      position: absolute;
-      left: 16px;
-      top: 50%;
-      z-index: 7;
-      transform: translateY(-50%);
-      display: flex;
-      flex-direction: column;
-      gap: 14px;
-    }
-    #lobby-menu[hidden] {
-      display: none;
-    }
-    #lobby-menu button {
-      margin: 0;
-      padding: 0;
-      border: none;
-      background: transparent;
-      color: #f4f4f6;
-      font: 700 28px/1 Gulim, "굴림", sans-serif;
-      cursor: pointer;
-    }
-    #customize {
-      pointer-events: auto;
-      position: absolute;
-      left: 18px;
-      top: 8px;
-      z-index: 6;
-      margin: 0;
-      padding: 0;
-      border: none;
-      background: transparent;
-      color: #f4f4f6;
-      font: 700 28px/1 Gulim, "굴림", sans-serif;
-      cursor: pointer;
-    }
-    #custom {
-      position: absolute;
-      left: 50%;
-      top: 50%;
-      z-index: 40;
-      transform: translate(-50%, -50%);
-      display: flex;
-      width: min(560px, calc(100% - 48px));
-      max-height: calc(100% - 48px);
-      color: #f4f4f6;
-      font: 700 22px/1.3 Gulim, "굴림", sans-serif;
-    }
-    #custom[hidden] {
-      display: none;
-    }
-    #custom-set {
-      position: relative;
-      width: 100%;
-      max-height: calc(100vh - 80px);
-      box-sizing: border-box;
-      display: flex;
-      flex-direction: column;
-      gap: 18px;
-      padding: 28px 32px;
-      overflow: auto;
-      background: #3a3a42;
-      border: 4px solid #1c1c20;
-      box-shadow: inset 0 0 0 4px #6a6a74;
-    }
-    #custom h2 {
-      margin: 0;
-      font: 700 32px/1 Gulim, "굴림", sans-serif;
-    }
-    #custom p {
-      margin: 0;
-    }
-    #custom-eyes,
-    #custom-paces,
-    #custom-hps,
-    #custom-legs,
-    #custom-actions {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      align-items: center;
-    }
-    #custom button,
-    #custom input[type="number"] {
-      margin: 0;
-      border: 4px solid #111;
-      background: #2a2a32;
-      color: #f4f4f6;
-      font: 700 22px/1 Gulim, "굴림", sans-serif;
-      cursor: pointer;
-    }
-    #custom button {
-      padding: 12px 16px;
-    }
-    #custom button.on {
-      background: #d42020;
-    }
-    #custom-inf {
-      align-self: flex-start;
-    }
-    #custom input[type="number"] {
-      width: 96px;
-      padding: 10px;
-      cursor: text;
-    }
-    #custom label {
-      display: flex;
-      gap: 10px;
-      align-items: center;
-      cursor: pointer;
-    }
-    #custom input[type="color"] {
-      width: 88px;
-      height: 52px;
-      padding: 0;
-      border: 4px solid #111;
-      background: #111;
-      cursor: pointer;
-    }
-    #custom-actions {
-      margin-top: auto;
-    }
-    #screen {
-      position: relative;
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-      background: #87b4dc;
-    }
-    canvas {
-      display: block;
-      width: 100%;
-      height: 100%;
-      image-rendering: pixelated;
-      image-rendering: crisp-edges;
-    }
-    #cross {
-      position: absolute;
-      left: 50%;
-      top: 50%;
-      width: 12px;
-      height: 12px;
-      margin: -6px 0 0 -6px;
-      pointer-events: none;
-    }
-    #cross::before,
-    #cross::after {
-      content: "";
-      position: absolute;
-      background: #fff;
-    }
-    #cross::before {
-      left: 5px;
-      top: 0;
-      width: 2px;
-      height: 12px;
-    }
-    #cross::after {
-      left: 0;
-      top: 5px;
-      width: 12px;
-      height: 2px;
-    }
-    #hud {
-      position: absolute;
+    html, body { margin: 0; height: 100%; background: #6aa6d8; overflow: hidden; }
+    canvas { display: block; width: 100%; height: 100%; }
+    p {
+      position: fixed;
       left: 16px;
       bottom: 14px;
       margin: 0;
-      color: #f4f4f6;
-      font: 700 18px/1.4 Gulim, "굴림", sans-serif;
-      text-shadow: 0 2px 0 #111;
-      pointer-events: none;
-    }
-    #ver {
-      position: absolute;
-      right: 16px;
-      bottom: 34px;
-      z-index: 7;
-      margin: 0;
-      color: rgba(255, 255, 255, 0.55);
-      font: 600 32px/1 Gulim, "굴림", sans-serif;
-      pointer-events: none;
-    }
-    #fire {
-      position: absolute;
-      right: 28px;
-      bottom: 28px;
-      z-index: 6;
-      width: 96px;
-      height: 96px;
-      margin: 0;
-      padding: 0;
-      border: 4px solid #111;
-      border-radius: 50%;
-      background: rgba(220, 36, 36, 0.94);
       color: #fff;
-      font: 700 20px/1 Gulim, "굴림", sans-serif;
-      cursor: pointer;
-      touch-action: none;
-      user-select: none;
-    }
-    #fire[hidden] {
-      display: none;
-    }
-    #screen:has(#fire:not([hidden])) #ver {
-      right: 28px;
-      bottom: 140px;
-    }
-    #fuel-dock {
-      position: absolute;
-      right: 18px;
-      top: 50%;
-      z-index: 2;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
+      font: 700 16px/1.4 Gulim, "굴림", sans-serif;
+      text-shadow: 2px 0 #111, -2px 0 #111, 0 2px #111, 0 -2px #111;
       pointer-events: none;
-      transform: translateY(-50%);
-    }
-    #preview {
-      display: block;
-      width: 297px;
-      height: 351px;
-      margin-top: 10px;
-      background: transparent;
-      image-rendering: pixelated;
-      image-rendering: crisp-edges;
-    }
-    #cats {
-      position: absolute;
-      left: 18px;
-      top: 18px;
-      z-index: 4;
-      width: max-content;
-      margin: 0;
-      padding: 12px;
-      box-sizing: border-box;
-      background: rgba(8, 8, 10, 0.88);
-    }
-    #cats[hidden] {
-      display: none;
-    }
-    #cat-list {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-    #cat-list button {
-      margin: 0;
-      padding: 6px;
-      border: 3px solid #111;
-      background: #1a1a1c;
-      line-height: 0;
-      cursor: pointer;
-    }
-    #cat-list button.on {
-      border-color: rgb(220, 36, 36);
-    }
-    #cat-list canvas {
-      display: block;
-      width: 120px;
-      height: 90px;
-      pointer-events: none;
-      background: transparent;
-    }
-    #cat-list .sub {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      margin-left: 16px;
-    }
-    #cat-list .sub[hidden] {
-      display: none;
-    }
-    #bag-shade {
-      position: absolute;
-      inset: 0;
-      z-index: 5;
-      background: rgba(0, 0, 0, 0.55);
-    }
-    #bag-shade[hidden] {
-      display: none;
-    }
-    #bag {
-      position: absolute;
-      left: 50%;
-      top: 50%;
-      z-index: 8;
-      transform: translate(-50%, -50%);
-      padding: 16px;
-      background: #3a3a42;
-      border: 4px solid #1c1c20;
-      box-shadow: inset 0 0 0 4px #6a6a74;
-    }
-    #bag[hidden] {
-      display: none;
-    }
-    #bag-hands {
-      display: flex;
-      gap: 8px;
-      margin-bottom: 12px;
-    }
-    #bag-hands #hand-left,
-    #bag-hands #hand-right {
-      position: relative;
-      top: auto;
-      left: auto;
-      right: auto;
-      display: block;
-      transform: none;
-    }
-    #bag-grid {
-      display: grid;
-      grid-template-columns: repeat(9, 52px);
-      gap: 4px;
-    }
-    #hand-left,
-    #hand-right {
-      position: absolute;
-      top: 50%;
-      z-index: 6;
-      width: 104px;
-      height: 104px;
-      border-width: 8px;
-      background: #3a3a42;
-      box-shadow: inset 0 0 0 4px #6a6a74;
-      overflow: hidden;
-      transform: translateY(-50%);
-    }
-    #hand-left {
-      left: 12px;
-    }
-    #hand-right {
-      right: 12px;
-    }
-    #screen > #hand-left,
-    #screen > #hand-right {
-      display: none;
-    }
-    #bag .hot-slot {
-      cursor: grab;
-    }
-    #drag-item {
-      position: fixed;
-      z-index: 30;
-      width: 72px;
-      height: 72px;
-      margin-left: -36px;
-      margin-top: -36px;
-      pointer-events: none;
-    }
-    #drag-item[hidden] {
-      display: none;
-    }
-    #bag-grid .hand-sword {
-      width: 10px;
-      height: 36px;
-    }
-    #drag-item .hand-sword {
-      width: 12px;
-      height: 52px;
-    }
-    .hand-sword {
-      position: absolute;
-      left: 50%;
-      top: 50%;
-      width: 14px;
-      height: 74px;
-      background: #8a5a2b;
-      box-shadow: 0 0 0 3px #2a160c, inset 4px 0 0 #d8a060, inset -4px 0 0 #4a2c12;
-      transform: translate(-50%, -50%) rotate(45deg);
-    }
-    .hand-sword.long {
-      width: 8px;
-      height: 108px;
-      background: #e2b56a;
-      box-shadow: 0 0 0 3px #6a4a18, inset 3px 0 0 #fff0c0, inset -3px 0 0 #a07830;
-    }
-    .hand-sword.hard {
-      width: 36px;
-      height: 48px;
-      background: #6a6a74;
-      box-shadow: 0 0 0 4px #1c1c22, inset 8px 8px 0 #b4b4be, inset -10px -10px 0 #2e2e36;
-    }
-    .hand-sword.pipe {
-      width: 20px;
-      height: 80px;
-      background: #e8eef2;
-      box-shadow: 0 0 0 3px #14181c, inset 0 0 0 6px #2a3138, inset 5px 0 0 #ffffff;
-    }
-    #bag-grid .hand-sword.long {
-      width: 4px;
-      height: 48px;
-    }
-    #bag-grid .hand-sword.hard {
-      width: 16px;
-      height: 24px;
-    }
-    #bag-grid .hand-sword.pipe {
-      width: 10px;
-      height: 40px;
-      box-shadow: 0 0 0 2px #14181c, inset 0 0 0 3px #2a3138, inset 2px 0 0 #ffffff;
-    }
-    #drag-item .hand-sword.long {
-      width: 5px;
-      height: 68px;
-    }
-    #drag-item .hand-sword.hard {
-      width: 20px;
-      height: 34px;
-    }
-    #drag-item .hand-sword.pipe {
-      width: 12px;
-      height: 56px;
-      box-shadow: 0 0 0 2px #14181c, inset 0 0 0 4px #2a3138, inset 3px 0 0 #ffffff;
-    }
-    .stack-num {
-      position: absolute;
-      right: 3px;
-      bottom: 2px;
-      z-index: 3;
-      color: #fff;
-      font: 700 18px/1 Gulim, "굴림", sans-serif;
-      text-shadow: 2px 2px 0 #111, -1px -1px 0 #111, 1px -1px 0 #111, -1px 1px 0 #111;
-      pointer-events: none;
-    }
-    #bag-grid .stack-num {
-      right: 1px;
-      bottom: 0;
-      font-size: 14px;
-    }
-    .hand-light {
-      position: absolute;
-      left: 50%;
-      top: 50%;
-      width: 22px;
-      height: 78px;
-      transform: translate(-50%, -50%) rotate(48deg);
-      pointer-events: none;
-    }
-    .hand-light .tube {
-      position: absolute;
-      left: 3px;
-      right: 3px;
-      top: 22px;
-      bottom: 6px;
-      background: #d0d0d6;
-      box-shadow: inset 4px 0 0 #ffffff, inset -4px 0 0 #6e6e76, 0 0 0 2px #111;
-    }
-    .hand-light .grip {
-      position: absolute;
-      left: 0;
-      right: 0;
-      top: 30px;
-      height: 22px;
-      background: #1a1a1e;
-      box-shadow: inset 0 4px 0 #3a3a42;
-    }
-    .hand-light .lens {
-      position: absolute;
-      left: -4px;
-      right: -4px;
-      top: 0;
-      height: 26px;
-      border-radius: 0;
-      background: #fff6d0;
-      box-shadow: 0 0 0 3px #111, inset 5px 5px 0 #ffffff, inset -5px -5px 0 #c8a040;
-    }
-    #bag-grid .hand-light {
-      width: 14px;
-      height: 40px;
-    }
-    #bag-grid .hand-light .lens {
-      height: 14px;
-      box-shadow: 0 0 0 2px #111, inset 3px 3px 0 #ffffff, inset -3px -3px 0 #c8a040;
-    }
-    #drag-item .hand-light {
-      width: 16px;
-      height: 52px;
-    }
-    .hand-light.off .lens {
-      background: #5a5a60;
-      box-shadow: 0 0 0 3px #111, inset 5px 5px 0 #8a8a90, inset -5px -5px 0 #2a2a2e;
-    }
-    .hand-light.wide {
-      width: 72px;
-      height: 46px;
-      transform: translate(-50%, -50%) rotate(-24deg);
-    }
-    .hand-light.wide .tube {
-      left: 24px;
-      right: 2px;
-      top: 16px;
-      bottom: 8px;
-      background: #16161a;
-      border-radius: 0;
-      box-shadow: inset 0 4px 0 #3a3a42, 0 0 0 2px #111;
-    }
-    .hand-light.wide .tube::after {
-      content: "";
-      position: absolute;
-      left: 10px;
-      top: 5px;
-      width: 16px;
-      height: 8px;
-      background: #e2c27a;
-      box-shadow: inset 2px 2px 0 #fff6d4;
-    }
-    .hand-light.wide .grip {
-      left: 32px;
-      right: auto;
-      top: 2px;
-      width: 24px;
-      height: 14px;
-      background: #16161a;
-      border-radius: 0;
-      box-shadow: 0 0 0 2px #111;
-    }
-    .hand-light.wide .lens {
-      left: 0;
-      right: auto;
-      top: 4px;
-      width: 36px;
-      height: 36px;
-      border-radius: 0;
-      background: #f4f4f0;
-      box-shadow: 0 0 0 4px #111, inset 6px 6px 0 #ffffff, inset -8px -8px 0 #9aa0a8;
-    }
-    .hand-light.wide.off .lens {
-      background: #4a4a50;
-      box-shadow: 0 0 0 4px #111, inset 6px 6px 0 #7a7a80, inset -8px -8px 0 #222;
-    }
-    .hand-light.lantern {
-      width: 36px;
-      height: 48px;
-      transform: translate(-50%, -50%);
-    }
-    .hand-light.lantern .tube {
-      left: 4px;
-      right: 4px;
-      top: 12px;
-      bottom: 4px;
-      background: #1c1c22;
-      box-shadow: 0 0 0 2px #111, inset 0 0 0 4px #3a3a42;
-    }
-    .hand-light.lantern .grip {
-      left: 10px;
-      right: 10px;
-      top: 18px;
-      height: 16px;
-      background: #ffd56a;
-      box-shadow: inset 3px 3px 0 #fff6d0, inset -3px -3px 0 #c48820;
-    }
-    .hand-light.lantern .lens {
-      left: 8px;
-      right: 8px;
-      top: 2px;
-      height: 12px;
-      border-radius: 0;
-      background: #1c1c22;
-      box-shadow: 0 0 0 2px #e2c27a;
-    }
-    #bag-grid .hand-light.lantern,
-    #drag-item .hand-light.lantern {
-      width: 36px;
-      height: 48px;
-    }
-    #bag-grid .hand-light.lantern {
-      transform: translate(-50%, -50%) scale(0.55);
-    }
-    #drag-item .hand-light.lantern {
-      transform: translate(-50%, -50%) scale(0.72);
-    }
-    #bag-grid .hand-light.lantern .lens,
-    #drag-item .hand-light.lantern .lens {
-      height: 12px;
-      border-radius: 0;
-      box-shadow: none;
-    }
-    .hand-light.siren {
-      width: 78px;
-      height: 40px;
-      transform: translate(-50%, -50%);
-    }
-    .hand-light.siren .tube {
-      left: 16px;
-      right: 16px;
-      top: 8px;
-      bottom: 8px;
-      background: #1a1a1e;
-    }
-    .hand-light.siren .grip {
-      left: 2px;
-      right: auto;
-      top: 4px;
-      width: 32px;
-      height: 32px;
-      border-radius: 0;
-      background: #ff2a2a;
-      box-shadow: 0 0 0 3px #111, inset 6px 6px 0 #ffd0d0, inset -6px -6px 0 #8a1010;
-    }
-    .hand-light.siren .lens {
-      left: auto;
-      right: 2px;
-      top: 4px;
-      width: 32px;
-      height: 32px;
-      border-radius: 0;
-      background: #2f6bff;
-      box-shadow: 0 0 0 3px #111, inset 6px 6px 0 #d0e0ff, inset -6px -6px 0 #102880;
-    }
-    .hand-light.siren.off .grip,
-    .hand-light.siren.off .lens {
-      background: #3a3a3e;
-      box-shadow: 0 0 0 3px #111, inset 6px 6px 0 #6a6a70, inset -6px -6px 0 #1a1a1e;
-    }
-    #bag-grid .hand-light.siren,
-    #drag-item .hand-light.siren {
-      width: 78px;
-      height: 40px;
-    }
-    #bag-grid .hand-light.siren {
-      transform: translate(-50%, -50%) scale(0.55);
-    }
-    #drag-item .hand-light.siren {
-      transform: translate(-50%, -50%) scale(0.72);
-    }
-    #bag-grid .hand-light.siren .lens,
-    #drag-item .hand-light.siren .lens {
-      left: auto;
-      width: 32px;
-      height: 32px;
-      border-radius: 0;
-    }
-    #bag-grid .hand-light.wide {
-      transform: translate(-50%, -50%) rotate(-24deg) scale(0.52);
-    }
-    #drag-item .hand-light.wide {
-      transform: translate(-50%, -50%) rotate(-24deg) scale(0.78);
-    }
-    #hp {
-      position: absolute;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      z-index: 6;
-      width: auto;
-      height: 22px;
-      margin: 0;
-      box-sizing: border-box;
-      border: none;
-      border-top: 4px solid #1c1c20;
-      background: #2a1012;
-      pointer-events: none;
-    }
-    #hp-fill {
-      width: 100%;
-      height: 100%;
-      background: #d42020;
-    }
-    .hot-slot {
-      position: relative;
-      width: 52px;
-      height: 52px;
-      box-sizing: border-box;
-      border: 4px solid #140e0a;
-      background: #c4a06a;
-      box-shadow: inset 0 0 0 4px #3a2616, inset 0 5px 0 #e2c27a;
-    }
-    .hot-slot.on {
-      border-color: #e2c27a;
-      box-shadow: inset 0 0 0 4px #e2c27a, inset 0 5px 0 #fff6d4;
-    }
-    .hot-cube {
-      position: absolute;
-      left: 8px;
-      top: 8px;
-      width: 28px;
-      height: 28px;
-      box-shadow: inset -5px -5px 0 rgba(0, 0, 0, 0.35);
-    }
-    .hot-cube[hidden] {
-      display: none;
-    }
-    .hot-num {
-      position: absolute;
-      right: 4px;
-      bottom: 2px;
-      color: #fff;
-      font: 700 16px/1 Gulim, "굴림", sans-serif;
-      text-shadow: 1px 1px 0 #111, -1px 0 0 #111;
-    }
-    .hot-num[hidden] {
-      display: none;
-    }
-    #loot {
-      padding: 26px 22px 18px;
-      border: 6px solid #140e0a;
-      background: #6a4428;
-      box-shadow: inset 0 0 0 6px #e2c27a, inset 0 0 0 12px #3a2616, 0 10px 0 #140e0a;
-      color: #fff6d4;
-    }
-    #loot h2,
-    #custom h2 {
-      align-self: center;
-      margin-top: 6px;
-      padding: 8px 26px;
-      border: 4px solid #111;
-      background: #9d1c1c;
-      box-shadow: inset 0 0 0 4px #e2c27a;
-      color: #fff6d4;
-      font: 700 28px/1 Gulim, "굴림", sans-serif;
-      letter-spacing: 3px;
-    }
-    #loot-list {
-      padding: 12px;
-      border: 4px solid #140e0a;
-      background: #1a120c;
-      box-shadow: inset 0 0 0 4px #8d6840;
-    }
-    #loot-line {
-      background: #e2c27a;
-    }
-    #loot-total {
-      color: #e2c27a;
-    }
-    #loot #loot-ok {
-      background: #1f8a3b;
-      color: #fff6d4;
-      box-shadow: inset 0 -6px 0 #0d4a1e;
-    }
-    #custom-set {
-      gap: 14px;
-      padding: 26px 22px 18px;
-      border: 6px solid #140e0a;
-      background: #6a4428;
-      box-shadow: inset 0 0 0 6px #e2c27a, inset 0 0 0 12px #3a2616, 0 10px 0 #140e0a;
-      color: #fff6d4;
-    }
-    #custom p {
-      color: #e2c27a;
-      letter-spacing: 1px;
-    }
-    #custom button,
-    #custom input[type="number"] {
-      background: #4a301c;
-      color: #fff6d4;
-      border-color: #140e0a;
-      box-shadow: inset 0 -4px 0 #140e0a;
-    }
-    #custom button.on {
-      background: #9d1c1c;
-      color: #fff6d4;
-      box-shadow: inset 0 0 0 4px #e2c27a;
-    }
-    #custom-set #custom-summon {
-      background: #1f8a3b;
-      box-shadow: inset 0 -6px 0 #0d4a1e;
-    }
-    #custom-set #custom-clear {
-      background: #d42020;
-      box-shadow: inset 0 -6px 0 #6e1010;
-    }
-    #custom-set #custom-inf {
-      background: #e2c27a;
-      color: #140e0a;
-      box-shadow: inset 0 -6px 0 #8a6a28;
-    }
-    #bag {
-      padding: 52px 18px 18px;
-      border: 6px solid #140e0a;
-      background: #6a4428;
-      box-shadow: inset 0 0 0 6px #e2c27a, inset 0 0 0 12px #3a2616, 0 10px 0 #140e0a;
-    }
-    #bag .hot-slot,
-    #bag-hands #hand-left,
-    #bag-hands #hand-right {
-      background: #c4a06a;
-      border-color: #140e0a;
-      box-shadow: inset 0 0 0 4px #3a2616, inset 0 6px 0 #e2c27a;
-    }
-    #bag .hot-slot.on {
-      border-color: #e2c27a;
-      box-shadow: inset 0 0 0 3px #e2c27a;
-    }
-    .win-x {
-      border-color: #140e0a;
-      background: #9d1c1c;
-      color: #fff6d4;
-      box-shadow: inset 0 0 0 3px #e2c27a;
-    }
-    #lobby-menu button,
-    #customize {
-      padding: 12px 18px;
-      border: 4px solid #140e0a;
-      background: #6a4428;
-      color: #fff6d4;
-      box-shadow: inset 0 0 0 4px #e2c27a, 0 6px 0 #140e0a;
-    }
-    #screen, #screen * {
-      text-shadow: 2px 2px 0 #140e0a;
     }
   </style>
 </head>
 <body>
-  <div id="screen">
-    <canvas id="view"></canvas>
-    <p id="clock">60</p>
-    <p id="money">0원</p>
-    <div id="win-shade" hidden></div>
-    <div id="loot" hidden>
-      <button type="button" class="win-x" data-close="loot">X</button>
-      <h2>결과</h2>
-      <div id="loot-list"></div>
-      <div id="loot-line"></div>
-      <p id="loot-total" hidden></p>
-      <button type="button" id="loot-ok">확인</button>
-    </div>
-    <p id="lobby-count" hidden>3</p>
-    <div id="lobby-shop" hidden>
-      <button type="button" class="win-x" data-close="shop">X</button>
-      <h2>상점</h2>
-      <div id="lobby-shop-cats">
-        <button type="button" data-cat="all" class="on">전체</button>
-        <button type="button" data-cat="light">빛</button>
-        <button type="button" data-cat="weapon">무기</button>
-        <button type="button" data-cat="misc">기타</button>
-      </div>
-      <div id="lobby-shop-list"></div>
-    </div>
-    <div id="lobby-sell" hidden>
-      <button type="button" class="win-x" data-close="sell">X</button>
-      <h2>판매대</h2>
-      <div id="lobby-sell-body">
-        <div>
-          <p>가방</p>
-          <div id="sell-items"></div>
-        </div>
-        <div>
-          <p>판매대</p>
-          <div id="sell-bin"></div>
-        </div>
-      </div>
-      <div id="sell-actions">
-        <button type="button" id="sell-chosen">판매</button>
-        <button type="button" id="sell-all">전체판매</button>
-      </div>
-    </div>
-    <button type="button" id="customize">커스터마이징</button>
-    <div id="lobby-menu" hidden>
-      <button type="button" id="lobby-shop-btn">상점</button>
-      <button type="button" id="lobby-sell-btn">판매</button>
-    </div>
-    <div id="custom" hidden>
-      <div id="custom-set">
-        <button type="button" class="win-x" data-close="custom">X</button>
-        <h2>설정</h2>
-        <p>눈</p>
-        <div id="custom-eyes">
-          <button type="button" data-eye="none" class="on">없음</button>
-          <button type="button" data-eye="eye">눈</button>
-          <button type="button" data-eye="yellow">노란 눈</button>
-        </div>
-        <p>다리</p>
-        <div id="custom-legs">
-          <input id="custom-leg-count" type="number" min="0" max="12" value="2">
-        </div>
-        <label><input id="custom-front" type="checkbox">앞다리 (점프, 붉은 좀비의 앞다리)</label>
-        <label><input id="custom-long" type="checkbox">긴다리 (거미 좀비의 앞다리)</label>
-        <label><input id="custom-grab" type="checkbox">잡기 (초록 좀비)</label>
-        <label><input id="custom-sword" type="checkbox">칼 (파란 좀비)</label>
-        <label><input id="custom-guard" type="checkbox">막기 (파란 좀비)</label>
-        <label><input id="custom-combo" type="checkbox">연타 (거미 좀비)</label>
-        <label><input id="custom-cone" type="checkbox">빨간 콘 (아이 좀비)</label>
-        <p>속도</p>
-        <div id="custom-paces">
-          <button type="button" data-pace="1" class="on">보통</button>
-          <button type="button" data-pace="0.6">느림</button>
-          <button type="button" data-pace="1.5">빠름</button>
-        </div>
-        <p>체력</p>
-        <div id="custom-hps">
-          <button type="button" data-hp="5" class="on">5</button>
-          <button type="button" data-hp="3">3</button>
-        </div>
-        <p>색</p>
-        <input id="custom-color" type="color" value="#3f6b32">
-        <div id="custom-actions">
-          <button type="button" id="custom-summon">소환</button>
-          <button type="button" id="custom-cancel">취소</button>
-          <button type="button" id="custom-clear">모두 지우기</button>
-        </div>
-        <button type="button" id="custom-inf">돈 무한</button>
-      </div>
-    </div>
-    <div id="cross"></div>
-    <p id="hud">클릭해서 조종</p>
-    <div id="cats" hidden>
-      <div id="cat-list"></div>
-    </div>
-    <div id="fuel-dock">
-      <canvas id="preview"></canvas>
-    </div>
-    <p id="ver">1.0.0</p>
-    <div id="bag-shade" hidden></div>
-    <div id="bag" hidden><button type="button" class="win-x" data-close="bag">X</button><div id="bag-hands"></div><div id="bag-grid"></div></div>
-    <div id="hp"><div id="hp-fill"></div></div>
-    <div id="hand-left" class="hot-slot"><span class="hand-sword"></span></div>
-    <div id="hand-right" class="hot-slot"><span class="hand-light"><i class="tube"></i><i class="grip"></i><i class="lens"></i></span></div>
-    <div id="drag-item" hidden></div>
-    <button type="button" id="fire" hidden>발사</button>
-  </div>
-  <script src="./game.js?v=454"></script>
+  <p id="hint">클릭해서 보기 · WASD 이동 · 스페이스 점프</p>
+  <script src="https://unpkg.com/three@0.160.1/build/three.min.js"></script>
+  <script>
+    const black = 0x111111;
+    const renderer = new THREE.WebGLRenderer({ antialias: false });
+    renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    document.body.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x87c6ea);
+    scene.fog = new THREE.Fog(0x87c6ea, 28, 70);
+
+    const camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, 0.1, 200);
+    const hemi = new THREE.HemisphereLight(0xffffff, 0x3a3a3a, 0.7);
+    scene.add(hemi);
+    const sun = new THREE.DirectionalLight(0xffffff, 1.15);
+    sun.position.set(8, 16, 6);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(1024, 1024);
+    scene.add(sun);
+
+    function studs() {
+      const canvas = document.createElement("canvas");
+      canvas.width = 64;
+      canvas.height = 64;
+      const g = canvas.getContext("2d");
+      g.fillStyle = "#5b8c3a";
+      g.fillRect(0, 0, 64, 64);
+      g.fillStyle = "#6ea24a";
+      g.beginPath();
+      g.arc(32, 32, 11, 0, Math.PI * 2);
+      g.fill();
+      const map = new THREE.CanvasTexture(canvas);
+      map.wrapS = THREE.RepeatWrapping;
+      map.wrapT = THREE.RepeatWrapping;
+      map.repeat.set(48, 48);
+      map.magFilter = THREE.NearestFilter;
+      map.colorSpace = THREE.SRGBColorSpace;
+      return map;
+    }
+
+    const ground = new THREE.Mesh(
+      new THREE.PlaneGeometry(96, 96),
+      new THREE.MeshLambertMaterial({ map: studs() })
+    );
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    function plastic(color) {
+      return new THREE.MeshPhongMaterial({ color: color, shininess: 18 });
+    }
+
+    function smile() {
+      const canvas = document.createElement("canvas");
+      canvas.width = 256;
+      canvas.height = 256;
+      const g = canvas.getContext("2d");
+      g.fillStyle = "#f5cd30";
+      g.fillRect(0, 0, 256, 256);
+      g.fillStyle = "#1a1a1a";
+      g.beginPath();
+      g.ellipse(92, 108, 16, 28, -0.15, 0, Math.PI * 2);
+      g.fill();
+      g.beginPath();
+      g.ellipse(164, 108, 16, 28, 0.15, 0, Math.PI * 2);
+      g.fill();
+      g.strokeStyle = "#1a1a1a";
+      g.lineWidth = 12;
+      g.lineCap = "round";
+      g.beginPath();
+      g.arc(128, 132, 46, 0.25, Math.PI - 0.25);
+      g.stroke();
+      const map = new THREE.CanvasTexture(canvas);
+      map.magFilter = THREE.NearestFilter;
+      map.colorSpace = THREE.SRGBColorSpace;
+      return map;
+    }
+
+    function redEyes() {
+      const canvas = document.createElement("canvas");
+      canvas.width = 256;
+      canvas.height = 256;
+      const g = canvas.getContext("2d");
+      g.fillStyle = "#111111";
+      g.fillRect(0, 0, 256, 256);
+      g.fillStyle = "#e10600";
+      g.beginPath();
+      g.ellipse(92, 108, 16, 28, -0.15, 0, Math.PI * 2);
+      g.fill();
+      g.beginPath();
+      g.ellipse(164, 108, 16, 28, 0.15, 0, Math.PI * 2);
+      g.fill();
+      const map = new THREE.CanvasTexture(canvas);
+      map.magFilter = THREE.NearestFilter;
+      map.colorSpace = THREE.SRGBColorSpace;
+      return map;
+    }
+
+    const skinMat = plastic(black);
+    const pantsMat = plastic(black);
+    const faceMat = plastic(0xffffff);
+    faceMat.map = redEyes();
+    const playerSkin = plastic(0xf5cd30);
+    const playerFace = plastic(0xffffff);
+    playerFace.map = smile();
+    const seg = 2;
+    function bone(material, outward, single) {
+      const upper = new THREE.Group();
+      const upperMesh = new THREE.Mesh(new THREE.BoxGeometry(1, seg, 1), material);
+      upperMesh.position.set(outward, -seg * 0.5, 0);
+      upperMesh.castShadow = true;
+      upperMesh.receiveShadow = true;
+      upper.add(upperMesh);
+      const lower = new THREE.Group();
+      if (!single) {
+        lower.position.set(outward, -seg, 0);
+        const joint = new THREE.Mesh(new THREE.SphereGeometry(0.42, 12, 8), material);
+        joint.castShadow = true;
+        lower.add(joint);
+        const lowerMesh = new THREE.Mesh(new THREE.BoxGeometry(1, seg, 1), material);
+        lowerMesh.position.y = -seg * 0.5;
+        lowerMesh.castShadow = true;
+        lowerMesh.receiveShadow = true;
+        lower.add(lowerMesh);
+        upper.add(lower);
+      }
+      return { upper: upper, lower: lower, vx: 0, vz: 0, ev: 0 };
+    }
+    let femaleTorsoGeometry = null;
+    function femaleTorsoGeo() {
+      if (femaleTorsoGeometry) return femaleTorsoGeometry;
+      const rings = [
+        { y: -1, hw: 0.92, hd: 0.5, z: 0 },
+        { y: -0.62, hw: 1.08, hd: 0.58, z: 0.02 },
+        { y: -0.22, hw: 0.58, hd: 0.36, z: 0 },
+        { y: 0.12, hw: 0.84, hd: 0.5, z: 0.08 },
+        { y: 0.4, hw: 0.98, hd: 0.66, z: 0.16 },
+        { y: 0.72, hw: 1, hd: 0.5, z: 0.04 },
+        { y: 1, hw: 1, hd: 0.46, z: 0 },
+      ];
+      const segN = 16;
+      const positions = [];
+      const index = [];
+      const bases = [];
+      for (let r = 0; r < rings.length; r += 1) {
+        bases.push(positions.length / 3);
+        for (let i = 0; i < segN; i += 1) {
+          const a = (i / segN) * Math.PI * 2;
+          positions.push(Math.cos(a) * rings[r].hw, rings[r].y, Math.sin(a) * rings[r].hd + rings[r].z);
+        }
+      }
+      for (let r = 0; r < rings.length - 1; r += 1) {
+        for (let i = 0; i < segN; i += 1) {
+          const i2 = (i + 1) % segN;
+          const a = bases[r] + i;
+          const b = bases[r] + i2;
+          const c = bases[r + 1] + i;
+          const d = bases[r + 1] + i2;
+          index.push(a, c, b, b, c, d);
+        }
+      }
+      const top = positions.length / 3;
+      positions.push(0, 1, 0);
+      const bot = positions.length / 3;
+      positions.push(0, -1, 0);
+      for (let i = 0; i < segN; i += 1) {
+        const i2 = (i + 1) % segN;
+        index.push(top, bases[rings.length - 1] + i2, bases[rings.length - 1] + i);
+        index.push(bot, bases[0] + i, bases[0] + i2);
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+      geo.setIndex(index);
+      geo.computeVertexNormals();
+      femaleTorsoGeometry = geo;
+      return geo;
+    }
+    function makePerson(shirtColor, x, z, single, skin, face, kind) {
+      const armMat = skin || skinMat;
+      const headFace = face || faceMat;
+      const k = single ? "player" : "zombie";
+      const singleLegs = k === "player";
+      const singleArms = k === "player";
+      const bulk = 1;
+      const root = new THREE.Group();
+      root.rotation.order = "YXZ";
+      root.position.set(x, 0, z);
+      const torso = new THREE.Group();
+      torso.position.y = singleLegs ? seg : seg * 2;
+      const chest = new THREE.Group();
+      const bodyGeo = k === "player" || Math.random() < 0.5
+        ? new THREE.BoxGeometry(2, 2, 1)
+        : femaleTorsoGeo();
+      const body = new THREE.Mesh(bodyGeo, plastic(shirtColor));
+      body.scale.set(bulk, bulk, bulk);
+      body.position.y = bulk;
+      body.castShadow = true;
+      body.receiveShadow = true;
+      chest.add(body);
+      const leftLeg = bone(pantsMat, 0, singleLegs);
+      leftLeg.upper.position.set(-0.5, 0, 0);
+      const rightLeg = bone(pantsMat, 0, singleLegs);
+      rightLeg.upper.position.set(0.5, 0, 0);
+      const leftArm = bone(armMat, -0.5, singleArms);
+      leftArm.upper.position.set(-bulk, 2 * bulk, 0);
+      const rightArm = bone(armMat, 0.5, singleArms);
+      rightArm.upper.position.set(bulk, 2 * bulk, 0);
+      leftArm.upper.rotation.x = (Math.random() - 0.5) * 0.9;
+      rightArm.upper.rotation.x = (Math.random() - 0.5) * 0.9;
+      leftArm.vx = (Math.random() - 0.5) * 2;
+      rightArm.vx = (Math.random() - 0.5) * 2;
+      const neck = new THREE.Group();
+      neck.position.y = 2 * bulk;
+      const skull = new THREE.Mesh(new THREE.BoxGeometry(1.7, 1.5, 1.5), [
+        armMat, armMat, armMat, armMat, headFace, armMat
+      ]);
+      skull.position.y = 0.75;
+      skull.castShadow = true;
+      neck.add(skull);
+      chest.add(leftArm.upper, rightArm.upper, neck);
+      torso.add(chest, leftLeg.upper, rightLeg.upper);
+      root.add(torso);
+      scene.add(root);
+      return {
+        root: root,
+        torso: torso,
+        chest: chest,
+        neck: neck,
+        skull: skull,
+        leftLeg: leftLeg,
+        rightLeg: rightLeg,
+        leftArm: leftArm,
+        rightArm: rightArm,
+        phase: Math.random() * Math.PI * 2,
+        punchTime: 0,
+        wanderYaw: Math.random() * Math.PI * 2,
+        wanderTime: Math.random() * 2,
+        kind: k,
+      };
+    }
+    const player = new THREE.Group();
+    scene.add(player);
+    const npcs = [];
+    npcs.push(makePerson(black, 22, 6));
+    function stepCrowd(dt) {
+      const gap = 3;
+      for (let i = 0; i < npcs.length; i += 1) {
+        const npc = npcs[i];
+        if ((grabber || plantCaught) && npc !== grabber) {
+          npc.wanderTime += dt;
+          if (npc.wanderTime >= 2) {
+            npc.wanderTime -= 2;
+            npc.wanderYaw = Math.random() * Math.PI * 2;
+          }
+          if (npc.wanderTime < 1) {
+            const fx = Math.sin(npc.wanderYaw);
+            const fz = Math.cos(npc.wanderYaw);
+            const nx = npc.root.position.x + fx * 3.2 * dt;
+            const nz = npc.root.position.z + fz * 3.2 * dt;
+            if (nx < -40 || nx > 40 || nz < -40 || nz > 40) npc.wanderYaw += Math.PI;
+            else {
+              npc.root.position.x = nx;
+              npc.root.position.z = nz;
+              npc.phase += dt * 3.4;
+            }
+          }
+          npc.root.rotation.y = npc.wanderYaw;
+          npc.root.rotation.x = 0.12;
+          npc.root.rotation.z = 0;
+          npc.reach = 99;
+        } else if (npc !== grabber) {
+          const dx = player.position.x - npc.root.position.x;
+          const dz = player.position.z - npc.root.position.z;
+          const dist = Math.hypot(dx, dz) || 1;
+          npc.reach = dist;
+          if (dist > 1.8) {
+            npc.root.position.x += (dx / dist) * 3.2 * dt;
+            npc.root.position.z += (dz / dist) * 3.2 * dt;
+            npc.phase += dt * 3.6;
+          }
+          npc.root.rotation.y = Math.atan2(dx, dz);
+          npc.root.rotation.x = 0.1;
+          npc.root.rotation.z = Math.sin(npc.phase * 0.5) * 0.06;
+        }
+      }
+      for (let i = 0; i < npcs.length; i += 1) {
+        for (let j = i + 1; j < npcs.length; j += 1) {
+          let dx = npcs[j].root.position.x - npcs[i].root.position.x;
+          let dz = npcs[j].root.position.z - npcs[i].root.position.z;
+          const dist = Math.hypot(dx, dz);
+          if (dist >= gap || dist < 0.0001) continue;
+          const push = (gap - dist) * 0.5;
+          dx /= dist;
+          dz /= dist;
+          if (npcs[i] !== grabber) {
+            npcs[i].root.position.x -= dx * push;
+            npcs[i].root.position.z -= dz * push;
+          }
+          if (npcs[j] !== grabber) {
+            npcs[j].root.position.x += dx * push;
+            npcs[j].root.position.z += dz * push;
+          }
+        }
+      }
+      for (let i = 0; i < npcs.length; i += 1) {
+        const npc = npcs[i];
+        if (npc !== grabber) zombiePose(npc, dt);
+      }
+    }
+
+    const playerBody = makePerson(0x1a4fd6, 0, 0, true, playerSkin, playerFace);
+    scene.remove(playerBody.root);
+    player.add(playerBody.root);
+    playerBody.root.position.set(0, 0, 0);
+    playerBody.root.visible = false;
+    let grabber = null;
+    let plantCaught = false;
+    let plantStart = null;
+    let grabYaw = 0;
+    let grabTime = 0;
+    let chomped = false;
+    const stemMat = plastic(black);
+    const leafMat = plastic(black);
+    const tongueMat = plastic(0xe10600);
+    const plant = new THREE.Group();
+    plant.position.set(12, 0, -14);
+    const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.75, 10, 8), stemMat);
+    bulb.scale.y = 0.55;
+    bulb.position.y = 0.35;
+    const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.5, 3.2, 8), stemMat);
+    stem.position.y = 1.7;
+    const plantHead = new THREE.Group();
+    plantHead.position.y = 3.35;
+    const jawLower = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.32, 1.7), leafMat);
+    jawLower.position.set(0, -0.1, 0.55);
+    const jawUpper = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.32, 1.7), leafMat);
+    jawUpper.position.set(0, 0.16, 0.55);
+    const tongue = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.14, 1.45), tongueMat);
+    tongue.position.set(0, -0.02, 1.15);
+    plantHead.add(jawLower, jawUpper, tongue);
+    function makeVine() {
+      const upper = new THREE.Group();
+      const upperMesh = new THREE.Mesh(new THREE.BoxGeometry(0.28, 2.2, 0.28), leafMat);
+      upperMesh.position.y = -1.1;
+      upper.add(upperMesh);
+      const lower = new THREE.Group();
+      lower.position.y = -2.2;
+      const lowerMesh = new THREE.Mesh(new THREE.BoxGeometry(0.22, 2.1, 0.22), leafMat);
+      lowerMesh.position.y = -1.05;
+      lower.add(lowerMesh);
+      upper.add(lower);
+      return { upper: upper, lower: lower };
+    }
+    const vineL = makeVine();
+    vineL.upper.position.set(-0.45, 2.5, 0);
+    const vineR = makeVine();
+    vineR.upper.position.set(0.45, 2.5, 0);
+    plant.add(bulb, stem, plantHead, vineL.upper, vineR.upper);
+    plant.scale.set(2, 2, 2);
+    scene.add(plant);
+    let plantTime = 0;
+    const bloodMat = plastic(0xc40012);
+    const bloodGeo = new THREE.SphereGeometry(0.11, 6, 5);
+    const bloods = [];
+    function spray(x, y, z, fx, fz, count) {
+      for (let i = 0; i < (count || 12); i += 1) {
+        const drop = new THREE.Mesh(bloodGeo, bloodMat);
+        drop.position.set(x, y, z);
+        scene.add(drop);
+        bloods.push({
+          mesh: drop,
+          vx: -fx * 2 + (Math.random() - 0.5) * 8,
+          vy: 0.25 + Math.random() * 1.5,
+          vz: -fz * 2 + (Math.random() - 0.5) * 8,
+          life: 0.8 + Math.random() * 0.5,
+        });
+      }
+    }
+    function stepBlood(dt) {
+      for (let i = bloods.length - 1; i >= 0; i -= 1) {
+        const drop = bloods[i];
+        drop.vy -= 20 * dt;
+        drop.mesh.position.x += drop.vx * dt;
+        drop.mesh.position.y += drop.vy * dt;
+        drop.mesh.position.z += drop.vz * dt;
+        drop.life -= dt;
+        if (drop.mesh.position.y < 0.08) {
+          drop.mesh.position.y = 0.08;
+          drop.vy *= -0.2;
+          drop.vx *= 0.5;
+          drop.vz *= 0.5;
+        }
+        if (drop.life <= 0) {
+          scene.remove(drop.mesh);
+          bloods.splice(i, 1);
+        }
+      }
+    }
+    function zombiePose(npc, dt) {
+      const step = Math.sin(npc.phase);
+      npc.torso.position.y = seg * 2;
+      npc.chest.rotation.set(0.08, 0, step * 0.04);
+      npc.leftLeg.upper.rotation.x = step * 0.55;
+      npc.rightLeg.upper.rotation.x = -step * 0.55;
+      npc.leftLeg.lower.rotation.x = 0.45 + Math.max(0, -step) * 0.7;
+      npc.rightLeg.lower.rotation.x = 0.45 + Math.max(0, step) * 0.7;
+      let punch = 0;
+      if (npc.reach < 9) {
+        npc.punchTime += dt;
+        const cycle = (npc.punchTime * 1.6) % 1;
+        if (cycle < 0.16) punch = cycle / 0.16;
+        else if (cycle < 0.34) punch = 1;
+        else if (cycle < 0.5) punch = 1 - (cycle - 0.34) / 0.16;
+      }
+      const drive = punch > 0.02 ? { x: -0.45 - punch * 0.95, z: -0.15, e: 1.15 * (1 - punch) } : null;
+      stepArm(npc.leftArm, dt, null, step * 0.2);
+      stepArm(npc.rightArm, dt, drive, -step * 0.2);
+      npc.chest.rotation.x = 0.08 + punch * 0.2;
+      npc.neck.position.set(0, 2, 0);
+      npc.neck.rotation.set(0.15, 0, Math.sin(npc.phase * 0.5) * 0.08);
+      npc.skull.material[4] = faceMat;
+    }
+
+    function eatStep(dt) {
+      grabTime += dt;
+      let fx = Math.sin(grabYaw);
+      let fz = Math.cos(grabYaw);
+      const nx = grabber.root.position.x + fx * 2.1 * dt;
+      const nz = grabber.root.position.z + fz * 2.1 * dt;
+      if (nx < -40 || nx > 40 || nz < -40 || nz > 40) grabYaw += Math.PI;
+      else {
+        grabber.root.position.x = nx;
+        grabber.root.position.z = nz;
+      }
+      fx = Math.sin(grabYaw);
+      fz = Math.cos(grabYaw);
+      grabber.root.rotation.set(0.08, grabYaw, 0);
+      grabber.torso.position.y = seg * 2;
+      player.position.set(grabber.root.position.x + fx * 1.7, 0, grabber.root.position.z + fz * 1.7);
+      playerBody.root.rotation.set(0.15, grabYaw + Math.PI, 0);
+      const cycle = (grabTime * 1.6) % 1;
+      const bite = cycle < 0.18 ? cycle / 0.18 : cycle < 0.42 ? 1 - (cycle - 0.18) / 0.24 : 0;
+      if (bite > 0.8 && !chomped) {
+        chomped = true;
+        spray(player.position.x, 3.1, player.position.z, fx, fz);
+      }
+      if (bite < 0.2) chomped = false;
+      grabber.chest.rotation.x = 0.35 + bite * 0.4;
+      grabber.neck.position.set(0, 2, 0.15 + bite * 0.3);
+      grabber.neck.rotation.set(0.65 + bite * 0.55, 0, 0);
+      grabber.leftArm.upper.rotation.set(-1.2, 0, 0.4);
+      grabber.rightArm.upper.rotation.set(-1.2, 0, -0.4);
+      grabber.leftArm.lower.rotation.set(0.9, 0, 0);
+      grabber.rightArm.lower.rotation.set(0.9, 0, 0);
+      playerBody.leftArm.upper.rotation.set(-0.35, 0, 0.55);
+      playerBody.rightArm.upper.rotation.set(-0.35, 0, -0.55);
+      playerBody.neck.rotation.set(-0.25 - bite * 0.2, 0, 0);
+    }
+
+    function stepPlant(dt) {
+      plantTime += dt;
+      const dx = player.position.x - plant.position.x;
+      const dz = player.position.z - plant.position.z;
+      const dist = Math.hypot(dx, dz) || 1;
+      const face = Math.atan2(dx, dz);
+      if (!plantCaught) plant.rotation.y = face;
+      const reach = !plantCaught && dist < 16 ? Math.min(1, (16 - dist) / 10) : 0;
+      const sway = Math.sin(plantTime * 1.4) * 0.06;
+      vineL.upper.rotation.x = -0.35 - reach * 1.15;
+      vineR.upper.rotation.x = -0.35 - reach * 1.15;
+      vineL.upper.rotation.z = 0.55 - reach * 0.35 + sway;
+      vineR.upper.rotation.z = -0.55 + reach * 0.35 - sway;
+      vineL.lower.rotation.x = 0.9 - reach * 0.55;
+      vineR.lower.rotation.x = 0.9 - reach * 0.55;
+      const open = 0.15 + reach * 0.9;
+      jawUpper.rotation.x = -open;
+      jawLower.rotation.x = open * 0.85;
+      tongue.position.z = 0.7 + reach * 1.1;
+      plantHead.rotation.z = sway;
+      if (!grabber && !plantCaught && dist < 5.2) {
+        plantCaught = true;
+        plantStart = player.position.clone();
+        grabYaw = face;
+        grabTime = 0;
+        chomped = false;
+        playerBody.root.visible = true;
+        document.getElementById("hint").textContent = "잡혔다";
+        if (document.pointerLockElement) document.exitPointerLock();
+      }
+    }
+    function plantEatStep(dt) {
+      grabTime += dt;
+      const fx = Math.sin(grabYaw);
+      const fz = Math.cos(grabYaw);
+      plant.rotation.y = grabYaw;
+      const align = Math.min(1, grabTime / 0.32);
+      const into = Math.min(1, Math.max(0, (grabTime - 0.32) / 1.05));
+      const scale = 1 - into * 0.38;
+      const headLen = 4.8 * scale;
+      const lip = 2.7;
+      const mouthY = 6.7;
+      const pitch = Math.PI * 0.5 * align;
+      const headForward = lip - into * (headLen + 2.2);
+      const hx = plant.position.x + fx * headForward;
+      const hz = plant.position.z + fz * headForward;
+      const s = Math.sin(pitch);
+      const c = Math.cos(pitch);
+      const tx = hx + fx * headLen * s;
+      const ty = mouthY - headLen * c;
+      const tz = hz + fz * headLen * s;
+      player.position.set(
+        plantStart.x + (tx - plantStart.x) * align,
+        plantStart.y + (ty - plantStart.y) * align,
+        plantStart.z + (tz - plantStart.z) * align
+      );
+      playerBody.root.rotation.set(pitch, grabYaw + Math.PI, 0);
+      playerBody.root.scale.set(scale, scale, scale);
+      const mouthOpen = into < 0.55 ? 1.2 : 1.2 * (1 - (into - 0.55) / 0.45);
+      jawUpper.rotation.x = -mouthOpen;
+      jawLower.rotation.x = mouthOpen * 0.82;
+      tongue.position.z = 1.55 - into * 1.2;
+      vineL.upper.rotation.set(-1.35, 0, 0.25);
+      vineR.upper.rotation.set(-1.35, 0, -0.25);
+      vineL.lower.rotation.set(0.9, 0, 0);
+      vineR.lower.rotation.set(0.9, 0, 0);
+      plantHead.rotation.z = 0;
+      if (into > 0.12 && !chomped) {
+        chomped = true;
+        spray(plant.position.x + fx * lip, mouthY, plant.position.z + fz * lip, fx, fz);
+      }
+      playerBody.leftArm.upper.rotation.set(-0.2 - pitch * 0.35, 0, 0.85);
+      playerBody.rightArm.upper.rotation.set(-0.2 - pitch * 0.35, 0, -0.85);
+      playerBody.neck.rotation.set(0.35 * align, 0, 0);
+    }
+
+    function stepArm(arm, dt, drive, jolt) {
+      let ux = arm.upper.rotation.x;
+      let uz = arm.upper.rotation.z;
+      let ex = arm.lower.rotation.x;
+      if (jolt) {
+        arm.vx += jolt;
+        arm.vz += jolt * 0.6;
+      }
+      if (drive) {
+        arm.vx += (drive.x - ux) * 180 * dt;
+        arm.vz += (drive.z - uz) * 180 * dt;
+        arm.ev += (drive.e - ex) * 180 * dt;
+      }
+      arm.vx += -Math.sin(ux) * 16 * dt;
+      arm.vz += -Math.sin(uz) * 12 * dt;
+      arm.ev += -Math.sin(ux + ex) * 14 * dt;
+      const damp = Math.exp(-2.4 * dt);
+      arm.vx *= damp;
+      arm.vz *= damp;
+      arm.ev *= damp;
+      ux = Math.max(-2.6, Math.min(2.6, ux + arm.vx * dt));
+      uz = Math.max(-1.5, Math.min(1.5, uz + arm.vz * dt));
+      ex = Math.max(-0.5, Math.min(2.5, ex + arm.ev * dt));
+      arm.upper.rotation.x = ux;
+      arm.upper.rotation.z = uz;
+      arm.lower.rotation.x = ex;
+    }
+
+    const keys = {};
+    window.addEventListener("keydown", function (event) {
+      keys[event.code] = true;
+      if (event.code === "Space" || event.code.indexOf("Arrow") === 0) event.preventDefault();
+    });
+    window.addEventListener("keyup", function (event) { keys[event.code] = false; });
+
+    let yaw = 0.7;
+    let pitch = 0;
+    let vy = 0;
+    let grounded = true;
+    renderer.domElement.addEventListener("click", function () {
+      if (document.pointerLockElement !== renderer.domElement) renderer.domElement.requestPointerLock();
+    });
+    window.addEventListener("mousemove", function (event) {
+      if (document.pointerLockElement !== renderer.domElement) return;
+      yaw -= event.movementX * 0.003;
+      pitch += event.movementY * 0.003;
+      pitch = Math.max(-1.2, Math.min(1.2, pitch));
+    });
+
+    const clock = new THREE.Clock();
+    function frame() {
+      requestAnimationFrame(frame);
+      const dt = Math.min(0.05, clock.getDelta());
+      if (!grabber && !plantCaught) {
+        const ahead = ((keys.KeyW || keys.ArrowUp) ? 1 : 0) - ((keys.KeyS || keys.ArrowDown) ? 1 : 0);
+        const side = ((keys.KeyD || keys.ArrowRight) ? 1 : 0) - ((keys.KeyA || keys.ArrowLeft) ? 1 : 0);
+        if (ahead !== 0 || side !== 0) {
+          const len = Math.hypot(ahead, side);
+          const speed = 16;
+          const fx = -Math.sin(yaw);
+          const fz = -Math.cos(yaw);
+          const dx = (fx * ahead + Math.cos(yaw) * side) / len * speed * dt;
+          const dz = (fz * ahead - Math.sin(yaw) * side) / len * speed * dt;
+          player.position.x = Math.max(-44, Math.min(44, player.position.x + dx));
+          player.position.z = Math.max(-44, Math.min(44, player.position.z + dz));
+        }
+        vy -= 60 * dt;
+        player.position.y += vy * dt;
+        if (player.position.y <= 0) {
+          player.position.y = 0;
+          if (vy < 0) vy = 0;
+          grounded = true;
+        } else grounded = false;
+        if (keys.Space && grounded) {
+          vy = Math.sqrt(2 * 60 * 6);
+          grounded = false;
+        }
+      }
+      stepCrowd(dt);
+      stepPlant(dt);
+      if (!grabber && !plantCaught) {
+        for (let i = 0; i < npcs.length; i += 1) {
+          const npc = npcs[i];
+          const dx = player.position.x - npc.root.position.x;
+          const dz = player.position.z - npc.root.position.z;
+          if (Math.hypot(dx, dz) < 2.2) {
+            grabber = npc;
+            grabYaw = Math.atan2(dx, dz);
+            grabTime = 0;
+            chomped = false;
+            playerBody.root.visible = true;
+            document.getElementById("hint").textContent = "잡혔다";
+            if (document.pointerLockElement) document.exitPointerLock();
+            break;
+          }
+        }
+      }
+      if (grabber) eatStep(dt);
+      if (plantCaught) plantEatStep(dt);
+      stepBlood(dt);
+      if (plantCaught) {
+        const fx = Math.sin(grabYaw);
+        const fz = Math.cos(grabYaw);
+        camera.position.set(plant.position.x - fx * 5 + fz * 11, 6.5, plant.position.z - fz * 5 - fx * 11);
+        camera.lookAt(plant.position.x + fx * 1.4, 4.5, plant.position.z + fz * 1.4);
+      } else if (grabber) {
+        const fx = Math.sin(grabYaw);
+        const fz = Math.cos(grabYaw);
+        const midX = (grabber.root.position.x + player.position.x) * 0.5;
+        const midZ = (grabber.root.position.z + player.position.z) * 0.5;
+        camera.position.set(midX - fx * 3 + fz * 7, 4.2, midZ - fz * 3 - fx * 7);
+        camera.lookAt(midX, 3.6, midZ);
+      } else {
+        const headY = player.position.y + 4.85;
+        const lookX = -Math.sin(yaw) * Math.cos(pitch);
+        const lookY = -Math.sin(pitch);
+        const lookZ = -Math.cos(yaw) * Math.cos(pitch);
+        camera.position.set(player.position.x, headY, player.position.z);
+        camera.lookAt(camera.position.x + lookX, camera.position.y + lookY, camera.position.z + lookZ);
+      }
+      renderer.render(scene, camera);
+    }
+    frame();
+
+    window.addEventListener("resize", function () {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
 </body>
 </html>
