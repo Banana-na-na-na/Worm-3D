@@ -3,690 +3,704 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>TABS</title>
+  <title>색 칸</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=IBM+Plex+Sans+KR:wght@500;700&display=swap" rel="stylesheet">
   <style>
-    html, body { margin: 0; height: 100%; background: #6aa6d8; overflow: hidden; }
-    canvas { display: block; width: 100%; height: 100%; }
-    p {
-      position: fixed;
-      left: 16px;
-      bottom: 14px;
+    :root {
+      --ink: #1c1814;
+      --board: #d8c8a8;
+      --floor: #cbb892;
+      --red: #d62828;
+      --blue: #1d6fd8;
+      --green: #2f9e44;
+      --yellow: #f4c430;
+      --btn: #1c1814;
+      --btn-text: #efe6d4;
+    }
+    * { box-sizing: border-box; }
+    html, body {
       margin: 0;
-      color: #fff;
-      font: 700 16px/1.4 Gulim, "굴림", sans-serif;
-      text-shadow: 2px 0 #111, -2px 0 #111, 0 2px #111, 0 -2px #111;
+      height: 100%;
+      font-family: "IBM Plex Sans KR", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 20% 10%, #fff6e4 0%, transparent 42%),
+        radial-gradient(circle at 85% 80%, #d7ecff 0%, transparent 40%),
+        linear-gradient(160deg, #f3e7cf 0%, #e4f0e2 48%, #d9e8f5 100%);
+      overflow: hidden;
+    }
+    .screen {
+      position: absolute;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+    .screen.on { display: flex; }
+    .lobby, .center-box {
+      width: min(520px, 100%);
+      text-align: center;
+    }
+    .lobby h1, .center-box h2 {
+      margin: 0 0 12px;
+      font-family: "Black Han Sans", sans-serif;
+      letter-spacing: -0.02em;
+      line-height: 0.95;
+    }
+    .lobby h1 { font-size: clamp(56px, 14vw, 92px); }
+    .center-box h2 { font-size: clamp(40px, 10vw, 64px); color: #fff; text-shadow: 0 4px 0 rgba(0,0,0,0.25); }
+    .lobby p, .center-box p {
+      margin: 0 auto 28px;
+      max-width: 400px;
+      font-size: 16px;
+      font-weight: 500;
+      line-height: 1.55;
+    }
+    .lobby p { opacity: 0.85; }
+    .center-box p { color: #fff; font-weight: 700; }
+    .play {
+      appearance: none;
+      border: 0;
+      border-radius: 999px;
+      padding: 16px 42px;
+      font: 700 20px/1 "IBM Plex Sans KR", sans-serif;
+      color: var(--btn-text);
+      background: var(--btn);
+      cursor: pointer;
+      box-shadow: 0 10px 0 #8a7a5e;
+      transition: transform 0.08s ease, box-shadow 0.08s ease;
+    }
+    .play:hover { transform: translateY(-2px); box-shadow: 0 12px 0 #8a7a5e; }
+    .play:active { transform: translateY(6px); box-shadow: 0 4px 0 #8a7a5e; }
+    .game-wrap {
+      width: min(760px, 100%);
+      display: grid;
+      gap: 10px;
+    }
+    .hud {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .hud h2 {
+      margin: 0;
+      font-family: "Black Han Sans", sans-serif;
+      font-size: 24px;
+    }
+    .pill {
+      font-weight: 700;
+      font-size: 14px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(28, 24, 20, 0.08);
+    }
+    .pill.mode {
+      background: #1c1814;
+      color: #efe6d4;
+    }
+    .pill.timer.warn { background: #d62828; color: #fff; }
+    .msg {
+      min-height: 22px;
+      margin: 0;
+      font-weight: 700;
+      font-size: 14px;
+    }
+    .board {
+      display: grid;
+      gap: 4px;
+      padding: 10px;
+      border-radius: 18px;
+      background: var(--board);
+      box-shadow:
+        inset 0 0 0 3px rgba(0, 0, 0, 0.08),
+        0 14px 0 rgba(0, 0, 0, 0.12);
+      aspect-ratio: 1;
+      width: min(640px, 92vw);
+      margin: 0 auto;
+      user-select: none;
+    }
+    .cell {
+      position: relative;
+      border: 0;
+      border-radius: 7px;
+      background: var(--floor);
+      box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.08);
+      cursor: default;
+      padding: 0;
+      touch-action: none;
+    }
+    .cell.red { background: #f3a4a4; box-shadow: inset 0 -3px 0 rgba(180, 40, 40, 0.25); }
+    .cell.blue { background: #9ec5ff; box-shadow: inset 0 -3px 0 rgba(20, 80, 180, 0.25); }
+    .cell.green { background: #9fdfae; box-shadow: inset 0 -3px 0 rgba(30, 120, 50, 0.25); }
+    .cell.wall {
+      background: #5a5248;
+      box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.35);
+      cursor: not-allowed;
+    }
+    .cell.drop-ok { outline: 2px solid #1c1814; outline-offset: -1px; }
+    .cell.drop-bad { outline: 2px solid #d62828; outline-offset: -1px; }
+    .block {
+      position: absolute;
+      inset: 16%;
+      border-radius: 6px;
+      border: 2px solid rgba(0, 0, 0, 0.2);
+      box-shadow:
+        inset 0 -4px 0 rgba(0, 0, 0, 0.18),
+        0 2px 0 rgba(0, 0, 0, 0.08);
+      cursor: grab;
+      touch-action: none;
+      z-index: 1;
+    }
+    .block.red { background: linear-gradient(180deg, #ff5b5b, var(--red)); }
+    .block.yellow { background: linear-gradient(180deg, #ffe066, var(--yellow)); }
+    .block.locked { cursor: default; opacity: 0.95; }
+    .block.dragging-source { opacity: 0.22; }
+    .block.preview {
+      opacity: 0.8;
       pointer-events: none;
+      outline: 2px dashed rgba(28, 24, 20, 0.45);
+    }
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 14px;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 700;
+      opacity: 0.9;
+    }
+    .legend span { display: inline-flex; align-items: center; gap: 6px; }
+    .dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 3px;
+      border: 1px solid rgba(0, 0, 0, 0.2);
+    }
+    .dot.red { background: #f3a4a4; }
+    .dot.blue { background: #9ec5ff; }
+    .dot.green { background: #9fdfae; }
+    .dot.wall { background: #5a5248; }
+    .dot.block-red { background: var(--red); }
+    .dot.block-yellow { background: var(--yellow); }
+    .overlay {
+      background: rgba(28, 24, 20, 0.35);
+      backdrop-filter: blur(4px);
+      flex-direction: column;
+      gap: 18px;
     }
   </style>
 </head>
 <body>
-  <p id="hint">클릭해서 보기 · WASD 이동 · 스페이스 점프</p>
-  <script src="https://unpkg.com/three@0.160.1/build/three.min.js"></script>
+  <section id="lobby" class="screen on">
+    <div class="lobby">
+      <h1>색 칸</h1>
+      <p>1라운드는 연습입니다. 2라운드부터 벽·시간제한·한 칸 이동 같은 특수 라운드가 랜덤으로 나옵니다. 20라운드를 버티세요.</p>
+      <button class="play" id="playBtn" type="button">플레이</button>
+    </div>
+  </section>
+
+  <section id="game" class="screen">
+    <div class="game-wrap">
+      <div class="hud">
+        <h2>색 칸</h2>
+        <div class="pill" id="roundLabel">라운드 1 / 20</div>
+        <div class="pill mode" id="modeLabel">일반</div>
+        <div class="pill" id="timerLabel" hidden>남은 시간 40</div>
+      </div>
+      <p class="msg" id="msg"></p>
+      <div class="board" id="board" aria-label="게임 판"></div>
+      <div class="legend">
+        <span><i class="dot red"></i>빨간 칸</span>
+        <span><i class="dot blue"></i>파란 칸</span>
+        <span><i class="dot green"></i>초록 칸</span>
+        <span><i class="dot wall"></i>벽</span>
+        <span><i class="dot block-red"></i>빨간 블럭</span>
+        <span><i class="dot block-yellow"></i>노란 블럭</span>
+      </div>
+    </div>
+  </section>
+
+  <section id="win" class="screen overlay">
+    <div class="center-box">
+      <h2>20라운드 클리어!</h2>
+      <p>특수 라운드를 전부 버텼습니다.</p>
+      <button class="play" id="againBtn" type="button">다시 플레이</button>
+    </div>
+  </section>
+
+  <section id="fail" class="screen overlay">
+    <div class="center-box">
+      <h2>실패...</h2>
+      <p id="failText">시간 초과로 처음부터 다시입니다.</p>
+      <button class="play" id="retryBtn" type="button">다시 도전</button>
+    </div>
+  </section>
+
   <script>
-    const black = 0x111111;
-    const renderer = new THREE.WebGLRenderer({ antialias: false });
-    renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.shadowMap.enabled = true;
-    document.body.appendChild(renderer.domElement);
+    const W = 14;
+    const H = 14;
+    const TOTAL_ROUNDS = 20;
+    const NEAR = 5;
 
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x87c6ea);
-    scene.fog = new THREE.Fog(0x87c6ea, 28, 70);
+    const MODES = {
+      normal: {
+        id: "normal",
+        name: "일반",
+        tip: "빨간 블럭 → 파란 칸 → 초록 칸",
+        sets: 1,
+        walls: 0,
+        noFloor: false,
+        adjacent: false,
+        time: 0,
+      },
+      walls: {
+        id: "walls",
+        name: "벽 라운드",
+        tip: "벽에 블럭을 올릴 수 없습니다",
+        sets: 1,
+        walls: 28,
+        noFloor: false,
+        adjacent: false,
+        time: 0,
+      },
+      noFloor: {
+        id: "noFloor",
+        name: "색칸만",
+        tip: "바닥에는 못 올립니다. 색 칸만 사용하세요",
+        sets: 1,
+        walls: 0,
+        noFloor: true,
+        adjacent: false,
+        time: 0,
+      },
+      timed: {
+        id: "timed",
+        name: "시간 제한",
+        tip: "시간이 끝나면 처음부터입니다",
+        sets: 1,
+        walls: 10,
+        noFloor: false,
+        adjacent: false,
+        time: 35,
+      },
+      twin: {
+        id: "twin",
+        name: "쌍둥이",
+        tip: "세트 2개를 모두 채우세요",
+        sets: 2,
+        walls: 0,
+        noFloor: false,
+        adjacent: false,
+        time: 0,
+      },
+      chaos: {
+        id: "chaos",
+        name: "대혼란",
+        tip: "세트 3개 + 벽",
+        sets: 3,
+        walls: 22,
+        noFloor: false,
+        adjacent: false,
+        time: 0,
+      },
+      step: {
+        id: "step",
+        name: "한 칸 이동",
+        tip: "상하좌우 옆 칸으로만 옮길 수 있습니다",
+        sets: 1,
+        walls: 8,
+        noFloor: false,
+        adjacent: true,
+        time: 0,
+      },
+      hard: {
+        id: "hard",
+        name: "압박",
+        tip: "색칸만 + 시간 제한",
+        sets: 2,
+        walls: 12,
+        noFloor: true,
+        adjacent: false,
+        time: 45,
+      },
+    };
 
-    const camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, 0.1, 200);
-    const hemi = new THREE.HemisphereLight(0xffffff, 0x3a3a3a, 0.7);
-    scene.add(hemi);
-    const sun = new THREE.DirectionalLight(0xffffff, 1.15);
-    sun.position.set(8, 16, 6);
-    sun.castShadow = true;
-    sun.shadow.mapSize.set(1024, 1024);
-    scene.add(sun);
+    const RANDOM_POOL = ["walls", "noFloor", "timed", "twin", "chaos", "step", "hard"];
 
-    function studs() {
-      const canvas = document.createElement("canvas");
-      canvas.width = 64;
-      canvas.height = 64;
-      const g = canvas.getContext("2d");
-      g.fillStyle = "#5b8c3a";
-      g.fillRect(0, 0, 64, 64);
-      g.fillStyle = "#6ea24a";
-      g.beginPath();
-      g.arc(32, 32, 11, 0, Math.PI * 2);
-      g.fill();
-      const map = new THREE.CanvasTexture(canvas);
-      map.wrapS = THREE.RepeatWrapping;
-      map.wrapT = THREE.RepeatWrapping;
-      map.repeat.set(48, 48);
-      map.magFilter = THREE.NearestFilter;
-      map.colorSpace = THREE.SRGBColorSpace;
-      return map;
-    }
+    let tiles = [];
+    let round = 1;
+    let mode = MODES.normal;
+    let messageTimer = 0;
+    let drag = null;
+    let timeLeft = 0;
+    let timerAcc = 0;
+    let timerOn = false;
 
-    const ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(96, 96),
-      new THREE.MeshLambertMaterial({ map: studs() })
-    );
-    ground.rotation.x = -Math.PI / 2;
-    ground.receiveShadow = true;
-    scene.add(ground);
+    const lobby = document.getElementById("lobby");
+    const game = document.getElementById("game");
+    const win = document.getElementById("win");
+    const fail = document.getElementById("fail");
+    const board = document.getElementById("board");
+    const msg = document.getElementById("msg");
+    const roundLabel = document.getElementById("roundLabel");
+    const modeLabel = document.getElementById("modeLabel");
+    const timerLabel = document.getElementById("timerLabel");
+    const failText = document.getElementById("failText");
 
-    function plastic(color) {
-      return new THREE.MeshPhongMaterial({ color: color, shininess: 18 });
-    }
+    board.style.gridTemplateColumns = "repeat(" + W + ", 1fr)";
 
-    function smile() {
-      const canvas = document.createElement("canvas");
-      canvas.width = 256;
-      canvas.height = 256;
-      const g = canvas.getContext("2d");
-      g.fillStyle = "#f5cd30";
-      g.fillRect(0, 0, 256, 256);
-      g.fillStyle = "#1a1a1a";
-      g.beginPath();
-      g.ellipse(92, 108, 16, 28, -0.15, 0, Math.PI * 2);
-      g.fill();
-      g.beginPath();
-      g.ellipse(164, 108, 16, 28, 0.15, 0, Math.PI * 2);
-      g.fill();
-      g.strokeStyle = "#1a1a1a";
-      g.lineWidth = 12;
-      g.lineCap = "round";
-      g.beginPath();
-      g.arc(128, 132, 46, 0.25, Math.PI - 0.25);
-      g.stroke();
-      const map = new THREE.CanvasTexture(canvas);
-      map.magFilter = THREE.NearestFilter;
-      map.colorSpace = THREE.SRGBColorSpace;
-      return map;
-    }
-
-    function redEyes() {
-      const canvas = document.createElement("canvas");
-      canvas.width = 256;
-      canvas.height = 256;
-      const g = canvas.getContext("2d");
-      g.fillStyle = "#111111";
-      g.fillRect(0, 0, 256, 256);
-      g.fillStyle = "#e10600";
-      g.beginPath();
-      g.ellipse(92, 108, 16, 28, -0.15, 0, Math.PI * 2);
-      g.fill();
-      g.beginPath();
-      g.ellipse(164, 108, 16, 28, 0.15, 0, Math.PI * 2);
-      g.fill();
-      const map = new THREE.CanvasTexture(canvas);
-      map.magFilter = THREE.NearestFilter;
-      map.colorSpace = THREE.SRGBColorSpace;
-      return map;
-    }
-
-    const skinMat = plastic(black);
-    const pantsMat = plastic(black);
-    const faceMat = plastic(0xffffff);
-    faceMat.map = redEyes();
-    const playerSkin = plastic(0xf5cd30);
-    const playerFace = plastic(0xffffff);
-    playerFace.map = smile();
-    const seg = 2;
-    function bone(material, outward, single) {
-      const upper = new THREE.Group();
-      const upperMesh = new THREE.Mesh(new THREE.BoxGeometry(1, seg, 1), material);
-      upperMesh.position.set(outward, -seg * 0.5, 0);
-      upperMesh.castShadow = true;
-      upperMesh.receiveShadow = true;
-      upper.add(upperMesh);
-      const lower = new THREE.Group();
-      if (!single) {
-        lower.position.set(outward, -seg, 0);
-        const joint = new THREE.Mesh(new THREE.SphereGeometry(0.42, 12, 8), material);
-        joint.castShadow = true;
-        lower.add(joint);
-        const lowerMesh = new THREE.Mesh(new THREE.BoxGeometry(1, seg, 1), material);
-        lowerMesh.position.y = -seg * 0.5;
-        lowerMesh.castShadow = true;
-        lowerMesh.receiveShadow = true;
-        lower.add(lowerMesh);
-        upper.add(lower);
-      }
-      return { upper: upper, lower: lower, vx: 0, vz: 0, ev: 0 };
-    }
-    let femaleTorsoGeometry = null;
-    function femaleTorsoGeo() {
-      if (femaleTorsoGeometry) return femaleTorsoGeometry;
-      const rings = [
-        { y: -1, hw: 0.92, hd: 0.5, z: 0 },
-        { y: -0.62, hw: 1.08, hd: 0.58, z: 0.02 },
-        { y: -0.22, hw: 0.58, hd: 0.36, z: 0 },
-        { y: 0.12, hw: 0.84, hd: 0.5, z: 0.08 },
-        { y: 0.4, hw: 0.98, hd: 0.66, z: 0.16 },
-        { y: 0.72, hw: 1, hd: 0.5, z: 0.04 },
-        { y: 1, hw: 1, hd: 0.46, z: 0 },
-      ];
-      const segN = 16;
-      const positions = [];
-      const index = [];
-      const bases = [];
-      for (let r = 0; r < rings.length; r += 1) {
-        bases.push(positions.length / 3);
-        for (let i = 0; i < segN; i += 1) {
-          const a = (i / segN) * Math.PI * 2;
-          positions.push(Math.cos(a) * rings[r].hw, rings[r].y, Math.sin(a) * rings[r].hd + rings[r].z);
-        }
-      }
-      for (let r = 0; r < rings.length - 1; r += 1) {
-        for (let i = 0; i < segN; i += 1) {
-          const i2 = (i + 1) % segN;
-          const a = bases[r] + i;
-          const b = bases[r] + i2;
-          const c = bases[r + 1] + i;
-          const d = bases[r + 1] + i2;
-          index.push(a, c, b, b, c, d);
-        }
-      }
-      const top = positions.length / 3;
-      positions.push(0, 1, 0);
-      const bot = positions.length / 3;
-      positions.push(0, -1, 0);
-      for (let i = 0; i < segN; i += 1) {
-        const i2 = (i + 1) % segN;
-        index.push(top, bases[rings.length - 1] + i2, bases[rings.length - 1] + i);
-        index.push(bot, bases[0] + i, bases[0] + i2);
-      }
-      const geo = new THREE.BufferGeometry();
-      geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-      geo.setIndex(index);
-      geo.computeVertexNormals();
-      femaleTorsoGeometry = geo;
-      return geo;
-    }
-    function makePerson(shirtColor, x, z, single, skin, face, kind) {
-      const armMat = skin || skinMat;
-      const headFace = face || faceMat;
-      const k = single ? "player" : "zombie";
-      const singleLegs = k === "player";
-      const singleArms = k === "player";
-      const bulk = 1;
-      const root = new THREE.Group();
-      root.rotation.order = "YXZ";
-      root.position.set(x, 0, z);
-      const torso = new THREE.Group();
-      torso.position.y = singleLegs ? seg : seg * 2;
-      const chest = new THREE.Group();
-      const bodyGeo = k === "player" || Math.random() < 0.5
-        ? new THREE.BoxGeometry(2, 2, 1)
-        : femaleTorsoGeo();
-      const body = new THREE.Mesh(bodyGeo, plastic(shirtColor));
-      body.scale.set(bulk, bulk, bulk);
-      body.position.y = bulk;
-      body.castShadow = true;
-      body.receiveShadow = true;
-      chest.add(body);
-      const leftLeg = bone(pantsMat, 0, singleLegs);
-      leftLeg.upper.position.set(-0.5, 0, 0);
-      const rightLeg = bone(pantsMat, 0, singleLegs);
-      rightLeg.upper.position.set(0.5, 0, 0);
-      const leftArm = bone(armMat, -0.5, singleArms);
-      leftArm.upper.position.set(-bulk, 2 * bulk, 0);
-      const rightArm = bone(armMat, 0.5, singleArms);
-      rightArm.upper.position.set(bulk, 2 * bulk, 0);
-      leftArm.upper.rotation.x = (Math.random() - 0.5) * 0.9;
-      rightArm.upper.rotation.x = (Math.random() - 0.5) * 0.9;
-      leftArm.vx = (Math.random() - 0.5) * 2;
-      rightArm.vx = (Math.random() - 0.5) * 2;
-      const neck = new THREE.Group();
-      neck.position.y = 2 * bulk;
-      const skull = new THREE.Mesh(new THREE.BoxGeometry(1.7, 1.5, 1.5), [
-        armMat, armMat, armMat, armMat, headFace, armMat
-      ]);
-      skull.position.y = 0.75;
-      skull.castShadow = true;
-      neck.add(skull);
-      chest.add(leftArm.upper, rightArm.upper, neck);
-      torso.add(chest, leftLeg.upper, rightLeg.upper);
-      root.add(torso);
-      scene.add(root);
-      return {
-        root: root,
-        torso: torso,
-        chest: chest,
-        neck: neck,
-        skull: skull,
-        leftLeg: leftLeg,
-        rightLeg: rightLeg,
-        leftArm: leftArm,
-        rightArm: rightArm,
-        phase: Math.random() * Math.PI * 2,
-        punchTime: 0,
-        wanderYaw: Math.random() * Math.PI * 2,
-        wanderTime: Math.random() * 2,
-        kind: k,
-      };
-    }
-    const player = new THREE.Group();
-    scene.add(player);
-    const npcs = [];
-    npcs.push(makePerson(black, 22, 6));
-    function stepCrowd(dt) {
-      const gap = 3;
-      for (let i = 0; i < npcs.length; i += 1) {
-        const npc = npcs[i];
-        if ((grabber || plantCaught) && npc !== grabber) {
-          npc.wanderTime += dt;
-          if (npc.wanderTime >= 2) {
-            npc.wanderTime -= 2;
-            npc.wanderYaw = Math.random() * Math.PI * 2;
-          }
-          if (npc.wanderTime < 1) {
-            const fx = Math.sin(npc.wanderYaw);
-            const fz = Math.cos(npc.wanderYaw);
-            const nx = npc.root.position.x + fx * 3.2 * dt;
-            const nz = npc.root.position.z + fz * 3.2 * dt;
-            if (nx < -40 || nx > 40 || nz < -40 || nz > 40) npc.wanderYaw += Math.PI;
-            else {
-              npc.root.position.x = nx;
-              npc.root.position.z = nz;
-              npc.phase += dt * 3.4;
-            }
-          }
-          npc.root.rotation.y = npc.wanderYaw;
-          npc.root.rotation.x = 0.12;
-          npc.root.rotation.z = 0;
-          npc.reach = 99;
-        } else if (npc !== grabber) {
-          const dx = player.position.x - npc.root.position.x;
-          const dz = player.position.z - npc.root.position.z;
-          const dist = Math.hypot(dx, dz) || 1;
-          npc.reach = dist;
-          if (dist > 1.8) {
-            npc.root.position.x += (dx / dist) * 3.2 * dt;
-            npc.root.position.z += (dz / dist) * 3.2 * dt;
-            npc.phase += dt * 3.6;
-          }
-          npc.root.rotation.y = Math.atan2(dx, dz);
-          npc.root.rotation.x = 0.1;
-          npc.root.rotation.z = Math.sin(npc.phase * 0.5) * 0.06;
-        }
-      }
-      for (let i = 0; i < npcs.length; i += 1) {
-        for (let j = i + 1; j < npcs.length; j += 1) {
-          let dx = npcs[j].root.position.x - npcs[i].root.position.x;
-          let dz = npcs[j].root.position.z - npcs[i].root.position.z;
-          const dist = Math.hypot(dx, dz);
-          if (dist >= gap || dist < 0.0001) continue;
-          const push = (gap - dist) * 0.5;
-          dx /= dist;
-          dz /= dist;
-          if (npcs[i] !== grabber) {
-            npcs[i].root.position.x -= dx * push;
-            npcs[i].root.position.z -= dz * push;
-          }
-          if (npcs[j] !== grabber) {
-            npcs[j].root.position.x += dx * push;
-            npcs[j].root.position.z += dz * push;
-          }
-        }
-      }
-      for (let i = 0; i < npcs.length; i += 1) {
-        const npc = npcs[i];
-        if (npc !== grabber) zombiePose(npc, dt);
-      }
+    function show(screen) {
+      lobby.classList.toggle("on", screen === "lobby");
+      game.classList.toggle("on", screen === "game");
+      win.classList.toggle("on", screen === "win");
+      fail.classList.toggle("on", screen === "fail");
     }
 
-    const playerBody = makePerson(0x1a4fd6, 0, 0, true, playerSkin, playerFace);
-    scene.remove(playerBody.root);
-    player.add(playerBody.root);
-    playerBody.root.position.set(0, 0, 0);
-    playerBody.root.visible = false;
-    let grabber = null;
-    let plantCaught = false;
-    let plantStart = null;
-    let grabYaw = 0;
-    let grabTime = 0;
-    let chomped = false;
-    const stemMat = plastic(black);
-    const leafMat = plastic(black);
-    const tongueMat = plastic(0xe10600);
-    const plant = new THREE.Group();
-    plant.position.set(12, 0, -14);
-    const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.75, 10, 8), stemMat);
-    bulb.scale.y = 0.55;
-    bulb.position.y = 0.35;
-    const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.5, 3.2, 8), stemMat);
-    stem.position.y = 1.7;
-    const plantHead = new THREE.Group();
-    plantHead.position.y = 3.35;
-    const jawLower = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.32, 1.7), leafMat);
-    jawLower.position.set(0, -0.1, 0.55);
-    const jawUpper = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.32, 1.7), leafMat);
-    jawUpper.position.set(0, 0.16, 0.55);
-    const tongue = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.14, 1.45), tongueMat);
-    tongue.position.set(0, -0.02, 1.15);
-    plantHead.add(jawLower, jawUpper, tongue);
-    function makeVine() {
-      const upper = new THREE.Group();
-      const upperMesh = new THREE.Mesh(new THREE.BoxGeometry(0.28, 2.2, 0.28), leafMat);
-      upperMesh.position.y = -1.1;
-      upper.add(upperMesh);
-      const lower = new THREE.Group();
-      lower.position.y = -2.2;
-      const lowerMesh = new THREE.Mesh(new THREE.BoxGeometry(0.22, 2.1, 0.22), leafMat);
-      lowerMesh.position.y = -1.05;
-      lower.add(lowerMesh);
-      upper.add(lower);
-      return { upper: upper, lower: lower };
-    }
-    const vineL = makeVine();
-    vineL.upper.position.set(-0.45, 2.5, 0);
-    const vineR = makeVine();
-    vineR.upper.position.set(0.45, 2.5, 0);
-    plant.add(bulb, stem, plantHead, vineL.upper, vineR.upper);
-    plant.scale.set(2, 2, 2);
-    scene.add(plant);
-    let plantTime = 0;
-    const bloodMat = plastic(0xc40012);
-    const bloodGeo = new THREE.SphereGeometry(0.11, 6, 5);
-    const bloods = [];
-    function spray(x, y, z, fx, fz, count) {
-      for (let i = 0; i < (count || 12); i += 1) {
-        const drop = new THREE.Mesh(bloodGeo, bloodMat);
-        drop.position.set(x, y, z);
-        scene.add(drop);
-        bloods.push({
-          mesh: drop,
-          vx: -fx * 2 + (Math.random() - 0.5) * 8,
-          vy: 0.25 + Math.random() * 1.5,
-          vz: -fz * 2 + (Math.random() - 0.5) * 8,
-          life: 0.8 + Math.random() * 0.5,
-        });
-      }
-    }
-    function stepBlood(dt) {
-      for (let i = bloods.length - 1; i >= 0; i -= 1) {
-        const drop = bloods[i];
-        drop.vy -= 20 * dt;
-        drop.mesh.position.x += drop.vx * dt;
-        drop.mesh.position.y += drop.vy * dt;
-        drop.mesh.position.z += drop.vz * dt;
-        drop.life -= dt;
-        if (drop.mesh.position.y < 0.08) {
-          drop.mesh.position.y = 0.08;
-          drop.vy *= -0.2;
-          drop.vx *= 0.5;
-          drop.vz *= 0.5;
-        }
-        if (drop.life <= 0) {
-          scene.remove(drop.mesh);
-          bloods.splice(i, 1);
-        }
-      }
-    }
-    function zombiePose(npc, dt) {
-      const step = Math.sin(npc.phase);
-      npc.torso.position.y = seg * 2;
-      npc.chest.rotation.set(0.08, 0, step * 0.04);
-      npc.leftLeg.upper.rotation.x = step * 0.55;
-      npc.rightLeg.upper.rotation.x = -step * 0.55;
-      npc.leftLeg.lower.rotation.x = 0.45 + Math.max(0, -step) * 0.7;
-      npc.rightLeg.lower.rotation.x = 0.45 + Math.max(0, step) * 0.7;
-      let punch = 0;
-      if (npc.reach < 9) {
-        npc.punchTime += dt;
-        const cycle = (npc.punchTime * 1.6) % 1;
-        if (cycle < 0.16) punch = cycle / 0.16;
-        else if (cycle < 0.34) punch = 1;
-        else if (cycle < 0.5) punch = 1 - (cycle - 0.34) / 0.16;
-      }
-      const drive = punch > 0.02 ? { x: -0.45 - punch * 0.95, z: -0.15, e: 1.15 * (1 - punch) } : null;
-      stepArm(npc.leftArm, dt, null, step * 0.2);
-      stepArm(npc.rightArm, dt, drive, -step * 0.2);
-      npc.chest.rotation.x = 0.08 + punch * 0.2;
-      npc.neck.position.set(0, 2, 0);
-      npc.neck.rotation.set(0.15, 0, Math.sin(npc.phase * 0.5) * 0.08);
-      npc.skull.material[4] = faceMat;
+    function say(text) {
+      msg.textContent = text;
+      messageTimer = 120;
     }
 
-    function eatStep(dt) {
-      grabTime += dt;
-      let fx = Math.sin(grabYaw);
-      let fz = Math.cos(grabYaw);
-      const nx = grabber.root.position.x + fx * 2.1 * dt;
-      const nz = grabber.root.position.z + fz * 2.1 * dt;
-      if (nx < -40 || nx > 40 || nz < -40 || nz > 40) grabYaw += Math.PI;
-      else {
-        grabber.root.position.x = nx;
-        grabber.root.position.z = nz;
-      }
-      fx = Math.sin(grabYaw);
-      fz = Math.cos(grabYaw);
-      grabber.root.rotation.set(0.08, grabYaw, 0);
-      grabber.torso.position.y = seg * 2;
-      player.position.set(grabber.root.position.x + fx * 1.7, 0, grabber.root.position.z + fz * 1.7);
-      playerBody.root.rotation.set(0.15, grabYaw + Math.PI, 0);
-      const cycle = (grabTime * 1.6) % 1;
-      const bite = cycle < 0.18 ? cycle / 0.18 : cycle < 0.42 ? 1 - (cycle - 0.18) / 0.24 : 0;
-      if (bite > 0.8 && !chomped) {
-        chomped = true;
-        spray(player.position.x, 3.1, player.position.z, fx, fz);
-      }
-      if (bite < 0.2) chomped = false;
-      grabber.chest.rotation.x = 0.35 + bite * 0.4;
-      grabber.neck.position.set(0, 2, 0.15 + bite * 0.3);
-      grabber.neck.rotation.set(0.65 + bite * 0.55, 0, 0);
-      grabber.leftArm.upper.rotation.set(-1.2, 0, 0.4);
-      grabber.rightArm.upper.rotation.set(-1.2, 0, -0.4);
-      grabber.leftArm.lower.rotation.set(0.9, 0, 0);
-      grabber.rightArm.lower.rotation.set(0.9, 0, 0);
-      playerBody.leftArm.upper.rotation.set(-0.35, 0, 0.55);
-      playerBody.rightArm.upper.rotation.set(-0.35, 0, -0.55);
-      playerBody.neck.rotation.set(-0.25 - bite * 0.2, 0, 0);
+    function xy(i) {
+      return { x: i % W, y: Math.floor(i / W) };
     }
 
-    function stepPlant(dt) {
-      plantTime += dt;
-      const dx = player.position.x - plant.position.x;
-      const dz = player.position.z - plant.position.z;
-      const dist = Math.hypot(dx, dz) || 1;
-      const face = Math.atan2(dx, dz);
-      if (!plantCaught) plant.rotation.y = face;
-      const reach = !plantCaught && dist < 16 ? Math.min(1, (16 - dist) / 10) : 0;
-      const sway = Math.sin(plantTime * 1.4) * 0.06;
-      vineL.upper.rotation.x = -0.35 - reach * 1.15;
-      vineR.upper.rotation.x = -0.35 - reach * 1.15;
-      vineL.upper.rotation.z = 0.55 - reach * 0.35 + sway;
-      vineR.upper.rotation.z = -0.55 + reach * 0.35 - sway;
-      vineL.lower.rotation.x = 0.9 - reach * 0.55;
-      vineR.lower.rotation.x = 0.9 - reach * 0.55;
-      const open = 0.15 + reach * 0.9;
-      jawUpper.rotation.x = -open;
-      jawLower.rotation.x = open * 0.85;
-      tongue.position.z = 0.7 + reach * 1.1;
-      plantHead.rotation.z = sway;
-      if (!grabber && !plantCaught && dist < 5.2) {
-        plantCaught = true;
-        plantStart = player.position.clone();
-        grabYaw = face;
-        grabTime = 0;
-        chomped = false;
-        playerBody.root.visible = true;
-        document.getElementById("hint").textContent = "잡혔다";
-        if (document.pointerLockElement) document.exitPointerLock();
-      }
-    }
-    function plantEatStep(dt) {
-      grabTime += dt;
-      const fx = Math.sin(grabYaw);
-      const fz = Math.cos(grabYaw);
-      plant.rotation.y = grabYaw;
-      const align = Math.min(1, grabTime / 0.32);
-      const into = Math.min(1, Math.max(0, (grabTime - 0.32) / 1.05));
-      const scale = 1 - into * 0.38;
-      const headLen = 4.8 * scale;
-      const lip = 2.7;
-      const mouthY = 6.7;
-      const pitch = Math.PI * 0.5 * align;
-      const headForward = lip - into * (headLen + 2.2);
-      const hx = plant.position.x + fx * headForward;
-      const hz = plant.position.z + fz * headForward;
-      const s = Math.sin(pitch);
-      const c = Math.cos(pitch);
-      const tx = hx + fx * headLen * s;
-      const ty = mouthY - headLen * c;
-      const tz = hz + fz * headLen * s;
-      player.position.set(
-        plantStart.x + (tx - plantStart.x) * align,
-        plantStart.y + (ty - plantStart.y) * align,
-        plantStart.z + (tz - plantStart.z) * align
-      );
-      playerBody.root.rotation.set(pitch, grabYaw + Math.PI, 0);
-      playerBody.root.scale.set(scale, scale, scale);
-      const mouthOpen = into < 0.55 ? 1.2 : 1.2 * (1 - (into - 0.55) / 0.45);
-      jawUpper.rotation.x = -mouthOpen;
-      jawLower.rotation.x = mouthOpen * 0.82;
-      tongue.position.z = 1.55 - into * 1.2;
-      vineL.upper.rotation.set(-1.35, 0, 0.25);
-      vineR.upper.rotation.set(-1.35, 0, -0.25);
-      vineL.lower.rotation.set(0.9, 0, 0);
-      vineR.lower.rotation.set(0.9, 0, 0);
-      plantHead.rotation.z = 0;
-      if (into > 0.12 && !chomped) {
-        chomped = true;
-        spray(plant.position.x + fx * lip, mouthY, plant.position.z + fz * lip, fx, fz);
-      }
-      playerBody.leftArm.upper.rotation.set(-0.2 - pitch * 0.35, 0, 0.85);
-      playerBody.rightArm.upper.rotation.set(-0.2 - pitch * 0.35, 0, -0.85);
-      playerBody.neck.rotation.set(0.35 * align, 0, 0);
+    function at(x, y) {
+      return y * W + x;
     }
 
-    function stepArm(arm, dt, drive, jolt) {
-      let ux = arm.upper.rotation.x;
-      let uz = arm.upper.rotation.z;
-      let ex = arm.lower.rotation.x;
-      if (jolt) {
-        arm.vx += jolt;
-        arm.vz += jolt * 0.6;
-      }
-      if (drive) {
-        arm.vx += (drive.x - ux) * 180 * dt;
-        arm.vz += (drive.z - uz) * 180 * dt;
-        arm.ev += (drive.e - ex) * 180 * dt;
-      }
-      arm.vx += -Math.sin(ux) * 16 * dt;
-      arm.vz += -Math.sin(uz) * 12 * dt;
-      arm.ev += -Math.sin(ux + ex) * 14 * dt;
-      const damp = Math.exp(-2.4 * dt);
-      arm.vx *= damp;
-      arm.vz *= damp;
-      arm.ev *= damp;
-      ux = Math.max(-2.6, Math.min(2.6, ux + arm.vx * dt));
-      uz = Math.max(-1.5, Math.min(1.5, uz + arm.vz * dt));
-      ex = Math.max(-0.5, Math.min(2.5, ex + arm.ev * dt));
-      arm.upper.rotation.x = ux;
-      arm.upper.rotation.z = uz;
-      arm.lower.rotation.x = ex;
+    function withinFive(a, b) {
+      const pa = xy(a);
+      const pb = xy(b);
+      return Math.max(Math.abs(pa.x - pb.x), Math.abs(pa.y - pb.y)) <= NEAR;
     }
 
-    const keys = {};
-    window.addEventListener("keydown", function (event) {
-      keys[event.code] = true;
-      if (event.code === "Space" || event.code.indexOf("Arrow") === 0) event.preventDefault();
-    });
-    window.addEventListener("keyup", function (event) { keys[event.code] = false; });
+    function isAdjacent(a, b) {
+      const pa = xy(a);
+      const pb = xy(b);
+      return Math.abs(pa.x - pb.x) + Math.abs(pa.y - pb.y) === 1;
+    }
 
-    let yaw = 0.7;
-    let pitch = 0;
-    let vy = 0;
-    let grounded = true;
-    renderer.domElement.addEventListener("click", function () {
-      if (document.pointerLockElement !== renderer.domElement) renderer.domElement.requestPointerLock();
-    });
-    window.addEventListener("mousemove", function (event) {
-      if (document.pointerLockElement !== renderer.domElement) return;
-      yaw -= event.movementX * 0.003;
-      pitch += event.movementY * 0.003;
-      pitch = Math.max(-1.2, Math.min(1.2, pitch));
-    });
-
-    const clock = new THREE.Clock();
-    function frame() {
-      requestAnimationFrame(frame);
-      const dt = Math.min(0.05, clock.getDelta());
-      if (!grabber && !plantCaught) {
-        const ahead = ((keys.KeyW || keys.ArrowUp) ? 1 : 0) - ((keys.KeyS || keys.ArrowDown) ? 1 : 0);
-        const side = ((keys.KeyD || keys.ArrowRight) ? 1 : 0) - ((keys.KeyA || keys.ArrowLeft) ? 1 : 0);
-        if (ahead !== 0 || side !== 0) {
-          const len = Math.hypot(ahead, side);
-          const speed = 16;
-          const fx = -Math.sin(yaw);
-          const fz = -Math.cos(yaw);
-          const dx = (fx * ahead + Math.cos(yaw) * side) / len * speed * dt;
-          const dz = (fz * ahead - Math.sin(yaw) * side) / len * speed * dt;
-          player.position.x = Math.max(-44, Math.min(44, player.position.x + dx));
-          player.position.z = Math.max(-44, Math.min(44, player.position.z + dz));
-        }
-        vy -= 60 * dt;
-        player.position.y += vy * dt;
-        if (player.position.y <= 0) {
-          player.position.y = 0;
-          if (vy < 0) vy = 0;
-          grounded = true;
-        } else grounded = false;
-        if (keys.Space && grounded) {
-          vy = Math.sqrt(2 * 60 * 6);
-          grounded = false;
-        }
-      }
-      stepCrowd(dt);
-      stepPlant(dt);
-      if (!grabber && !plantCaught) {
-        for (let i = 0; i < npcs.length; i += 1) {
-          const npc = npcs[i];
-          const dx = player.position.x - npc.root.position.x;
-          const dz = player.position.z - npc.root.position.z;
-          if (Math.hypot(dx, dz) < 2.2) {
-            grabber = npc;
-            grabYaw = Math.atan2(dx, dz);
-            grabTime = 0;
-            chomped = false;
-            playerBody.root.visible = true;
-            document.getElementById("hint").textContent = "잡혔다";
-            if (document.pointerLockElement) document.exitPointerLock();
+    function pickSpot(used) {
+      for (let tryCount = 0; tryCount < 400; tryCount += 1) {
+        const i = Math.floor(Math.random() * W * H);
+        let near = false;
+        for (let u = 0; u < used.length; u += 1) {
+          if (withinFive(used[u], i)) {
+            near = true;
             break;
           }
         }
+        if (!near) return i;
       }
-      if (grabber) eatStep(dt);
-      if (plantCaught) plantEatStep(dt);
-      stepBlood(dt);
-      if (plantCaught) {
-        const fx = Math.sin(grabYaw);
-        const fz = Math.cos(grabYaw);
-        camera.position.set(plant.position.x - fx * 5 + fz * 11, 6.5, plant.position.z - fz * 5 - fx * 11);
-        camera.lookAt(plant.position.x + fx * 1.4, 4.5, plant.position.z + fz * 1.4);
-      } else if (grabber) {
-        const fx = Math.sin(grabYaw);
-        const fz = Math.cos(grabYaw);
-        const midX = (grabber.root.position.x + player.position.x) * 0.5;
-        const midZ = (grabber.root.position.z + player.position.z) * 0.5;
-        camera.position.set(midX - fx * 3 + fz * 7, 4.2, midZ - fz * 3 - fx * 7);
-        camera.lookAt(midX, 3.6, midZ);
-      } else {
-        const headY = player.position.y + 4.85;
-        const lookX = -Math.sin(yaw) * Math.cos(pitch);
-        const lookY = -Math.sin(pitch);
-        const lookZ = -Math.cos(yaw) * Math.cos(pitch);
-        camera.position.set(player.position.x, headY, player.position.z);
-        camera.lookAt(camera.position.x + lookX, camera.position.y + lookY, camera.position.z + lookZ);
-      }
-      renderer.render(scene, camera);
+      return -1;
     }
-    frame();
 
-    window.addEventListener("resize", function () {
-      camera.aspect = window.innerWidth / window.innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight);
-    });
+    function makeEmptyTiles() {
+      const list = [];
+      for (let i = 0; i < W * H; i += 1) {
+        list.push({ kind: "floor", block: null, index: i });
+      }
+      return list;
+    }
+
+    function chooseMode() {
+      if (round === 1) return MODES.normal;
+      const id = RANDOM_POOL[Math.floor(Math.random() * RANDOM_POOL.length)];
+      return MODES[id];
+    }
+
+    function buildTutorialRound() {
+      const next = makeEmptyTiles();
+      const red = at(6, 11);
+      const blue = at(6, 6);
+      const green = at(6, 1);
+      next[red].kind = "red";
+      next[red].block = "red";
+      next[blue].kind = "blue";
+      next[green].kind = "green";
+      return next;
+    }
+
+    function buildModeRound(m) {
+      const used = [];
+      const next = makeEmptyTiles();
+      const setCount = m.sets;
+
+      for (let n = 0; n < setCount; n += 1) {
+        const green = pickSpot(used);
+        if (green < 0) break;
+        used.push(green);
+        next[green].kind = "green";
+
+        const blue = pickSpot(used);
+        if (blue < 0) break;
+        used.push(blue);
+        next[blue].kind = "blue";
+
+        const red = pickSpot(used);
+        if (red < 0) break;
+        used.push(red);
+        next[red].kind = "red";
+        next[red].block = "red";
+      }
+
+      let wallsLeft = m.walls;
+      let guard = 0;
+      while (wallsLeft > 0 && guard < 800) {
+        guard += 1;
+        const i = Math.floor(Math.random() * W * H);
+        if (next[i].kind !== "floor") continue;
+        next[i].kind = "wall";
+        wallsLeft -= 1;
+      }
+
+      return next;
+    }
+
+    function goalFilled() {
+      return tiles.every((t) => t.kind !== "green" || t.block === "yellow");
+    }
+
+    function isLocked(t) {
+      return t.kind === "green" && t.block === "yellow";
+    }
+
+    function canPlace(color, t, fromIndex) {
+      if (t.index === fromIndex) return true;
+      if (t.kind === "wall") return false;
+      if (t.block) return false;
+      if (mode.adjacent && !isAdjacent(fromIndex, t.index)) return false;
+      if (mode.noFloor && t.kind === "floor") return false;
+      if (t.kind === "blue") return color === "red" || color === "yellow";
+      if (t.kind === "green") return color === "yellow";
+      if (t.kind === "red") return color === "red";
+      if (t.kind === "floor") return true;
+      return false;
+    }
+
+    function placeResult(color, t) {
+      if (t.kind === "blue" && color === "red") {
+        return { block: "yellow", text: "파란 칸! 블럭이 노랑으로 변했습니다." };
+      }
+      if (t.kind === "green" && color === "yellow") {
+        return { block: "yellow", text: "초록 칸에 넣었습니다." };
+      }
+      return { block: color, text: "내려놓았습니다." };
+    }
+
+    function updateHud() {
+      roundLabel.textContent = "라운드 " + round + " / " + TOTAL_ROUNDS;
+      modeLabel.textContent = mode.name;
+      if (mode.time > 0) {
+        timerLabel.hidden = false;
+        timerLabel.textContent = "남은 시간 " + Math.ceil(timeLeft);
+        timerLabel.classList.toggle("warn", timeLeft <= 8);
+      } else {
+        timerLabel.hidden = true;
+        timerLabel.classList.remove("warn");
+      }
+    }
+
+    function stopTimer() {
+      timerOn = false;
+      timeLeft = 0;
+    }
+
+    function startTimer(seconds) {
+      timeLeft = seconds;
+      timerAcc = 0;
+      timerOn = seconds > 0;
+      updateHud();
+    }
+
+    function failRun(reason) {
+      endDrag();
+      stopTimer();
+      failText.textContent = reason;
+      show("fail");
+    }
+
+    function startRun() {
+      round = 1;
+      loadRound();
+      show("game");
+    }
+
+    function loadRound() {
+      endDrag();
+      mode = chooseMode();
+      tiles = round === 1 ? buildTutorialRound() : buildModeRound(mode);
+      startTimer(mode.time);
+      updateHud();
+      renderBoard();
+      say(mode.name + " · " + mode.tip);
+    }
+
+    function clearRound() {
+      stopTimer();
+      if (round >= TOTAL_ROUNDS) {
+        show("win");
+        return;
+      }
+      round += 1;
+      loadRound();
+    }
+
+    function hoverIndex() {
+      return drag ? drag.hover : null;
+    }
+
+    function renderBoard() {
+      board.innerHTML = "";
+      const hover = hoverIndex();
+      for (let i = 0; i < tiles.length; i += 1) {
+        const t = tiles[i];
+        const cell = document.createElement("div");
+        let cls = "cell " + t.kind;
+        if (t.kind === "floor") cls = "cell";
+        if (drag && hover === i) {
+          cls += canPlace(drag.color, t, drag.from) ? " drop-ok" : " drop-bad";
+        }
+        cell.className = cls;
+        cell.dataset.index = String(i);
+
+        const showSource = t.block && !(drag && drag.from === i && hover !== null && hover !== i);
+        if (showSource) {
+          const b = document.createElement("div");
+          const locked = isLocked(t);
+          b.className = "block " + t.block + (locked ? " locked" : "");
+          if (drag && drag.from === i) b.classList.add("dragging-source");
+          if (!locked) {
+            b.addEventListener("pointerdown", function (event) {
+              startDrag(event, i);
+            });
+          }
+          cell.appendChild(b);
+        }
+
+        if (drag && hover === i && hover !== drag.from && !t.block && t.kind !== "wall") {
+          const preview = document.createElement("div");
+          preview.className = "block preview " + drag.color;
+          cell.appendChild(preview);
+        }
+
+        board.appendChild(cell);
+      }
+    }
+
+    function cellUnder(x, y) {
+      const el = document.elementFromPoint(x, y);
+      if (!el) return null;
+      const cell = el.closest ? el.closest(".cell") : null;
+      if (!cell || !board.contains(cell)) return null;
+      return Number(cell.dataset.index);
+    }
+
+    function setHoverCell(idx) {
+      if (!drag) return;
+      if (drag.hover === idx) return;
+      drag.hover = idx;
+      renderBoard();
+    }
+
+    function startDrag(event, fromIndex) {
+      if (drag) return;
+      const t = tiles[fromIndex];
+      if (!t.block || isLocked(t)) return;
+      event.preventDefault();
+      drag = {
+        from: fromIndex,
+        color: t.block,
+        pointerId: event.pointerId,
+        hover: fromIndex,
+      };
+      renderBoard();
+      window.addEventListener("pointermove", onDragMove);
+      window.addEventListener("pointerup", onDragEnd);
+      window.addEventListener("pointercancel", onDragEnd);
+    }
+
+    function onDragMove(event) {
+      if (!drag || event.pointerId !== drag.pointerId) return;
+      setHoverCell(cellUnder(event.clientX, event.clientY));
+    }
+
+    function onDragEnd(event) {
+      if (!drag || event.pointerId !== drag.pointerId) return;
+      const from = drag.from;
+      const color = drag.color;
+      const idx = drag.hover != null ? drag.hover : cellUnder(event.clientX, event.clientY);
+      endDrag();
+
+      if (idx == null) {
+        say("판의 칸 위로 드래그하세요.");
+        renderBoard();
+        return;
+      }
+      if (idx === from) {
+        renderBoard();
+        return;
+      }
+      const target = tiles[idx];
+      if (!canPlace(color, target, from)) {
+        if (target.kind === "wall") say("벽에는 올릴 수 없습니다.");
+        else if (mode.adjacent && !isAdjacent(from, idx)) say("옆 칸으로만 옮길 수 있습니다.");
+        else if (mode.noFloor && target.kind === "floor") say("이 라운드는 바닥 금지입니다.");
+        else if (target.kind === "green" && color !== "yellow") say("초록 칸에는 노란 블럭만 가능합니다.");
+        else if (target.block) say("이미 블럭이 있는 칸입니다.");
+        else say("여기에는 놓을 수 없습니다.");
+        renderBoard();
+        return;
+      }
+
+      tiles[from].block = null;
+      const result = placeResult(color, target);
+      target.block = result.block;
+      say(result.text);
+      renderBoard();
+      if (goalFilled()) clearRound();
+    }
+
+    function endDrag() {
+      drag = null;
+      window.removeEventListener("pointermove", onDragMove);
+      window.removeEventListener("pointerup", onDragEnd);
+      window.removeEventListener("pointercancel", onDragEnd);
+    }
+
+    document.getElementById("playBtn").addEventListener("click", startRun);
+    document.getElementById("againBtn").addEventListener("click", startRun);
+    document.getElementById("retryBtn").addEventListener("click", startRun);
+
+    let last = performance.now();
+    function tick(now) {
+      requestAnimationFrame(tick);
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+      if (messageTimer > 0) {
+        messageTimer -= 1;
+        if (messageTimer === 0) msg.textContent = "";
+      }
+      if (timerOn && game.classList.contains("on")) {
+        timeLeft -= dt;
+        timerAcc += dt;
+        if (timerAcc >= 0.2) {
+          timerAcc = 0;
+          updateHud();
+        }
+        if (timeLeft <= 0) {
+          timeLeft = 0;
+          failRun("시간 초과! 1라운드부터 다시입니다.");
+        }
+      }
+    }
+    requestAnimationFrame(tick);
   </script>
 </body>
 </html>
